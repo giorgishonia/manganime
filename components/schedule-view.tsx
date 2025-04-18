@@ -33,7 +33,7 @@ function setupDragScroll(element: HTMLDivElement | null) {
     if (!isDown) return;
     e.preventDefault();
     const x = e.pageX - element.offsetLeft;
-    const walk = (x - startX) * 2; // Scroll speed multiplier
+    const walk = (x - startX) * 0.8; // Reduced scroll speed multiplier
     element.scrollLeft = scrollLeft - walk;
   };
   

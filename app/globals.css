@@ -50,6 +50,7 @@ body {
   /* Adds a cursor grab style for draggable elements */
   .cursor-grab {
     cursor: grab;
+    user-select: none;
   }
   
   .cursor-grab:active {
@@ -162,4 +163,20 @@ body {
 
 .animate-spin {
   animation: spin 1s linear infinite;
+}
+
+/* Custom utilities */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Add cursor-grab class with user-select: none to prevent text selection during dragging */
+.cursor-grab {
+  cursor: grab;
+  user-select: none;
 }

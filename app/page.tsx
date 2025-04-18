@@ -199,7 +199,7 @@ export default function Home() {
             )}
           </AnimatePresence>
 
-          <div className="absolute bottom-0 right-0 p-8 z-10 max-w-lg">
+          <div className="absolute bottom-16 right-0 p-8 z-10 max-w-42">
             <AnimatePresence mode="wait">
               {isFetching ? (
                 <div className="space-y-4 w-full">
@@ -226,9 +226,9 @@ export default function Home() {
                       <TypewriterText text={featured.title} />
                     </motion.h1>
                     <div className="flex items-center gap-2 mb-2">
-                      <span className="text-gray-300">{featured.status}</span>
-                      <span className="text-gray-300">•</span>
-                      <span className="text-gray-300">{featured.episodes}</span>
+                      <span className="text-gray-300 text-center">{featured.status}</span>
+                      <span className="text-gray-300 text-center">•</span>
+                      <span className="text-gray-300 text-center">{featured.episodes}</span>
                       <div className="ml-2 flex items-center gap-1 bg-gray-800/50 px-2 py-0.5 rounded">
                         <Heart className="h-4 w-4 text-green-500 fill-green-500" />
                         <div>{featured.rating}</div>
@@ -264,8 +264,8 @@ export default function Home() {
           </div>
 
           {/* Tab Navigation */}
-          <div className="absolute bottom-0 left-0 right-0 flex justify-center mb-4 z-20">
-            <div className="flex items-center rounded-full">
+          <div className="absolute bottom-0 left-0 right-0 flex justify-center mb-4 z-20 gap-8">
+            <div className="border border-gray-700 flex items-center rounded-full">
               <button
                 onClick={() => handleTabChange("anime")}
                 className={cn(
@@ -295,11 +295,12 @@ export default function Home() {
               </button>
             </div>
             <button
-              className="right-8 bg-transparent p-2 rounded-full flex items-center gap-2 absolute"
+              className="bg-transparent p-2 rounded-full flex items-center gap-2 border border-gray-7 00
+              "
               aria-label="Advanced search"
             >
               <Search className="h-5 w-5" />
-              <span className="text-sm font-medium mr-1">Advanced search</span>
+              <span className="text-sm font-medium">Advanced search</span>
             </button>
           </div>
         </section>
