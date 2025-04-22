@@ -1,0 +1,404 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { PlusCircle, Pencil, Trash2, Loader2 } from "lucide-react";
+import { toast } from "sonner";
+
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+
+import ContentForm from "@/components/content-form";
+import { useAuth } from "@/components/supabase-auth-provider";
+import { getAllContent, deleteContent, getContentById } from "@/lib/content";
+import { supabase } from "@/lib/supabase";
+
+// Define the content item type
+interface ContentItem {
+  id: string;
+  title: string;
+  type: string;
+  status: string;
+  genres?: string[];
+  [key: string]: any; // For any other properties
+}
+
+// Wrapper function to get all content for admin use
+async function getAllContentForAdmin() {
+  try {
+    // Get both anime and manga content and combine them
+    const animeResult = await getAllContent('anime', 100, 0);
+    const mangaResult = await getAllContent('manga', 100, 0);
+    
+    // Extract content arrays or use empty arrays
+    const animeContent = animeResult?.success ? animeResult.content || [] : [];
+    const mangaContent = mangaResult?.success ? mangaResult.content || [] : [];
+    
+    // Combine anime and manga content
+    return [...animeContent, ...mangaContent];
+  } catch (error) {
+    console.error("Failed to fetch all content:", error);
+    return [];
+  }
+}
+
+export default function AdminContentPage() {
+  const router = useRouter();
+  const { user, isLoading: authLoading } = useAuth();
+  const searchParams = useSearchParams();
+  const contentId = searchParams.get("id");
+  const isNew = searchParams.get("new") === "true";
+  
+  const [contentList, setContentList] = useState<any[]>([]);
+  const [singleContent, setSingleContent] = useState<ContentItem | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [formOpen, setFormOpen] = useState(isNew || false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [editContent, setEditContent] = useState<ContentItem | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function checkAuth() {
+      if (!authLoading) {
+        if (!user) {
+          toast.error("You must be logged in to access this page", {
+            description: "You must be logged in to access this page",
+          });
+          router.push("/login");
+          return;
+        }
+
+        // TEMPORARY: Skip admin check during development
+        // Comment this out before production!
+        const isDevelopment = process.env.NODE_ENV === 'development';
+        if (isDevelopment) {
+          console.log("DEVELOPMENT MODE: Bypassing admin check");
+          
+          if (contentId) {
+            try {
+              const contentData = await getContentById(contentId);
+              if (contentData?.success && contentData.content) {
+                setSingleContent(contentData.content);
+                setEditContent(contentData.content);
+                setFormOpen(true);
+              } else {
+                toast.error("Content not found", {
+                  description: "The requested content could not be found",
+                });
+                router.push("/admin/content");
+              }
+            } catch (error) {
+              console.error("Failed to fetch content:", error);
+              toast.error("Failed to fetch content details", {
+                description: "Failed to fetch content details",
+              });
+            }
+          } else {
+            // Load all content if no specific ID is provided
+            try {
+              const allContent = await getAllContentForAdmin();
+              setContentList(allContent);
+            } catch (error) {
+              console.error("Failed to fetch content list:", error);
+              toast.error("Failed to load content list");
+            }
+          }
+          
+          setLoading(false);
+          return;
+        }
+        
+        // Check if user is admin
+        console.log("Checking admin role for user:", user.id);
+        const { data: userData, error: userError } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", user.id)
+          .single();
+        
+        console.log("User data:", userData, "Error:", userError);
+          
+        if (userData?.role !== "admin") {
+          console.log("User is not admin. Role:", userData?.role);
+          toast.error("Permission Denied", {
+            description: "You don't have permission to access this page",
+          });
+          router.push("/");
+          return;
+        }
+
+        if (contentId) {
+          try {
+            const contentData = await getContentById(contentId);
+            if (contentData?.success && contentData.content) {
+              setSingleContent(contentData.content);
+              setEditContent(contentData.content);
+              setFormOpen(true);
+            } else {
+              toast.error("Content not found", {
+                description: "The requested content could not be found",
+              });
+              router.push("/admin/content");
+            }
+          } catch (error) {
+            console.error("Failed to fetch content:", error);
+            toast.error("Failed to fetch content details", {
+              description: "Failed to fetch content details",
+            });
+          }
+        } else {
+          // Load all content if no specific ID is provided
+          try {
+            const allContent = await getAllContentForAdmin();
+            setContentList(allContent);
+          } catch (error) {
+            console.error("Failed to fetch content list:", error);
+            toast.error("Failed to load content list");
+          }
+        }
+        
+        setLoading(false);
+      }
+    }
+
+    checkAuth();
+  }, [authLoading, user, contentId, isNew, router]);
+
+  const handleAddContent = () => {
+    setEditContent(null);
+    setFormOpen(true);
+  };
+
+  const handleEditContent = (item: ContentItem) => {
+    setEditContent(item);
+    setFormOpen(true);
+  };
+
+  const handleDeleteClick = (id: string) => {
+    setDeleteId(id);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteId) return;
+    
+    try {
+      await deleteContent(deleteId);
+      setContentList((prevContent) => 
+        prevContent.filter((item) => item.id !== deleteId)
+      );
+      toast.success("Content deleted successfully");
+    } catch (error) {
+      console.error("Error deleting content:", error);
+      toast.error("Failed to delete content");
+    } finally {
+      setDeleteDialogOpen(false);
+      setDeleteId(null);
+    }
+  };
+
+  const handleFormClose = (refresh = false) => {
+    setFormOpen(false);
+    setEditContent(null);
+    
+    if (refresh) {
+      setLoading(true);
+      getAllContentForAdmin()
+        .then((data) => {
+          setContentList(data);
+        })
+        .catch((error) => {
+          console.error("Error reloading content:", error);
+          toast.error("Failed to reload content");
+        })
+        .finally(() => {
+          setLoading(false);
+        });
+    }
+    
+    // If we were editing a specific content, go back to the list
+    if (contentId) {
+      router.push("/admin/content");
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="container mx-auto py-10">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold">Content Management</h1>
+        <Button onClick={handleAddContent}>
+          <PlusCircle className="mr-2 h-4 w-4" /> Add Content
+        </Button>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      ) : !Array.isArray(contentList) || contentList.length === 0 ? (
+        <div className="text-center p-10 border rounded-md">
+          <p className="text-muted-foreground">No content found</p>
+          <Button onClick={handleAddContent} className="mt-4">
+            <PlusCircle className="mr-2 h-4 w-4" /> Add Content
+          </Button>
+        </div>
+      ) : (
+        <div className="border rounded-md">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Title</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Genres</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {contentList.map((item) => (
+                <TableRow key={item.id}>
+                  <TableCell className="font-medium">{item.title}</TableCell>
+                  <TableCell>
+                    <span className="capitalize">{item.type}</span>
+                  </TableCell>
+                  <TableCell>
+                    <span className="capitalize">{item.status}</span>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap gap-1">
+                      {Array.isArray(item.genres) && item.genres.slice(0, 3).map((genre: string, index: number) => (
+                        <span 
+                          key={index}
+                          className="px-2 py-1 text-xs bg-secondary rounded-full"
+                        >
+                          {genre}
+                        </span>
+                      ))}
+                      {Array.isArray(item.genres) && item.genres.length > 3 && (
+                        <span className="px-2 py-1 text-xs bg-secondary rounded-full">
+                          +{item.genres.length - 3}
+                        </span>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon">
+                          <span className="sr-only">Open menu</span>
+                          <svg
+                            width="15"
+                            height="15"
+                            viewBox="0 0 15 15"
+                            fill="none"
+                            xmlns="http://www.w3.org/2000/svg"
+                            className="h-4 w-4"
+                          >
+                            <path
+                              d="M3.625 7.5C3.625 8.12132 3.12132 8.625 2.5 8.625C1.87868 8.625 1.375 8.12132 1.375 7.5C1.375 6.87868 1.87868 6.375 2.5 6.375C3.12132 6.375 3.625 6.87868 3.625 7.5ZM8.625 7.5C8.625 8.12132 8.12132 8.625 7.5 8.625C6.87868 8.625 6.375 8.12132 6.375 7.5C6.375 6.87868 6.87868 6.375 7.5 6.375C8.12132 6.375 8.625 6.87868 8.625 7.5ZM13.625 7.5C13.625 8.12132 13.1213 8.625 12.5 8.625C11.8787 8.625 11.375 8.12132 11.375 7.5C11.375 6.87868 11.8787 6.375 12.5 6.375C13.1213 6.375 13.625 6.87868 13.625 7.5Z"
+                              fill="currentColor"
+                              fillRule="evenodd"
+                              clipRule="evenodd"
+                            ></path>
+                          </svg>
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => handleEditContent(item)}>
+                          <Pencil className="mr-2 h-4 w-4" /> Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem 
+                          className="text-destructive focus:text-destructive"
+                          onClick={() => handleDeleteClick(item.id)}
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" /> Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      <Dialog open={formOpen} onOpenChange={setFormOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editContent ? "Edit Content" : "Add Content"}</DialogTitle>
+            <DialogDescription>
+              {editContent 
+                ? "Update the content information in the form below."
+                : "Fill out the form below to add a new content to the database."}
+            </DialogDescription>
+          </DialogHeader>
+          <ContentForm 
+            initialData={editContent} 
+            onSuccess={() => handleFormClose(true)}
+            onCancel={() => handleFormClose(false)}
+          />
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete this content and all associated data like episodes or chapters.
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={handleDeleteConfirm}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+} 

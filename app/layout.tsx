@@ -1,10 +1,14 @@
 import type { Metadata } from 'next'
+import { Inter } from 'next/font/google'
 import './globals.css'
+import { SupabaseAuthProvider } from '@/components/supabase-auth-provider'
+import { Toaster } from 'sonner'
+
+const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'v0 App',
-  description: 'Created with v0',
-  generator: 'v0.dev',
+  title: 'Manganime',
+  description: 'Your ultimate anime and manga streaming platform',
 }
 
 export default function RootLayout({
@@ -14,7 +18,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body className={inter.className} suppressHydrationWarning>
+        <SupabaseAuthProvider>
+          {children}
+          <Toaster richColors position="top-right" theme="dark" />
+        </SupabaseAuthProvider>
+      </body>
     </html>
   )
 }

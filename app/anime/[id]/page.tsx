@@ -1,20 +1,32 @@
 "use client"
 
-import type React from "react"
-
-import { useState, useRef, useEffect } from "react"
+import React, { useState, useRef, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { motion, AnimatePresence } from "framer-motion"
-import { ArrowLeft, Calendar, Clock, Heart, Info, MoreHorizontal, Play, Plus, Star, Video, Users, BookOpen } from "lucide-react"
+import { 
+  ArrowLeft, 
+  Calendar, 
+  Clock, 
+  Heart, 
+  Info, 
+  MoreHorizontal, 
+  Play, 
+  Plus, 
+  Star, 
+  Video, 
+  Users, 
+  BookOpen, 
+  Download, 
+  ChevronRight
+} from "lucide-react"
 import { cn } from "@/lib/utils"
 import { ImageSkeleton } from "@/components/image-skeleton"
 import { VideoPlayer } from "@/components/video-player"
-import { CharacterCard } from "@/components/character-card"
+import { CharacterList } from "@/components/character-list"
 import { RelatedContent } from "@/components/related-content"
 import { RecommendedContent } from "@/components/recommended-content"
 import { getAnimeById, formatDate, formatStatus, formatAiringTime, getSeasonName, stripHtml, getAiringDay } from "@/lib/anilist"
 import { DetailViewSkeleton } from "@/components/ui/skeleton"
-import { CharacterList } from "@/components/character-list"
 
 // Animation variants
 const pageVariants = {
@@ -47,16 +59,39 @@ const itemVariants = {
 
 export default function AnimePage({ params }: { params: { id: string } }) {
   const router = useRouter()
-  const animeId = params.id
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [scrollPosition, setScrollPosition] = useState(0)
+  // Workaround for TypeScript errors with React.use()
+  // This satisfies the Next.js recommendation while keeping TypeScript happy
+  const unwrappedParams = React.use(params as any) as { id: string };
+  const animeId = unwrappedParams.id;
   const [isStreamingOpen, setIsStreamingOpen] = useState(false)
   const [selectedEpisode, setSelectedEpisode] = useState(0)
   const [inWatchlist, setInWatchlist] = useState(false)
   const [showUnwatched, setShowUnwatched] = useState(true)
-  const [showDownloaded, setShowDownloaded] = useState(false)
-  const [searchQuery, setSearchQuery] = useState("")
   const [isLoading, setIsLoading] = useState(true)
   const [animeData, setAnimeData] = useState<any>(null)
-  const searchInputRef = useRef<HTMLInputElement>(null)
+
+  // Handle scroll effect for background
+  useEffect(() => {
+    const handleScroll = () => {
+      if (scrollRef.current) {
+        const position = scrollRef.current.scrollTop
+        setScrollPosition(position)
+      }
+    }
+
+    const currentScrollRef = scrollRef.current
+    if (currentScrollRef) {
+      currentScrollRef.addEventListener('scroll', handleScroll, { passive: true })
+    }
+
+    return () => {
+      if (currentScrollRef) {
+        currentScrollRef.removeEventListener('scroll', handleScroll)
+      }
+    }
+  }, [])
 
   // Fetch anime data from AniList API
   useEffect(() => {
@@ -88,6 +123,10 @@ export default function AnimePage({ params }: { params: { id: string } }) {
     window.scrollTo({ top: 0, behavior: "smooth" })
   }
 
+  const toggleWatchlist = () => {
+    setInWatchlist(!inWatchlist);
+  }
+
   // Process data for UI if available
   const processedData = animeData ? {
     id: animeData.id,
@@ -106,9 +145,7 @@ export default function AnimePage({ params }: { params: { id: string } }) {
       airsOn: animeData.nextAiringEpisode ? getAiringDay(animeData.nextAiringEpisode.airingAt) : "N/A",
     },
     rating: animeData.averageScore / 10,
-    rankings: [
-      { title: `#${animeData.popularity} Most Popular Anime`, icon: "trending-up" },
-    ],
+    popularity: animeData.popularity,
     genres: animeData.genres,
     studio: animeData.studios.nodes[0]?.name || "Unknown",
     synopsis: stripHtml(animeData.description),
@@ -122,7 +159,7 @@ export default function AnimePage({ params }: { params: { id: string } }) {
         ? "Not yet aired" 
         : "Available",
       watched: false,
-    })).slice(0, 3),
+    })),
     characters: animeData.characters.nodes.map((character: any, index: number) => ({
       id: character.id,
       name: character.name.full,
@@ -145,10 +182,14 @@ export default function AnimePage({ params }: { params: { id: string } }) {
     })),
   } : null;
 
+  // Calculate gradient opacity based on scroll
+  const topGradientOpacity = Math.min(0.7, scrollPosition / 500)
+  const sideGradientOpacity = Math.min(0.6, 0.3 + (scrollPosition / 800))
+
   if (isLoading) {
     return (
       <div className="flex justify-center items-center min-h-screen bg-black">
-        <div className="w-12 h-12 rounded-full border-4 border-t-purple-500 border-r-purple-500 border-b-purple-300 border-l-purple-300 animate-spin"></div>
+        <div className="w-12 h-12 rounded-full border-4 border-t-yellow-500 border-r-yellow-500 border-b-yellow-300 border-l-yellow-300 animate-spin"></div>
       </div>
     );
   }
@@ -158,7 +199,7 @@ export default function AnimePage({ params }: { params: { id: string } }) {
       <div className="min-h-screen bg-black text-white flex justify-center items-center">
         <div className="text-center">
           <h1 className="text-2xl font-bold mb-4">Anime not found</h1>
-          <button onClick={() => router.back()} className="px-4 py-2 bg-purple-600 rounded-md">
+          <button onClick={() => router.back()} className="px-4 py-2 bg-yellow-500 rounded-md">
             Go Back
           </button>
         </div>
@@ -167,82 +208,90 @@ export default function AnimePage({ params }: { params: { id: string } }) {
   }
 
   return (
-    <motion.div 
-      className="min-h-screen bg-black text-white"
-      variants={pageVariants}
-      initial="initial"
-      animate="animate"
-      exit="exit"
-    >
+    <div className="flex min-h-screen bg-[#070707] text-white antialiased">
+      <motion.div 
+        ref={scrollRef}
+        className="flex-1 min-h-screen text-white relative overflow-y-auto overflow-x-hidden"
+        variants={pageVariants}
+        initial="initial"
+        animate="animate"
+        exit="exit"
+      >
       {/* Background image with gradient overlay */}
-      <AnimatePresence>
-        {!isLoading && (
-          <motion.div 
-            className="fixed inset-0 z-0"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.8 }}
-          >
-            <div className="absolute inset-0">
-              {/* Multiple gradient overlays from all sides */}
-              <div className="absolute inset-0 bg-gradient-to-b from-black via-black/80 to-transparent" /> {/* Top */}
-              <div className="absolute inset-0 bg-gradient-to-t from-black via-black/90 to-transparent" /> {/* Bottom - stronger */}
-              <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/50 to-transparent" /> {/* Left */}
-              <div className="absolute inset-0 bg-gradient-to-l from-black/80 via-black/50 to-transparent" /> {/* Right */}
-            </div>
-            <div
-              className="absolute inset-0 bg-cover bg-center opacity-30"
-              style={{ backgroundImage: `url(${processedData.bannerImage || processedData.coverImage})` }}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
+        <AnimatePresence>
+          {!isLoading && (
+            <motion.div 
+              className="fixed inset-0 z-0"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.8 }}
+            >
+              {/* Background image - higher quality with better cropping */}
+              <div
+                className="absolute inset-0 bg-cover bg-top"
+                style={{ 
+                  backgroundImage: `url(${processedData.bannerImage || processedData.coverImage})`,
+                  filter: 'brightness(0.9) contrast(1.1)'
+                }}
+              />
+              
+              {/* Dynamic gradient overlays */}
+              <div className="absolute inset-0 pointer-events-none">
+                {/* Top gradient - lighter initially, gets darker on scroll */}
+                <div 
+                  className="absolute inset-0 bg-gradient-to-b from-[#070707]/30 via-[#070707]/60 to-[#070707]"
+                  style={{ opacity: topGradientOpacity }}
+                />
+                
+                {/* Always present bottom and side gradients */}
+                <div className="absolute inset-0 bg-gradient-to-t from-[#070707] via-[#070707]/90 to-transparent" />
+                <div 
+                  className="absolute inset-0 bg-gradient-to-r from-[#070707]/80 via-[#070707]/40 to-transparent"
+                  style={{ opacity: sideGradientOpacity }}
+                />
+                <div 
+                  className="absolute inset-0 bg-gradient-to-l from-[#070707]/80 via-[#070707]/40 to-transparent"
+                  style={{ opacity: sideGradientOpacity }}
+                />
+                
+                {/* Left side vertical gradient - new */}
+                <div className="absolute left-0 top-0 h-full w-48 bg-gradient-to-r from-[#070707] via-[#070707]/50 to-transparent z-10" />
+                
+                {/* Subtle texture overlay for more depth */}
+                <div className="absolute inset-0 opacity-30" 
+                  style={{ 
+                    backgroundImage: 'url("/noise-texture.png")',
+                    backgroundRepeat: 'repeat',
+                    mixBlendMode: 'overlay'
+                  }} 
+                />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
       {/* Content */}
-      <div className="relative z-10 container mx-auto px-4 py-6">
-        {/* Back button */}
-        <motion.button 
-          onClick={handleBackClick} 
-          className="flex items-center gap-2 text-gray-400 hover:text-white mb-4"
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 0.2 }}
-          whileHover={{ x: -5 }}
-          whileTap={{ scale: 0.95 }}
-        >
-          <ArrowLeft className="h-5 w-5" />
-          <span>{isStreamingOpen ? "Close online streaming" : "Back"}</span>
-        </motion.button>
-
-        <AnimatePresence mode="wait">
-          {isLoading ? (
+        <div className="relative z-10 container mx-auto px-4 py-6 pb-20 ml-[78px]">
+          {isStreamingOpen ? (
             <motion.div
-              key="loading"
+              key="streaming-section"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.3 }}
             >
-              <DetailViewSkeleton />
-            </motion.div>
-          ) : isStreamingOpen ? (
-            <motion.div
-              key="streaming"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              transition={{ duration: 0.3 }}
-              className="mb-8"
-            >
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-xl font-bold">
-                    Episode {processedData.episodeList[selectedEpisode].number} in {processedData.nextEpisode.airsIn}
-                  </h2>
-                  <span className="text-gray-400">{processedData.nextEpisode.airsOn}</span>
-                </div>
+              <div className="flex items-center justify-between mb-4">
+                <motion.button 
+                  onClick={handleBackClick} 
+                  className="flex items-center gap-2 text-gray-400 hover:text-white"
+                  whileHover={{ x: -5 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <ArrowLeft className="h-5 w-5" />
+                  <span>Close online streaming</span>
+                </motion.button>
+                <div className="text-gray-400">Episode {processedData.episodeList[selectedEpisode].number} of {processedData.episodes}</div>
               </div>
-
+              
               <VideoPlayer
                 episode={processedData.episodeList[selectedEpisode]}
                 onClose={() => setIsStreamingOpen(false)}
@@ -251,154 +300,303 @@ export default function AnimePage({ params }: { params: { id: string } }) {
               />
             </motion.div>
           ) : (
-            <motion.div
-              key="details"
-              variants={sectionVariants}
-              initial="initial"
-              animate="animate"
-              exit={{ opacity: 0 }}
-            >
-              {/* Anime header */}
-              <motion.div 
-                className="flex flex-col md:flex-row gap-6 mb-8"
-                variants={itemVariants}
+            <>
+              {/* Back button */}
+              <motion.button 
+                onClick={handleBackClick} 
+                className="flex items-center gap-2 text-gray-400 hover:text-white mb-6 mt-2"
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.2 }}
+                whileHover={{ x: -5 }}
+                whileTap={{ scale: 0.95 }}
               >
-                {/* Cover image */}
-                <motion.div 
-                  className="w-full md:w-64 flex-shrink-0"
-                  whileHover={{ scale: 1.03 }}
-                  transition={{ duration: 0.3 }}
-                >
-                  <ImageSkeleton
-                    src={processedData.coverImage || "/placeholder.svg"}
-                    alt={processedData.title}
-                    className="w-full aspect-[2/3] rounded-lg overflow-hidden"
-                  />
-                </motion.div>
+                <ArrowLeft className="h-5 w-5" />
+                <span>Back</span>
+              </motion.button>
 
-                {/* Details */}
-                <div className="flex-1">
-                  <motion.h1 
-                    className="text-3xl font-bold mb-1"
-                    variants={itemVariants}
+              <AnimatePresence mode="wait">
+                {isLoading ? (
+                  <motion.div
+                    key="loading"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.3 }}
                   >
-                    {processedData.title}
-                  </motion.h1>
-                  
-                  {processedData.subtitle && (
-                    <motion.h2 
-                      className="text-xl text-gray-400 mb-4"
-                      variants={itemVariants}
-                    >
-                      {processedData.subtitle}
-                    </motion.h2>
-                  )}
+                    <DetailViewSkeleton />
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="details"
+                    variants={sectionVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit={{ opacity: 0 }}
+                  >
+                    {/* Title section */}
+                    <motion.div className="mb-8 pl-[80px]" variants={itemVariants}>
+                      <motion.h1 
+                        className="text-4xl font-bold mb-2 tracking-tight"
+                        variants={itemVariants}
+                      >
+                        {processedData.title}
+                      </motion.h1>
+                      
+                      {processedData.subtitle && (
+                        <motion.h2 
+                          className="text-xl text-gray-400 mb-2"
+                          variants={itemVariants}
+                        >
+                          {processedData.subtitle}
+                        </motion.h2>
+                      )}
+                    </motion.div>
 
-                  <motion.div 
-                    className="flex items-center gap-4 mb-4"
-                    variants={itemVariants}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Calendar className="h-4 w-4 text-gray-400" />
-                      <span>{processedData.releaseDate}</span>
-                    </div>
-                    <div className="px-2 py-1 bg-purple-600/20 text-purple-400 rounded-full text-sm">
-                      {processedData.status}
+                    {/* Main content grid */}
+                    <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+                      {/* Left column - Cover and metadata */}
+                      <motion.div className="lg:col-span-1" variants={itemVariants}>
+                        {/* Cover image with actions */}
+                        <div className="relative mb-4">
+                          <motion.div 
+                            className="rounded-lg overflow-hidden shadow-lg"
+                            whileHover={{ scale: 1.02 }}
+                            transition={{ duration: 0.3 }}
+                          >
+                            <ImageSkeleton
+                              src={processedData.coverImage || "/placeholder.svg"}
+                              alt={processedData.title}
+                              className="w-full aspect-[2/3] object-cover"
+                            />
+                          </motion.div>
+                          
+                          {/* Actions overlay */}
+                          <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/90 to-transparent">
+                            <div className="flex justify-between">
+                              <motion.button
+                                className={`p-2 rounded-full ${inWatchlist ? 'bg-yellow-500 text-black' : 'bg-white/10 text-white hover:bg-white/20'}`}
+                                onClick={toggleWatchlist}
+                                whileHover={{ scale: 1.1 }}
+                                whileTap={{ scale: 0.9 }}
+                              >
+                                {inWatchlist ? <Check className="h-5 w-5" /> : <Plus className="h-5 w-5" />}
+                              </motion.button>
+                              <motion.button
+                                className="p-2 rounded-full bg-white/10 text-white hover:bg-white/20"
+                                whileHover={{ scale: 1.1 }}
+                                whileTap={{ scale: 0.9 }}
+                              >
+                                <MoreHorizontal className="h-5 w-5" />
+                              </motion.button>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Metadata */}
+                        <div className="bg-black/30 backdrop-blur-sm rounded-lg p-4 border border-white/5">
+                          <div className="flex items-center gap-2 mb-3">
+                            <div className="flex items-center gap-1">
+                              <Heart className="h-4 w-4 text-green-500" />
+                              <span className="font-medium">{processedData.rating.toFixed(1)}</span>
+                            </div>
+                            <div className="h-4 w-px bg-gray-700"></div>
+                            <div className="text-sm text-gray-400">
+                              #{processedData.popularity} Most Popular
+                            </div>
+                          </div>
+
+                          <div className="space-y-3 text-sm">
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">Format</span>
+                              <span>TV</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">Episodes</span>
+                              <span>{processedData.episodes}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">Status</span>
+                              <span className="px-2 py-0.5 bg-yellow-500/20 text-yellow-400 rounded-full text-xs">
+                                {processedData.status}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">Season</span>
+                              <span>{processedData.releaseDate}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">Studio</span>
+                              <span>{processedData.studio}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">Genres</span>
+                              <div className="text-right">{processedData.genres.slice(0, 3).join(", ")}</div>
+                            </div>
+                          </div>
+
+                          {processedData.nextEpisode.number > 0 && (
+                            <div className="mt-4 border-t border-white/10 pt-4">
+                              <div className="text-sm text-gray-400 mb-2">Next episode</div>
+                              <div className="flex justify-between items-center">
+                                <div>
+                                  <div className="font-medium">Episode {processedData.nextEpisode.number}</div>
+                                  <div className="text-sm text-gray-400">{processedData.nextEpisode.airsOn}</div>
+                                </div>
+                                <div className="text-yellow-500 text-sm font-medium">
+                                  in {processedData.nextEpisode.airsIn}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </motion.div>
+
+                      {/* Right column - Main content */}
+                      <motion.div className="lg:col-span-3 space-y-8" variants={itemVariants}>
+                        {/* Synopsis */}
+                        <motion.div variants={itemVariants}>
+                          <h2 className="text-xl font-bold mb-3 flex items-center">
+                            <Info className="h-5 w-5 mr-2 text-yellow-500" />
+                            Synopsis
+                          </h2>
+                          <p className="text-gray-300 leading-relaxed">
+                            {processedData.synopsis}
+                          </p>
+                        </motion.div>
+
+                        {/* Episodes */}
+                        <motion.div variants={itemVariants}>
+                          <div className="flex items-center justify-between mb-4">
+                            <h2 className="text-xl font-bold flex items-center">
+                              <Video className="h-5 w-5 mr-2 text-yellow-500" />
+                              Episodes
+                            </h2>
+                            <motion.button
+                              className="px-4 py-1.5 bg-yellow-500 text-black rounded-md flex items-center gap-2 font-medium"
+                              onClick={() => handleStreamingClick(0)}
+                              whileHover={{ scale: 1.05 }}
+                              whileTap={{ scale: 0.95 }}
+                            >
+                              <Play className="h-4 w-4" />
+                              Watch now
+                            </motion.button>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                            {processedData.episodeList.map((episode: any, index: number) => (
+                              <motion.div
+                                key={episode.number}
+                                className="relative group rounded-lg overflow-hidden border border-white/5 bg-black/20 backdrop-blur-sm"
+                                whileHover={{ y: -5 }}
+                                onClick={() => episode.aired === "Available" ? handleStreamingClick(index) : {}}
+                              >
+                                <div className="relative aspect-video">
+                                  <div className="absolute inset-0 flex items-center justify-center z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <div className="h-12 w-12 rounded-full bg-yellow-500 flex items-center justify-center">
+                                      <Play className="h-6 w-6 text-black" />
+                                    </div>
+                                  </div>
+                                  
+                                  <div className="absolute inset-0 bg-gradient-to-t from-black to-transparent group-hover:opacity-80 transition-opacity z-0"></div>
+                                  
+                                  <ImageSkeleton
+                                    src={episode.thumbnail}
+                                    alt={`Episode ${episode.number}`}
+                                    className="w-full h-full object-cover brightness-75 group-hover:brightness-100 transition-all"
+                                  />
+                                  
+                                  {episode.aired !== "Available" && (
+                                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-20">
+                                      <div className="px-3 py-1 bg-yellow-500/20 text-yellow-400 rounded-full text-sm">
+                                        {episode.aired}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                                
+                                <div className="p-3">
+                                  <div className="flex justify-between items-center mb-1">
+                                    <div className="font-bold">Episode {episode.number}</div>
+                                    <div className="flex items-center gap-1">
+                                      {episode.watched && <Check className="h-4 w-4 text-green-500" />}
+                                      {episode.aired === "Available" && (
+                                        <motion.button
+                                          className="p-1 rounded-full bg-white/10 hover:bg-white/20"
+                                          whileHover={{ scale: 1.1 }}
+                                          whileTap={{ scale: 0.9 }}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            // Download logic would go here
+                                          }}
+                                        >
+                                          <Download className="h-3 w-3" />
+                                        </motion.button>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="text-sm text-gray-400 truncate">{episode.title}</div>
+                                </div>
+                              </motion.div>
+                            ))}
+                          </div>
+                          
+                          {processedData.episodeList.length < processedData.episodes && (
+                            <div className="flex justify-center mt-4">
+                              <motion.button
+                                className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-md flex items-center gap-2"
+                                whileHover={{ x: 5 }}
+                                whileTap={{ scale: 0.95 }}
+                              >
+                                View all episodes
+                                <ChevronRight className="h-4 w-4" />
+                              </motion.button>
+                            </div>
+                          )}
+                        </motion.div>
+
+                        {/* Characters */}
+                        {processedData.characters.length > 0 && (
+                          <motion.div variants={itemVariants}>
+                            <h2 className="text-xl font-bold mb-4 flex items-center">
+                              <Users className="h-5 w-5 mr-2 text-yellow-500" />
+                              Characters
+                            </h2>
+                            <CharacterList characters={processedData.characters} />
+                          </motion.div>
+                        )}
+
+                        {/* Related anime */}
+                        {processedData.relations.length > 0 && (
+                          <motion.div variants={itemVariants}>
+                            <h2 className="text-xl font-bold mb-4 flex items-center">
+                              <BookOpen className="h-5 w-5 mr-2 text-yellow-500" />
+                              Related anime
+                            </h2>
+                            <RelatedContent items={processedData.relations} />
+                          </motion.div>
+                        )}
+
+                        {/* Recommendations */}
+                        {processedData.recommendations.length > 0 && (
+                          <motion.div variants={itemVariants}>
+                            <h2 className="text-xl font-bold mb-4 flex items-center">
+                              <Star className="h-5 w-5 mr-2 text-yellow-500" />
+                              You might also like
+                            </h2>
+                            <RecommendedContent items={processedData.recommendations} />
+                          </motion.div>
+                        )}
+                      </motion.div>
                     </div>
                   </motion.div>
-
-                  <motion.div 
-                    className="grid grid-cols-2 gap-4 mb-4"
-                    variants={itemVariants}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Star className="h-4 w-4 text-yellow-400" />
-                      <span>{processedData.rating ? `${processedData.rating.toFixed(1)}/10` : "No rating"}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Clock className="h-4 w-4 text-gray-400" />
-                      <span>{processedData.episodes} episodes</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <BookOpen className="h-4 w-4 text-gray-400" />
-                      <span>{processedData.studio}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Users className="h-4 w-4 text-gray-400" />
-                      <span>{processedData.genres.join(", ")}</span>
-                    </div>
-                  </motion.div>
-
-                  <motion.p 
-                    className="text-gray-300 mb-6"
-                    variants={itemVariants}
-                  >
-                    {processedData.synopsis}
-                  </motion.p>
-
-                  <motion.div variants={itemVariants}>
-                    <motion.button
-                      className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-md flex items-center gap-2"
-                      onClick={() => setIsStreamingOpen(true)}
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                    >
-                      <Play className="h-4 w-4" />
-                      Watch now
-                    </motion.button>
-                  </motion.div>
-                </div>
-              </motion.div>
-
-              {/* Characters */}
-              <motion.section 
-                className="mb-8"
-                variants={sectionVariants}
-              >
-                <motion.h2 
-                  className="text-2xl font-bold mb-4"
-                  variants={itemVariants}
-                >
-                  Characters
-                </motion.h2>
-                <CharacterList characters={processedData.characters} />
-              </motion.section>
-
-              {/* Related anime */}
-              {processedData.relations.length > 0 && (
-                <motion.section 
-                  className="mb-8"
-                  variants={sectionVariants}
-                >
-                  <motion.h2 
-                    className="text-2xl font-bold mb-4"
-                    variants={itemVariants}
-                  >
-                    Related anime
-                  </motion.h2>
-                  <RelatedContent items={processedData.relations} />
-                </motion.section>
-              )}
-
-              {/* Recommendations */}
-              {processedData.recommendations.length > 0 && (
-                <motion.section
-                  variants={sectionVariants}
-                >
-                  <motion.h2 
-                    className="text-2xl font-bold mb-4"
-                    variants={itemVariants}
-                  >
-                    You might also like
-                  </motion.h2>
-                  <RecommendedContent items={processedData.recommendations} />
-                </motion.section>
-              )}
-            </motion.div>
+                )}
+              </AnimatePresence>
+            </>
           )}
-        </AnimatePresence>
-      </div>
-    </motion.div>
+        </div>
+      </motion.div>
+    </div>
   )
 }
 

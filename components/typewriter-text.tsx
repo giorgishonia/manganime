@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { motion, AnimatePresence } from "framer-motion"
+import { motion as m, AnimatePresence } from "framer-motion"
 
 interface TypewriterTextProps {
   text: string
@@ -37,12 +37,12 @@ export function TypewriterText({ text, speed = 25 }: TypewriterTextProps) {
   }, [currentIndex, text, speed])
 
   return (
-    <motion.span
+    <m.span
       initial={{ opacity: 0.9 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.3 }}
     >
       {displayText}
-    </motion.span>
+    </m.span>
   )
 }

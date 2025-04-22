@@ -1,8 +1,11 @@
+"use client"
+
 import { useEffect, useState, useRef } from "react"
 import { useRouter } from "next/navigation"
-import { motion, AnimatePresence } from "framer-motion"
+import { motion as m, AnimatePresence } from "framer-motion"
 import { getAnimeSchedule, formatAiringTime, getAiringDay } from "@/lib/anilist"
 import { ListItemSkeleton } from "@/components/ui/skeleton"
+import { Play } from "lucide-react"
 
 // Helper function for drag scrolling
 function setupDragScroll(element: HTMLDivElement | null) {
@@ -73,27 +76,39 @@ const containerVariants = {
   hidden: { opacity: 0 },
   visible: { 
     opacity: 1,
-    transition: { 
-      staggerChildren: 0.05 
-    } 
+    transition: {
+      staggerChildren: 0.05
+    }
   }
 };
 
-const itemVariants = {
-  hidden: { opacity: 0, y: 20 },
+const sectionVariants = {
+  hidden: { opacity: 0, y: 30 },
   visible: { 
     opacity: 1, 
     y: 0,
-    transition: { type: "spring", stiffness: 300, damping: 24 }
+    transition: { 
+      type: "spring", 
+      stiffness: 300, 
+      damping: 25,
+      when: "beforeChildren",
+      staggerChildren: 0.05
+    }
   }
 };
 
 const cardHoverVariants = {
-  initial: { scale: 1 },
+  initial: { 
+    opacity: 0.9, 
+    y: 10, 
+    scale: 0.98 
+  },
   hover: { 
+    opacity: 1, 
+    y: -3, 
     scale: 1.02,
-    y: -5,
-    transition: { duration: 0.3, ease: "easeOut" }
+    boxShadow: "0 14px 28px rgba(0,0,0,0.25)",
+    transition: { duration: 0.2 }
   }
 };
 
@@ -207,128 +222,122 @@ export function ScheduleView() {
 
   if (isLoading) {
     return (
-      <motion.div 
+      <m.div 
         variants={containerVariants}
         initial="hidden"
         animate="visible"
         className="space-y-8"
       >
-        <motion.h1 
-          variants={itemVariants}
+        <m.h1 
+          variants={sectionVariants}
           className="text-3xl font-bold text-center mb-8"
         >
           Airing schedule
-        </motion.h1>
+        </m.h1>
         
         {[1, 2, 3].map((day) => (
-          <motion.section key={day} className="space-y-4" variants={itemVariants}>
-            <motion.div className="flex items-center">
-              <motion.div className="w-32 h-6 bg-gray-800 rounded animate-pulse"></motion.div>
-            </motion.div>
-            <motion.div className="flex overflow-x-hidden space-x-4">
+          <m.section key={day} className="space-y-4" variants={sectionVariants}>
+            <m.div className="flex items-center">
+              <m.div className="w-32 h-6 bg-gray-800 rounded animate-pulse"></m.div>
+            </m.div>
+            <m.div className="flex overflow-x-hidden space-x-4">
               {[1, 2, 3, 4, 5].map((item) => (
                 <ListItemSkeleton key={`day-${day}-item-${item}`} />
               ))}
-            </motion.div>
-          </motion.section>
+            </m.div>
+          </m.section>
         ))}
-      </motion.div>
+      </m.div>
     )
   }
 
   if (Object.keys(groupedSchedule).length === 0) {
     return (
-      <motion.div 
+      <m.div 
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.5 }}
         className="text-center py-8"
       >
         <p>No schedule data available</p>
-      </motion.div>
+      </m.div>
     )
   }
 
   return (
-    <motion.div 
+    <m.div 
+      className="space-y-8"
       variants={containerVariants}
       initial="hidden"
       animate="visible"
-      className="space-y-8"
     >
-      <motion.h1 
-        variants={itemVariants}
-        className="text-3xl font-bold text-center mb-8"
-      >
-        Airing schedule
-      </motion.h1>
-
-      <AnimatePresence>
-        {Object.entries(groupedSchedule).map(([date, schedules], dayIndex) => {
-          return (
-            <motion.section 
-              key={date} 
-              className="space-y-4"
-              variants={itemVariants}
-              layout
-            >
-              <motion.h2 
-                className="text-xl font-semibold flex items-center"
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.1 * dayIndex }}
+      <h1 className="text-3xl font-bold mb-6 text-glow">Airing Schedule</h1>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <AnimatePresence>
+          {Object.entries(groupedSchedule).map(([date, schedules], dayIndex) => {
+            return (
+              <m.section 
+                key={date} 
+                className="relative bg-black/20 backdrop-blur-sm rounded-xl p-4 border border-white/5"
+                variants={sectionVariants}
               >
-                {date}
-                {isToday(schedules[0].airingAt) && (
-                  <motion.span 
-                    className="ml-2 text-sm bg-gray-800 px-2 py-0.5 rounded"
-                    initial={{ opacity: 0, scale: 0.8 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: 0.1 * dayIndex + 0.2 }}
-                  >
-                    Today
-                  </motion.span>
-                )}
-              </motion.h2>
+                <div className="flex items-center mb-5 gap-3">
+                  <div className={`${isToday(schedules[0].airingAt) ? 'bg-indigo-600' : 'bg-white/10'} px-3 py-1 rounded-full text-sm font-medium`}>
+                    {getAiringDay(schedules[0].airingAt)}
+            </div>
+                  <h2 className="text-xl font-bold">
+                    {formatFullDate(schedules[0].airingAt).replace(getAiringDay(schedules[0].airingAt) + ',', '')}
+                  </h2>
+                  {isToday(schedules[0].airingAt) && (
+                    <span className="bg-indigo-600/20 text-indigo-400 text-xs px-2 py-0.5 rounded-full">
+                      Today
+                    </span>
+                  )}
+          </div>
 
-              <div 
-                ref={setScheduleRef(date)}
-                className="flex overflow-x-auto pb-4 space-x-4 cursor-grab no-scrollbar"
-              >
-                {schedules.map((schedule, idx) => (
-                  <motion.div 
-                    key={schedule.id} 
-                    className="flex items-center gap-3 bg-gray-800 rounded-md p-3 hover:bg-gray-700 transition-colors cursor-pointer flex-none w-[280px]"
-                    onClick={() => handleAnimeClick(schedule.media.id)}
-                    variants={cardHoverVariants}
-                    initial="initial"
-                    whileHover="hover"
-                    animate={{ 
-                      opacity: 1, 
-                      x: 0, 
-                      transition: { delay: 0.03 * idx }
-                    }}
-                  >
-                    <img
-                      src={schedule.media.coverImage.medium || "/placeholder.svg"}
-                      alt={schedule.media.title.english || schedule.media.title.romaji}
-                      className="w-16 h-16 object-cover rounded"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-medium text-sm line-clamp-2">
-                        {schedule.media.title.english || schedule.media.title.romaji}
-                      </h3>
-                      <p className="text-xs text-gray-400 mt-1">
-                        Ep {schedule.episode} airing at {formatTime(schedule.airingAt)}
-                      </p>
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-            </motion.section>
-          )
-        })}
-      </AnimatePresence>
-    </motion.div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {schedules.map((schedule, idx) => (
+                    <m.div 
+                      key={schedule.id} 
+                      className="flex items-center gap-3 backdrop-blur-sm bg-white/5 border border-white/10 rounded-lg p-3 hover:bg-white/10 transition-colors cursor-pointer card-shadow transform hover:-translate-y-1 transition-transform duration-300"
+                      onClick={() => handleAnimeClick(schedule.media.id)}
+                      variants={cardHoverVariants}
+                      initial="initial"
+                      whileHover="hover"
+                      animate={{ 
+                        opacity: 1, 
+                        x: 0, 
+                        transition: { delay: 0.03 * idx }
+                      }}
+                    >
+                      <img
+                        src={schedule.media.coverImage.medium || "/placeholder.svg"}
+                        alt={schedule.media.title.english || schedule.media.title.romaji}
+                        className="w-12 h-12 object-cover rounded-md border border-white/10"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-medium text-sm line-clamp-1 group-hover:text-white transition-colors">
+                          {schedule.media.title.english || schedule.media.title.romaji}
+                        </h3>
+                        <div className="flex items-center mt-1 gap-2">
+                          <span className="bg-indigo-500/20 text-indigo-300 text-xs px-2 py-0.5 rounded-full flex items-center gap-1">
+                            <Play className="h-3 w-3" fill="currentColor" />
+                            Ep {schedule.episode}
+                          </span>
+                          <span className="text-xs text-gray-400">
+                            {formatTime(schedule.airingAt)}
+                          </span>
+            </div>
+          </div>
+                    </m.div>
+                  ))}
+        </div>
+              </m.section>
+            )
+          })}
+        </AnimatePresence>
+    </div>
+    </m.div>
   )
 }

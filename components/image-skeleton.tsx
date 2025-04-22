@@ -18,9 +18,9 @@ export function ImageSkeleton({ src, alt, className, ...props }: ImageSkeletonPr
   }
 
   const handleError = () => {
-    setIsLoading(false)
-    setError(true)
-  }
+      setIsLoading(false)
+      setError(true)
+    }
 
   return (
     <div className={cn("relative", className)}>

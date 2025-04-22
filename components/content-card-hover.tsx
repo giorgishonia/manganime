@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { Play, Plus, X } from "lucide-react"
-import { motion, AnimatePresence } from "framer-motion"
+import { motion as m, AnimatePresence } from "framer-motion"
 
 interface ContentCardHoverProps {
   id: number
@@ -10,15 +10,16 @@ interface ContentCardHoverProps {
   contentType?: "ANIME" | "MANGA" // Add contentType prop
 }
 
-// Sample data - in a real app this would come from an API
-const getContentDetails = (id: number, contentType: "ANIME" | "MANGA" = "ANIME") => {
+// Mock function to get content details
+function getContentDetails(id: number, type: string) {
   return {
     id,
-    title: id === 1 ? "Make Heroine ga Oosugiru! 2nd Season" : "Falling for Her Secret Side",
-    type: contentType, // Use the provided contentType
-    year: id === 1 ? "" : "2022",
-    image: id === 1 ? "/placeholder.svg?height=300&width=200" : "/placeholder.svg?height=300&width=200",
-    rating: id === 1 ? undefined : 7.2,
+    title: `${type === "ANIME" ? "Anime" : "Manga"} Title ${id}`,
+    description: "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+    image: `/placeholder.svg?seed=${id}`,
+    rating: (Math.random() * 2 + 8).toFixed(1),
+    type,
+    year: "2023"
   }
 }
 
@@ -34,7 +35,7 @@ export function ContentCardHover({ id, onClose, contentType = "ANIME" }: Content
 
   return (
     <AnimatePresence>
-      <motion.div
+      <m.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 10 }}
@@ -85,7 +86,7 @@ export function ContentCardHover({ id, onClose, contentType = "ANIME" }: Content
             </button>
           </div>
         </div>
-      </motion.div>
+      </m.div>
     </AnimatePresence>
   )
 }

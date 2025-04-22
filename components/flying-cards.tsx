@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef } from "react"
-import { motion, useAnimation, useInView } from "framer-motion"
+import { motion as m, useAnimation, useInView } from "framer-motion"
 
 // Sample card data with both anime and manga
 const cardData = [
@@ -106,7 +106,7 @@ export function FlyingCards() {
         const zIndex = Math.floor(Math.random() * 10)
 
         return (
-          <motion.div
+          <m.div
             key={index}
             className="absolute"
             style={{
@@ -167,7 +167,7 @@ export function FlyingCards() {
                 </div>
               </div>
             </div>
-          </motion.div>
+          </m.div>
         )
       })}
     </div>
