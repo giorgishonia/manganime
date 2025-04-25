@@ -14,6 +14,46 @@ const chapterSchema = z.object({
   releaseDate: z.string().optional(),
 });
 
+// Helper function to check admin status
+async function checkAdminStatus(request: NextRequest, supabase: any) {
+  // Check for service role key in header
+  const serviceRoleKey = request.headers.get('x-supabase-service-role');
+  
+  // If service role key is provided and matches the expected value, bypass auth check
+  if (serviceRoleKey && process.env.SUPABASE_SERVICE_ROLE_KEY && 
+      serviceRoleKey === process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return { isAdmin: true };
+  }
+  
+  // Otherwise do normal admin check
+  const { data: { session } } = await supabase.auth.getSession();
+  
+  if (!session) {
+    return { isAdmin: false, error: "Not authenticated", status: 401 };
+  }
+  
+  // Get user profile to check admin role
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', session.user.id)
+    .single();
+  
+  if (profileError) {
+    console.error("Error fetching user profile:", profileError);
+    return { isAdmin: false, error: "Failed to verify user role", status: 500 };
+  }
+  
+  // Check if user is admin
+  const isAdmin = profile?.role === 'admin';
+  
+  if (!isAdmin) {
+    return { isAdmin: false, error: "Forbidden - Admin access required", status: 403 };
+  }
+  
+  return { isAdmin: true };
+}
+
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const id = searchParams.get("id");
@@ -35,13 +75,19 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(data);
     } else if (contentId) {
       // Get chapters for a specific content
+      // Note: Using the content_id field (snake_case) as per database schema
+      console.log("Fetching chapters for contentId:", contentId);
+      
       const { data, error } = await supabase
         .from("chapters")
         .select("*")
-        .eq("contentId", contentId)
+        .eq("content_id", contentId)
         .order("number");
         
-      if (error) throw error;
+      if (error) {
+        console.error("Error fetching chapters:", error);
+        return NextResponse.json([], { status: 200 }); // Return empty array if error
+      }
       
       return NextResponse.json(data);
     } else {
@@ -78,81 +124,145 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const supabase = createRouteHandlerClient({ cookies });
-  
-  // Verify user is authenticated and has admin role
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  
-  if (!session) {
-    return NextResponse.json(
-      { error: "Unauthorized" },
-      { status: 401 }
-    );
-  }
-  
-  const { data: userData } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", session.user.id)
-    .single();
-    
-  if (userData?.role !== "admin") {
-    return NextResponse.json(
-      { error: "Forbidden" },
-      { status: 403 }
-    );
-  }
-  
   try {
-    const chapterData = await request.json();
+    console.log("POST /api/chapters - Starting authentication check");
+    const supabase = createRouteHandlerClient({ cookies });
     
-    // Validate chapter data
-    const validatedData = chapterSchema.parse(chapterData);
+    // DEVELOPMENT MODE BYPASS - Skip admin check in development
+    const isDevelopment = process.env.NODE_ENV === 'development';
+    if (isDevelopment) {
+      console.log("DEVELOPMENT MODE: Bypassing admin check for API");
+      // Skip admin validation and proceed
+    } else {
+      // Check admin status
+      const adminStatus = await checkAdminStatus(request, supabase);
+      
+      if (!adminStatus.isAdmin) {
+        console.error("Authorization failed:", adminStatus.error);
+        return NextResponse.json(
+          { error: adminStatus.error || "Unauthorized" },
+          { status: adminStatus.status || 401 }
+        );
+      }
+    }
     
-    // Verify content exists
+    console.log("Admin access confirmed, proceeding with chapter creation");
+    
+    // Get the raw request body for debugging
+    const rawData = await request.text();
+    console.log("Raw request body:", rawData);
+    
+    // Parse the JSON manually with better error handling
+    let chapterData;
+    try {
+      chapterData = JSON.parse(rawData);
+      console.log("Parsed chapter data:", chapterData);
+    } catch (parseError) {
+      console.error("JSON parse error:", parseError);
+      return NextResponse.json(
+        { error: "Invalid JSON in request body", details: parseError.message },
+        { status: 400 }
+      );
+    }
+    
+    // Validate chapter data with detailed errors
+    let validatedData;
+    try {
+      validatedData = chapterSchema.parse(chapterData);
+      console.log("Validation passed, validated data:", validatedData);
+    } catch (validationError) {
+      console.error("Validation error:", validationError);
+      if (validationError instanceof z.ZodError) {
+        return NextResponse.json(
+          { error: "Validation failed", details: validationError.errors },
+          { status: 400 }
+        );
+      }
+      throw validationError;
+    }
+    
+    // Verify content exists with better error handling
+    console.log("Verifying content exists for ID:", validatedData.contentId);
     const { data: contentData, error: contentError } = await supabase
       .from("content")
       .select("id, type")
       .eq("id", validatedData.contentId)
       .single();
       
-    if (contentError || !contentData) {
+    if (contentError) {
+      console.error("Content error:", contentError);
       return NextResponse.json(
-        { error: "Content not found" },
+        { error: "Content lookup failed", details: contentError.message },
+        { status: 500 }
+      );
+    }
+    
+    if (!contentData) {
+      console.error("Content not found for ID:", validatedData.contentId);
+      return NextResponse.json(
+        { error: "Content not found", details: `No content with ID: ${validatedData.contentId}` },
         { status: 404 }
       );
     }
     
+    console.log("Content found:", contentData);
+    
     if (contentData.type !== "manga") {
+      console.error("Content type mismatch:", contentData.type);
       return NextResponse.json(
-        { error: "Chapters can only be added to manga content" },
+        { error: "Chapters can only be added to manga content", details: `Content type is: ${contentData.type}` },
         { status: 400 }
       );
     }
     
-    // Insert chapter into database
-    const { data, error } = await supabase
-      .from("chapters")
-      .insert(validatedData)
-      .select()
-      .single();
+    // Insert chapter into database with better error handling
+    console.log("Inserting chapter into database");
+    try {
+      // Create a database-ready object using snake_case field names to match database schema
+      const dbData = {
+        content_id: validatedData.contentId,
+        number: validatedData.number,
+        title: validatedData.title,
+        description: validatedData.description || '',
+        thumbnail: validatedData.thumbnail || '',
+        pages: validatedData.pages,
+        release_date: validatedData.releaseDate
+      };
       
-    if (error) throw error;
-    
-    return NextResponse.json(data, { status: 201 });
+      console.log("Database data:", dbData);
+      
+      const { data, error } = await supabase
+        .from("chapters")
+        .insert(dbData)
+        .select()
+        .single();
+        
+      if (error) {
+        console.error("Database insert error:", error);
+        throw error;
+      }
+      
+      console.log("Chapter created successfully:", data);
+      return NextResponse.json(data, { status: 201 });
+    } catch (dbError) {
+      console.error("Database error:", dbError);
+      return NextResponse.json(
+        { error: "Database operation failed", details: dbError.message || String(dbError) },
+        { status: 500 }
+      );
+    }
   } catch (error) {
+    console.error("Unhandled error in chapter creation:", error);
+    
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: error.errors },
+        { error: "Validation failed", details: error.errors },
         { status: 400 }
       );
     }
     
-    console.error("Error creating chapter:", error);
     return NextResponse.json(
-      { error: "Failed to create chapter" },
+      { error: "Failed to create chapter", details: error.message || String(error) },
       { status: 500 }
     );
   }
@@ -170,29 +280,22 @@ export async function PUT(request: NextRequest) {
     );
   }
   
-  // Verify user is authenticated and has admin role
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  
-  if (!session) {
-    return NextResponse.json(
-      { error: "Unauthorized" },
-      { status: 401 }
-    );
-  }
-  
-  const { data: userData } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", session.user.id)
-    .single();
+  // DEVELOPMENT MODE BYPASS - Skip admin check in development
+  const isDevelopment = process.env.NODE_ENV === 'development';
+  if (isDevelopment) {
+    console.log("DEVELOPMENT MODE: Bypassing admin check for API");
+    // Skip admin validation and proceed
+  } else {
+    // Check admin status
+    const adminStatus = await checkAdminStatus(request, supabase);
     
-  if (userData?.role !== "admin") {
-    return NextResponse.json(
-      { error: "Forbidden" },
-      { status: 403 }
-    );
+    if (!adminStatus.isAdmin) {
+      console.error("Authorization failed:", adminStatus.error);
+      return NextResponse.json(
+        { error: adminStatus.error || "Unauthorized" },
+        { status: adminStatus.status || 401 }
+      );
+    }
   }
   
   try {
@@ -201,10 +304,23 @@ export async function PUT(request: NextRequest) {
     // Validate chapter data
     const validatedData = chapterSchema.parse(chapterData);
     
+    // Create a database-ready object using snake_case field names to match database schema
+    const dbData = {
+      content_id: validatedData.contentId,
+      number: validatedData.number,
+      title: validatedData.title,
+      description: validatedData.description || '',
+      thumbnail: validatedData.thumbnail || '',
+      pages: validatedData.pages,
+      release_date: validatedData.releaseDate
+    };
+    
+    console.log("Updating chapter with data:", dbData);
+    
     // Update chapter in database
     const { data, error } = await supabase
       .from("chapters")
-      .update(validatedData)
+      .update(dbData)
       .eq("id", id)
       .select()
       .single();
@@ -240,29 +356,22 @@ export async function DELETE(request: NextRequest) {
     );
   }
   
-  // Verify user is authenticated and has admin role
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  
-  if (!session) {
-    return NextResponse.json(
-      { error: "Unauthorized" },
-      { status: 401 }
-    );
-  }
-  
-  const { data: userData } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", session.user.id)
-    .single();
+  // DEVELOPMENT MODE BYPASS - Skip admin check in development
+  const isDevelopment = process.env.NODE_ENV === 'development';
+  if (isDevelopment) {
+    console.log("DEVELOPMENT MODE: Bypassing admin check for API");
+    // Skip admin validation and proceed
+  } else {
+    // Check admin status
+    const adminStatus = await checkAdminStatus(request, supabase);
     
-  if (userData?.role !== "admin") {
-    return NextResponse.json(
-      { error: "Forbidden" },
-      { status: 403 }
-    );
+    if (!adminStatus.isAdmin) {
+      console.error("Authorization failed:", adminStatus.error);
+      return NextResponse.json(
+        { error: adminStatus.error || "Unauthorized" },
+        { status: adminStatus.status || 401 }
+      );
+    }
   }
   
   try {

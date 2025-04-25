@@ -5,6 +5,15 @@
 /* Import high-quality modern fonts */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Sora:wght@400;500;600;700&display=swap');
 
+/* Add custom font-3 */
+@font-face {
+  font-family: 'CustomFont';
+  src: url('/fonts/font-3.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --sidebar-width: 16rem;
   --sidebar-width-icon: 4rem;
@@ -29,17 +38,20 @@
 
 body {
   @apply bg-[#070707] text-white;
-  font-family: 'Inter', sans-serif;
+  font-family: 'CustomFont', sans-serif;
   line-height: 1.6;
-  letter-spacing: -0.011em;
+  letter-spacing: 0;
 }
 
-/* Typography */
+/* Typography - Update to use the custom font for everything */
+h1, h2, h3, h4, h5, h6, p, span, div, button, input, select, textarea {
+  font-family: 'CustomFont', sans-serif;
+  letter-spacing: 0;
+}
+
 h1, h2, h3, h4, h5, h6 {
-  font-family: 'Sora', sans-serif;
   font-weight: 600;
   line-height: 1.2;
-  letter-spacing: -0.03em;
 }
 
 h1 {
@@ -118,7 +130,7 @@ h2 {
     max-height: 150px;
     overflow-y: auto;
     padding-right: 10px;
-    mask-image: linear-gradient(to bottom, black 85%, transparent 100%);
+    mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
   }
   
   /* Glass effect */

@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Session, User } from "@supabase/supabase-js"
 import { supabase } from "@/lib/supabase"
+import { syncUserAfterLogin } from "@/lib/auth"
 
 type AuthContextType = {
   user: User | null
@@ -22,6 +23,18 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
 
+  // Function to sync profile data after auth state changes
+  const syncUserProfile = async (currentUser: User | null) => {
+    if (currentUser) {
+      try {
+        // Sync user data to ensure profile avatar overrides any OAuth provider avatar
+        await syncUserAfterLogin(currentUser.id);
+      } catch (error) {
+        console.error("Error syncing user profile:", error);
+      }
+    }
+  };
+
   // Initialize the auth state
   useEffect(() => {
     const initializeAuth = async () => {
@@ -30,12 +43,24 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
         const { data: { session: activeSession } } = await supabase.auth.getSession()
         setSession(activeSession)
         setUser(activeSession?.user || null)
+        
+        // Sync profile data if we have a user
+        if (activeSession?.user) {
+          await syncUserProfile(activeSession.user);
+        }
 
         // Set up auth state listener
         const { data: { subscription } } = await supabase.auth.onAuthStateChange(
-          (_event, newSession) => {
+          async (event, newSession) => {
+            console.log("Auth state changed:", event);
             setSession(newSession)
             setUser(newSession?.user || null)
+            
+            // On sign in or user update, sync profile data
+            if (newSession?.user && (event === 'SIGNED_IN' || event === 'USER_UPDATED')) {
+              await syncUserProfile(newSession.user);
+            }
+            
             setIsLoading(false)
           }
         )
@@ -70,6 +95,12 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
 
       setUser(data.user)
       setSession(data.session)
+      
+      // Sync profile data after successful sign in
+      if (data.user) {
+        await syncUserProfile(data.user);
+      }
+      
       return { error: null, success: true }
     } catch (error) {
       console.error("Unexpected error during sign in:", error)
@@ -106,6 +137,9 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
           console.error("Error creating profile:", profileError.message)
           return { error: profileError, success: false }
         }
+        
+        // Sync profile after profile creation
+        await syncUserProfile(data.user);
       }
 
       setUser(data.user)

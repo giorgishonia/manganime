@@ -2,6 +2,42 @@
 
 const API_URL = 'https://graphql.anilist.co';
 
+// Search AniList for anime or manga
+export async function searchAniList(query: string, type: 'anime' | 'manga') {
+  const mediaType = type.toUpperCase();
+  const gqlQuery = `
+    query ($search: String) {
+      Page(page: 1, perPage: 10) {
+        media(search: $search, type: ${mediaType}) {
+          id
+          title {
+            romaji
+            english
+            native
+          }
+          coverImage {
+            medium
+            large
+          }
+          startDate {
+            year
+          }
+          season
+          seasonYear
+          type
+        }
+      }
+    }
+  `;
+
+  const variables = {
+    search: query
+  };
+
+  const data = await fetchFromAniList(gqlQuery, variables);
+  return data.Page.media;
+}
+
 // Fetch trending anime
 export async function getTrendingAnime(limit = 10) {
   const query = `
@@ -75,26 +111,136 @@ export async function getTrendingManga(limit = 10) {
 
 // Fetch anime by ID
 export async function getAnimeById(id: string | number) {
+  try {
+    console.log(`Fetching anime details for ID: ${id}`);
+    const query = `
+      query {
+        Media(id: ${id}, type: ANIME) {
+          id
+          title {
+            romaji
+            english
+            native
+          }
+          description
+          coverImage {
+            large
+            extraLarge
+          }
+          bannerImage
+          episodes
+          status
+          averageScore
+          popularity
+          genres
+          startDate {
+            year
+            month
+            day
+          }
+          endDate {
+            year
+            month
+            day
+          }
+          season
+          seasonYear
+          studios {
+            nodes {
+              name
+            }
+          }
+          nextAiringEpisode {
+            episode
+            timeUntilAiring
+            airingAt
+          }
+          characters(sort: ROLE, page: 1, perPage: 10) {
+            nodes {
+              id
+              name {
+                full
+              }
+              age
+              image {
+                medium
+                large
+              }
+            }
+            edges {
+              role
+            }
+          }
+          relations {
+            edges {
+              relationType
+              node {
+                id
+                title {
+                  romaji
+                }
+                type
+                format
+                coverImage {
+                  medium
+                  large
+                }
+                startDate {
+                  year
+                }
+              }
+            }
+          }
+          recommendations(page: 1, perPage: 6) {
+            nodes {
+              mediaRecommendation {
+                id
+                title {
+                  romaji
+                }
+                coverImage {
+                  medium
+                  large
+                }
+                startDate {
+                  year
+                }
+              }
+            }
+          }
+        }
+      }
+    `;
+
+    const data = await fetchFromAniList(query);
+    
+    if (!data || !data.Media) {
+      console.error(`No anime found with ID: ${id}`);
+      return null;
+    }
+    
+    console.log(`Successfully fetched anime data for ID: ${id}`);
+    return data.Media;
+  } catch (error) {
+    console.error(`Error fetching anime with ID ${id}:`, error);
+    throw error;
+  }
+}
+
+// Fetch manga by ID
+export async function getMangaById(id: string | number) {
   const query = `
-    query {
-      Media(id: ${id}, type: ANIME) {
+    query ($id: Int) {
+      Media(id: $id, type: MANGA) {
         id
         title {
-          romaji
           english
+          romaji
           native
         }
         description
-        coverImage {
-          large
-          extraLarge
-        }
-        bannerImage
-        episodes
+        format
         status
-        averageScore
-        popularity
-        genres
         startDate {
           year
           month
@@ -105,156 +251,96 @@ export async function getAnimeById(id: string | number) {
           month
           day
         }
-        season
-        seasonYear
-        studios {
-          nodes {
-            name
-          }
-        }
-        nextAiringEpisode {
-          episode
-          timeUntilAiring
-          airingAt
-        }
-        characters(sort: ROLE, page: 1, perPage: 10) {
-          nodes {
-            id
-            name {
-              full
-            }
-            age
-            image {
-              medium
-              large
-            }
-          }
-          edges {
-            role
-          }
-        }
-        relations {
-          edges {
-            relationType
-            node {
-              id
-              title {
-                romaji
-              }
-              type
-              format
-              coverImage {
-                medium
-                large
-              }
-              startDate {
-                year
-              }
-            }
-          }
-        }
-        recommendations(page: 1, perPage: 6) {
-          nodes {
-            mediaRecommendation {
-              id
-              title {
-                romaji
-              }
-              coverImage {
-                medium
-                large
-              }
-              startDate {
-                year
-              }
-            }
-          }
-        }
-      }
-    }
-  `;
-
-  const data = await fetchFromAniList(query);
-  return data.Media;
-}
-
-// Fetch manga by ID
-export async function getMangaById(id: string | number) {
-  const query = `
-    query {
-      Media(id: ${id}, type: MANGA) {
-        id
-        title {
-          romaji
-          english
-          native
-        }
-        description
+        chapters
+        volumes
         coverImage {
           large
           extraLarge
+          color
         }
         bannerImage
-        chapters
-        volumes
-        status
+        genres
+        synonyms
         averageScore
         popularity
-        genres
-        startDate {
-          year
-          month
-          day
+        favourites
+        trending
+        isAdult
+        siteUrl
+        tags {
+          id
+          name
+          description
+          category
+          rank
         }
-        characters(sort: ROLE, page: 1, perPage: 10) {
+        staff {
+          edges {
+            id
+            role
+            node {
+              id
+              name {
+                full
+                native
+              }
+              image {
+                large
+                medium
+              }
+            }
+          }
+        }
+        characters(sort: ROLE) {
+          edges {
+            id
+            role
+            node {
+              id
+              name {
+                full
+                native
+              }
+              image {
+                large
+                medium
+              }
+              gender
+              age
+            }
+          }
           nodes {
             id
             name {
               full
+              native
             }
-            age
             image {
-              medium
               large
+              medium
             }
-          }
-          edges {
-            role
+            gender
+            age
           }
         }
-        relations {
+        recommendations(sort: RATING_DESC) {
           edges {
-            relationType
             node {
-              id
-              title {
-                romaji
-              }
-              type
-              format
-              coverImage {
-                medium
-                large
-              }
-              startDate {
-                year
-              }
-            }
-          }
-        }
-        recommendations(page: 1, perPage: 6) {
-          nodes {
-            mediaRecommendation {
-              id
-              title {
-                romaji
-              }
-              coverImage {
-                medium
-                large
-              }
-              startDate {
-                year
+              mediaRecommendation {
+                id
+                title {
+                  english
+                  romaji
+                  native
+                }
+                coverImage {
+                  large
+                  extraLarge
+                  color
+                }
+                averageScore
+                format
+                type
               }
             }
           }
@@ -263,8 +349,48 @@ export async function getMangaById(id: string | number) {
     }
   `;
 
-  const data = await fetchFromAniList(query);
-  return data.Media;
+  try {
+    const response = await fetch('https://graphql.anilist.co', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify({
+        query,
+        variables: { id },
+      }),
+      cache: 'no-store',
+    });
+
+    const { data } = await response.json();
+    if (!data || !data.Media) {
+      console.error('No manga data found for ID:', id);
+      return null;
+    }
+    
+    console.log('AniList API - Character data received:', {
+      hasCharacters: !!data.Media.characters,
+      nodeCount: data.Media.characters?.nodes?.length || 0,
+      edgeCount: data.Media.characters?.edges?.length || 0
+    });
+
+    // Log character structure in detail
+    if (data.Media.characters) {
+      if (data.Media.characters.edges && data.Media.characters.edges.length > 0) {
+        console.log('First character edge structure:', JSON.stringify(data.Media.characters.edges[0], null, 2));
+      }
+      
+      if (data.Media.characters.nodes && data.Media.characters.nodes.length > 0) {
+        console.log('First character node structure:', JSON.stringify(data.Media.characters.nodes[0], null, 2));
+      }
+    }
+
+    return data.Media;
+  } catch (error) {
+    console.error('Error fetching manga by ID:', error);
+    return null;
+  }
 }
 
 // Fetch anime schedule for current season

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { motion as m, AnimatePresence } from "framer-motion"
-import { ChevronRight, Search, Heart, Play, Plus, Star, CalendarDays, Clock, Info, ArrowRight, TrendingUp } from "lucide-react"
+import { ChevronRight, Search, Play, Plus, Star, CalendarDays, Clock, Info, ArrowRight, TrendingUp } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { AppSidebar } from "@/components/app-sidebar"
 import { ContentCardHover } from "@/components/content-card-hover"
@@ -10,7 +10,7 @@ import { TypewriterText } from "@/components/typewriter-text"
 import { ScheduleView } from "@/components/schedule-view"
 import { MangaView } from "@/components/manga-view"
 import { AnimeView } from "@/components/anime-view"
-import { getTrendingContent } from "@/lib/content"
+import { getTrendingContent, getAllContent } from "@/lib/content"
 import { BannerSkeleton, CarouselSkeleton, CategorySkeleton } from "@/components/ui/skeleton"
 
 // Define interface for content data from our database
@@ -26,6 +26,7 @@ interface ContentData {
   type: 'anime' | 'manga'
   release_year?: number
   season?: string
+  georgian_title?: string
 }
 
 // Animation variants for page transitions
@@ -63,28 +64,58 @@ export default function Home() {
   const [isFetching, setIsFetching] = useState(true)
   const [hoveredContentType, setHoveredContentType] = useState<"ANIME" | "MANGA">("ANIME")
   const [featuredAnime, setFeaturedAnime] = useState<any[]>([])
+  const [availableAnime, setAvailableAnime] = useState<any[]>([])
+  const [availableManga, setAvailableManga] = useState<any[]>([])
 
   // Fetch data from our database
   useEffect(() => {
     async function fetchData() {
       try {
-        const response = await getTrendingContent('anime', 10);
+        // Fetch all available anime
+        const animeResponse = await getAllContent('anime', 20);
         
-        if (response.success && response.content) {
-          // Transform data to match our UI needs
-          const transformedData = response.content.map((content: ContentData) => ({
+        // Fetch all available manga
+        const mangaResponse = await getAllContent('manga', 20);
+        
+        if (animeResponse.success && animeResponse.content) {
+          // Transform data for anime
+          const transformedAnime = animeResponse.content.map((content: ContentData) => ({
             id: content.id,
-            title: content.title,
-            description: content.description?.substring(0, 200) + "..." || "No description available",
+            title: content.georgian_title || content.title,
+            englishTitle: content.georgian_title ? content.title : null, // Store original title if georgian exists
+            description: content.description || "აღწერა არ არის ხელმისაწვდომი",
             image: content.banner_image || content.thumbnail,
             thumbnail: content.thumbnail,
             rating: content.rating || 0,
             status: content.status,
-            episodes: "Episodes available", // We would need to fetch episodes separately
+            episodes: "ეპიზოდები ხელმისაწვდომია", // We would need to fetch episodes separately
             genres: content.genres
-          })).filter((content: {image?: string}) => content.image); // Filter out entries without images
+          })).filter((content: {image?: string}) => content.image);
           
-          setFeaturedAnime(transformedData);
+          setAvailableAnime(transformedAnime);
+          
+          // Use the first few anime for featured content if available
+          if (transformedAnime.length > 0) {
+            setFeaturedAnime(transformedAnime.slice(0, 5));
+          }
+        }
+        
+        if (mangaResponse.success && mangaResponse.content) {
+          // Transform data for manga
+          const transformedManga = mangaResponse.content.map((content: ContentData) => ({
+            id: content.id,
+            title: content.georgian_title || content.title,
+            englishTitle: content.georgian_title ? content.title : null, // Store original title if georgian exists
+            description: content.description || "აღწერა არ არის ხელმისაწვდომი",
+            image: content.banner_image || content.thumbnail,
+            thumbnail: content.thumbnail,
+            rating: content.rating || 0,
+            status: content.status,
+            chapters: "თავები ხელმისაწვდომია", // We would need to fetch chapters separately
+            genres: content.genres
+          })).filter((content: {image?: string}) => content.image);
+          
+          setAvailableManga(transformedManga);
         }
 
         setIsFetching(false);
@@ -142,13 +173,13 @@ export default function Home() {
 
   const featured = featuredAnime[currentFeatured] || {
     id: 0,
-    title: "Loading...",
-    description: "Loading content...",
+    title: "იტვირთება...",
+    description: "კონტენტი იტვირთება...",
     image: "/placeholder.svg",
     thumbnail: "/placeholder.svg",
     rating: 0,
-    status: "Loading",
-    episodes: "Loading"
+    status: "იტვირთება",
+    episodes: "იტვირთება"
   };
 
   return (
@@ -212,7 +243,7 @@ export default function Home() {
                 >
                   <div className="flex-1 w-full relative z-10">
                     <div className="flex items-center gap-2 mb-3">
-                      <span className="bg-gradient-to-r from-purple-500 to-indigo-500 text-xs font-semibold px-2.5 py-0.5 rounded-full text-white">FEATURED</span>
+                      <span className="bg-gradient-to-r from-purple-500 to-indigo-500 text-xs font-semibold px-2.5 py-0.5 rounded-full text-white">რჩეული</span>
                       <TrendingUp className="h-4 w-4 text-purple-400" />
                     </div>
                     
@@ -228,7 +259,7 @@ export default function Home() {
                       )}
                       <div className="flex flex-col justify-start">
                         <m.h1
-                          className="text-3xl font-bold text-glow text-white mb-2"
+                          className="text-3xl font-bold text-glow text-white mb-1"
                           initial={{ opacity: 0 }}
                           animate={{ opacity: 1 }}
                           exit={{ opacity: 0 }}
@@ -236,6 +267,18 @@ export default function Home() {
                         >
                           <TypewriterText text={featured.title} />
                         </m.h1>
+                        
+                        {featured.englishTitle && (
+                          <m.h2
+                            className="text-xl text-gray-400 mb-2"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.5, delay: 0.1 }}
+                          >
+                            {featured.englishTitle}
+                          </m.h2>
+                        )}
                         
                         <div className="flex items-center gap-3 mb-3">
                           <div className="pill-button text-sm flex items-center gap-1.5">
@@ -247,7 +290,7 @@ export default function Home() {
                             <span>{featured.episodes}</span>
                           </div>
                           <div className="pill-button text-sm flex items-center gap-1.5 bg-white/10">
-                            <Heart className="h-3.5 w-3.5 text-green-400 fill-green-400" />
+                            <Star className="h-3.5 w-3.5 text-yellow-400" />
                             <span className="font-medium">{featured.rating}</span>
                           </div>
                         </div>
@@ -279,7 +322,7 @@ export default function Home() {
                         transition={{ type: "spring", stiffness: 400, damping: 17 }}
                       >
                         <Play className="h-4 w-4" />
-                        Watch Now
+                        ყურება
                       </m.button>
                       
                       <m.button 
@@ -289,7 +332,7 @@ export default function Home() {
                         transition={{ type: "spring", stiffness: 400, damping: 17 }}
                       >
                         <Plus className="h-4 w-4" />
-                        Add to List
+                        სიაში დამატება
                       </m.button>
                       
                       <m.button 
@@ -330,7 +373,7 @@ export default function Home() {
                 whileHover={activeTab !== "anime" ? { scale: 1.03 } : {}}
                 whileTap={{ scale: 0.95 }}
               >
-                Anime
+                ანიმე
               </m.button>
               <m.button
                 onClick={() => handleTabChange("schedule")}
@@ -346,7 +389,7 @@ export default function Home() {
                 whileHover={activeTab !== "schedule" ? { scale: 1.03 } : {}}
                 whileTap={{ scale: 0.95 }}
               >
-                Schedule
+                განრიგი
               </m.button>
               <m.button
                 onClick={() => handleTabChange("manga")}
@@ -362,7 +405,7 @@ export default function Home() {
                 whileHover={activeTab !== "manga" ? { scale: 1.03 } : {}}
                 whileTap={{ scale: 0.95 }}
               >
-                Manga
+                მანგა
               </m.button>
             </m.div>
             <m.button
@@ -375,7 +418,7 @@ export default function Home() {
               exit={{ opacity: 0, x: 20 }}
             >
               <Search className="h-4 w-4" />
-              <span className="text-sm font-medium">Advanced search</span>
+              <span className="text-sm font-medium">დეტალური ძიება</span>
             </m.button>
           </div>
           
@@ -438,7 +481,7 @@ export default function Home() {
                   <AnimeView
                     selectedCategory={selectedCategory}
                     setSelectedCategory={setSelectedCategory}
-                    categories={featuredAnime.reduce((acc, anime) => {
+                    categories={availableAnime.reduce((acc, anime) => {
                       anime.genres?.forEach((genre: string) => {
                         if (!acc.includes(genre)) acc.push(genre);
                       });
@@ -446,7 +489,7 @@ export default function Home() {
                     }, ["All"])}
                     hoveredCard={hoveredCard}
                     setHoveredCard={setHoveredCard}
-                    animeData={featuredAnime}
+                    animeData={availableAnime}
                   />
                 )}
 
@@ -456,8 +499,8 @@ export default function Home() {
                   <MangaView
                     selectedCategory={selectedCategory}
                     setSelectedCategory={setSelectedCategory}
-                    categories={featuredAnime.reduce((acc, anime) => {
-                      anime.genres?.forEach((genre: string) => {
+                    categories={availableManga.reduce((acc, manga) => {
+                      manga.genres?.forEach((genre: string) => {
                         if (!acc.includes(genre)) acc.push(genre);
                       });
                       return acc;

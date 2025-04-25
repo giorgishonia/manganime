@@ -116,8 +116,8 @@ export default function LoginPage() {
         transition={{ duration: 0.4 }}
       >
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-white">Welcome to Manganime</h1>
-          <p className="text-zinc-400 mt-2">Sign in to your account</p>
+          <h1 className="text-2xl font-bold text-white">კეთილი იყოს თქვენი მობრძანება Manganime-ში</h1>
+          <p className="text-zinc-400 mt-2">შედით თქვენს ანგარიშში</p>
         </div>
 
         <div className="space-y-4">
@@ -128,7 +128,7 @@ export default function LoginPage() {
             disabled={isLoading}
           >
             <LucideMessagesSquare className="h-5 w-5 text-indigo-400" />
-            Continue with Discord
+            Discord-ით გაგრძელება
           </Button>
           
           <Button 
@@ -138,25 +138,25 @@ export default function LoginPage() {
             disabled={isLoading}
           >
             <Globe className="h-5 w-5 text-red-400" />
-            Continue with Google
+            Google-ით გაგრძელება
           </Button>
         </div>
 
         <div className="relative flex items-center justify-center">
           <div className="border-t border-zinc-800 w-full absolute"></div>
-          <span className="bg-zinc-900 text-zinc-500 text-sm px-2 relative">or</span>
+          <span className="bg-zinc-900 text-zinc-500 text-sm px-2 relative">ან</span>
         </div>
 
         <Tabs defaultValue="login" className="w-full">
           <TabsList className="w-full bg-zinc-800/50">
-            <TabsTrigger className="w-full data-[state=active]:bg-zinc-700" value="login">Login</TabsTrigger>
-            <TabsTrigger className="w-full data-[state=active]:bg-zinc-700" value="register">Register</TabsTrigger>
+            <TabsTrigger className="w-full data-[state=active]:bg-zinc-700" value="login">შესვლა</TabsTrigger>
+            <TabsTrigger className="w-full data-[state=active]:bg-zinc-700" value="register">რეგისტრაცია</TabsTrigger>
           </TabsList>
           
           <TabsContent value="login" className="mt-4">
             <form onSubmit={handleLogin} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email">ელ-ფოსტა</Label>
                 <Input
                   id="email"
                   type="email"
@@ -170,9 +170,9 @@ export default function LoginPage() {
               
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="password">Password</Label>
+                  <Label htmlFor="password">პაროლი</Label>
                   <Link href="/forgot-password" className="text-sm text-blue-500 hover:underline">
-                    Forgot password?
+                    დაგავიწყდათ პაროლი?
                   </Link>
                 </div>
                 <Input
@@ -195,7 +195,7 @@ export default function LoginPage() {
                 className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700"
                 disabled={isLoading}
               >
-                {isLoading ? "Signing in..." : "Sign in"}
+                {isLoading ? "შესვლა მიმდინარეობს..." : "შესვლა"}
               </Button>
             </form>
           </TabsContent>
@@ -203,7 +203,7 @@ export default function LoginPage() {
           <TabsContent value="register" className="mt-4">
             <form onSubmit={handleRegister} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="username">Username</Label>
+                <Label htmlFor="username">მომხმარებლის სახელი</Label>
                 <Input
                   id="username"
                   type="text"
@@ -216,7 +216,7 @@ export default function LoginPage() {
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="register-email">Email</Label>
+                <Label htmlFor="register-email">ელ-ფოსტა</Label>
                 <Input
                   id="register-email"
                   type="email"
@@ -229,7 +229,7 @@ export default function LoginPage() {
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="register-password">Password</Label>
+                <Label htmlFor="register-password">პაროლი</Label>
                 <Input
                   id="register-password"
                   type="password"
@@ -250,7 +250,7 @@ export default function LoginPage() {
                 className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700"
                 disabled={isLoading}
               >
-                {isLoading ? "Creating account..." : "Create account"}
+                {isLoading ? "ანგარიშის შექმნა მიმდინარეობს..." : "ანგარიშის შექმნა"}
               </Button>
             </form>
           </TabsContent>

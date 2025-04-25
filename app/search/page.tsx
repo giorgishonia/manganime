@@ -79,12 +79,12 @@ export default function SearchPage() {
           <div className="mb-8">
             <div className="flex items-center gap-2 mb-2">
               <Search className="h-5 w-5 text-gray-400" />
-              <h1 className="text-2xl font-bold">Search Results</h1>
+              <h1 className="text-2xl font-bold">ძიების შედეგები</h1>
             </div>
             
             <div className="flex flex-wrap items-center gap-3">
               <p className="text-gray-400">
-                Showing results for <span className="text-white font-medium">"{query}"</span>
+                ნაჩვენებია შედეგები <span className="text-white font-medium">"{query}"</span>
               </p>
               
               <div className="flex items-center gap-2 ml-auto">
@@ -98,7 +98,7 @@ export default function SearchPage() {
                   )}
                 >
                   <Film className="h-3.5 w-3.5" />
-                  Anime
+                  ანიმე
                 </Link>
                 
                 <Link
@@ -111,7 +111,7 @@ export default function SearchPage() {
                   )}
                 >
                   <BookOpen className="h-3.5 w-3.5" />
-                  Manga
+                  მანგა
                 </Link>
               </div>
             </div>
@@ -128,7 +128,7 @@ export default function SearchPage() {
                 className="min-h-[50vh] flex flex-col items-center justify-center"
               >
                 <div className="w-12 h-12 rounded-full border-4 border-t-blue-500 border-r-blue-500 border-b-blue-300 border-l-blue-300 animate-spin mb-4"></div>
-                <p className="text-gray-400">Searching for {type}...</p>
+                <p className="text-gray-400">{type}-ს ძიება მიმდინარეობს...</p>
               </m.div>
             ) : results.length > 0 ? (
               <m.div
@@ -220,9 +220,9 @@ export default function SearchPage() {
                 <div className="bg-white/5 rounded-full p-6 mb-4">
                   <Search className="h-8 w-8 text-gray-400" />
                 </div>
-                <h2 className="text-xl font-bold mb-2">No results found</h2>
+                <h2 className="text-xl font-bold mb-2">შედეგები ვერ მოიძებნა</h2>
                 <p className="text-gray-400 max-w-md">
-                  We couldn't find any {type} matching "{query}". Try different keywords or browse our trending content.
+                  ვერ ვიპოვეთ {type === "anime" ? "ანიმე" : "მანგა"} მოთხოვნით "{query}". სცადეთ სხვა საძიებო სიტყვები ან დაათვალიერეთ პოპულარული კონტენტი.
                 </p>
               </m.div>
             )}

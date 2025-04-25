@@ -1,4 +1,108 @@
 import { supabase } from './supabase'
+import { NextAuthOptions } from "next-auth"
+import CredentialsProvider from "next-auth/providers/credentials"
+import { createClient } from '@/lib/supabase/server'
+
+// Refresh auth session
+export async function refreshSession() {
+  try {
+    console.log("Attempting to refresh auth session...");
+    
+    // Get current session
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    
+    if (sessionError) {
+      console.error("Error getting session:", sessionError);
+      return { success: false, error: sessionError };
+    }
+    
+    if (!session) {
+      console.log("No session to refresh");
+      return { success: false, error: { message: "No active session" } };
+    }
+    
+    // First get the user data to ensure we have all current metadata
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError) {
+      console.error("Error getting user data:", userError);
+      // Continue with refresh anyway
+    } else {
+      console.log("Current user metadata:", userData?.user?.user_metadata);
+    }
+
+    // Get the profile from Supabase to have the latest avatar_url
+    const userId = userData?.user?.id || session.user.id;
+    const { success: profileSuccess, profile, error: profileError } = await getUserProfile(userId);
+    
+    let customMetadata = {};
+    if (profileSuccess && profile && profile.avatar_url) {
+      console.log("Found Supabase profile with avatar:", profile.avatar_url);
+      // Keep record of the profile avatar to ensure it gets priority
+      customMetadata = {
+        ...userData?.user?.user_metadata,
+        avatar_url: profile.avatar_url,
+        // Also store Discord's original avatar for reference
+        discord_avatar_url: userData?.user?.user_metadata?.avatar_url
+      };
+    }
+    
+    // Attempt to refresh session
+    const { data, error } = await supabase.auth.refreshSession();
+    
+    if (error) {
+      console.error("Error refreshing session:", error);
+      return { success: false, error };
+    }
+    
+    // Verify that the refreshed user data includes all expected metadata
+    if (data?.user) {
+      console.log("Session refreshed successfully with user:", 
+        data.user.id,
+        "Metadata:", data.user.user_metadata);
+        
+      // If we have custom metadata or profile data, ensure it's updated
+      if (Object.keys(customMetadata).length > 0 || 
+          (profileSuccess && profile && profile.avatar_url && 
+           (!data.user.user_metadata.avatar_url || 
+            data.user.user_metadata.avatar_url !== profile.avatar_url))) {
+        console.log("Updating user metadata to prioritize Supabase profile avatar...");
+        
+        // Force update user metadata to ensure correct avatar_url
+        const updateMetadata = {
+          ...data.user.user_metadata,
+          ...customMetadata
+        };
+        
+        const { error: updateError } = await supabase.auth.updateUser({
+          data: updateMetadata
+        });
+        
+        if (updateError) {
+          console.error("Error updating user metadata during refresh:", updateError);
+        } else {
+          console.log("User metadata updated during refresh to use Supabase avatar");
+          
+          // Update the user object with the new metadata for the return value
+          data.user.user_metadata = updateMetadata;
+        }
+      }
+    }
+    
+    return { 
+      success: true, 
+      session: data.session,
+      user: data.user
+    };
+  } catch (error) {
+    console.error("Unexpected error refreshing session:", error);
+    return { 
+      success: false, 
+      error: { 
+        message: error instanceof Error ? error.message : "Failed to refresh session",
+      }
+    };
+  }
+}
 
 // Register a new user with email and password
 export async function registerUser(email: string, password: string, username: string) {
@@ -80,52 +184,100 @@ export async function registerUser(email: string, password: string, username: st
 }
 
 // Update user profile
-export async function updateProfile(userId: string, data: { 
-  username?: string, 
-  avatar_url?: string,
-  displayName?: string,
-  bio?: string,
-  location?: string
-}) {
+export async function updateProfile(userId: string, profileData: any) {
+  console.log("Updating profile for user:", userId);
   try {
-    // Create a new object with only the fields that exist in the database
-    const existingColumns = {
-      username: data.username,
-      avatar_url: data.avatar_url
-    };
+    const supabase = createClient();
     
-    // Store the extended profile data in user_metadata
-    const { error: metadataError } = await supabase.auth.updateUser({
-      data: { 
-        displayName: data.displayName,
-        bio: data.bio,
-        location: data.location
+    // Check if displayName is in the profile data
+    const displayName = profileData.displayName || profileData.display_name;
+    const hasBio = profileData.hasOwnProperty('bio');
+    const hasLocation = profileData.hasOwnProperty('location');
+    const hasAvatarUrl = profileData.hasOwnProperty('avatar_url');
+    
+    // If we have user metadata fields (displayName, bio, location, avatar_url), update them
+    if (displayName || hasBio || hasLocation || hasAvatarUrl) {
+      console.log("Updating user metadata");
+      
+      // First check if we have an active session
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData?.session) {
+        console.warn("No active session found for metadata update - will skip metadata update");
+        // Continue with profile table update but log warning about metadata
+      } else {
+        // We have an active session, proceed with metadata update
+        const { error: metadataError } = await supabase.auth.updateUser({
+          data: { 
+            ...(displayName && { displayName }),
+            ...(hasBio && { bio: profileData.bio }),
+            ...(hasLocation && { location: profileData.location }),
+            ...(hasAvatarUrl && { avatar_url: profileData.avatar_url })
+          }
+        });
+        
+        if (metadataError) {
+          console.error("Error updating user metadata:", metadataError);
+          // Don't return early, still try to update the profile in the database
+        } else {
+          console.log("User metadata updated successfully");
+        }
       }
-    });
-    
-    if (metadataError) {
-      throw metadataError;
     }
     
-    // Only update fields that exist in the profiles table
-    const { error } = await supabase
+    // Add updated_at field to profileData for cache invalidation
+    const profileDataWithTimestamp = {
+      ...profileData,
+      updated_at: new Date().toISOString()
+    };
+    
+    // Remove metadata fields from profile data to avoid schema errors
+    delete profileDataWithTimestamp.display_name;
+    delete profileDataWithTimestamp.displayName;
+    
+    // Standard Supabase approach - this is now the only approach we use
+    console.log("Using standard Supabase update for profile:", userId);
+    const { data, error } = await supabase
       .from('profiles')
-      .update(existingColumns)
-      .eq('id', userId);
-
+      .update(profileDataWithTimestamp)
+      .eq('id', userId)
+      .select();
+    
     if (error) {
-      throw error;
-    }
-
-    return { success: true };
-  } catch (error) {
-    console.error('Update profile error:', error);
-    return { 
-      success: false, 
-      error: { 
-        message: error instanceof Error ? error.message : 'Unknown error updating profile'
+      console.error("Error updating profile:", error);
+      
+      // Check if the error is because the profile doesn't exist
+      if (error.message && error.message.includes('does not exist')) {
+        // Create a new profile record
+        console.log("Profile doesn't exist, creating it");
+        const newProfileData = {
+          id: userId,
+          username: profileData.username || `user_${userId.substring(0, 8)}`,
+          updated_at: new Date().toISOString(),
+          ...profileData
+        };
+        
+        const { data: insertData, error: insertError } = await supabase
+          .from('profiles')
+          .insert(newProfileData)
+          .select();
+        
+        if (insertError) {
+          console.error("Error creating profile:", insertError);
+          return { error: insertError, data: null };
+        }
+        
+        console.log("Profile created successfully");
+        return { data: insertData && insertData.length > 0 ? insertData[0] : null, error: null };
       }
-    };
+      
+      return { data: null, error };
+    }
+    
+    // Return the result
+    return { data: data && data.length > 0 ? data[0] : null, error };
+  } catch (e) {
+    console.error("Exception in updateProfile:", e);
+    return { error: e, data: null };
   }
 }
 
@@ -307,12 +459,15 @@ export async function getUserWatchlist(userId: string, contentType?: 'anime' | '
     }
 
     try {
+      // Log the session status to debug authentication issues
+      const { data: { session } } = await supabase.auth.getSession();
+      console.log('Auth session when fetching watchlist:', session ? 'Valid session' : 'No session');
+      
+      // Modified query to avoid the foreign key relationship error
+      // First fetch the watchlist items
       let query = supabase
         .from('watchlist')
-        .select(`
-          *,
-          content:content_id (*)
-        `)
+        .select('*')
         .eq('user_id', userId);
       
       if (contentType) {
@@ -323,36 +478,73 @@ export async function getUserWatchlist(userId: string, contentType?: 'anime' | '
         query = query.eq('status', status);
       }
       
-      const { data, error } = await query;
+      const { data: watchlistData, error } = await query;
 
       if (error) {
+        console.error('Supabase error details:', JSON.stringify(error));
+        
+        // Check if this is a database connection error or auth error
+        if (error.code === 'PGRST') {
+          throw new Error('Database connection error');
+        } else if (error.code === '42501' || error.message.includes('permission denied')) {
+          throw new Error('Permission denied. Authentication may have expired.');
+        }
+        
         throw error;
       }
 
-      // Return empty array if no data
+      // If no watchlist data, return empty array
+      if (!watchlistData || watchlistData.length === 0) {
+        return { success: true, watchlist: [] };
+      }
+
+      // Separately fetch the content information
+      const contentIds = watchlistData.map(item => item.content_id);
+      
+      const { data: contentData, error: contentError } = await supabase
+        .from('content')
+        .select('*')
+        .in('id', contentIds);
+      
+      if (contentError) {
+        console.error('Error fetching content data:', contentError);
+        // Continue anyway, we'll just return watchlist without content details
+      }
+      
+      // Merge the watchlist and content data
+      const mergedData = watchlistData.map(watchlistItem => {
+        const content = contentData?.find(c => c.id === watchlistItem.content_id) || null;
+        return {
+          ...watchlistItem,
+          content
+        };
+      });
+
       return { 
         success: true, 
-        watchlist: data || [] 
+        watchlist: mergedData
       };
-    } catch (supabaseError) {
+    } catch (supabaseError: any) {
       // Handle Supabase-specific errors
       console.error('Supabase error in getUserWatchlist:', supabaseError);
+      
       return { 
         success: false, 
         error: { 
-          message: supabaseError instanceof Error ? supabaseError.message : 'Database connection error',
-          code: supabaseError.code || 'UNKNOWN'
+          message: supabaseError.message || 'Database connection error',
+          code: supabaseError.code || 'UNKNOWN',
+          details: supabaseError.details || 'Check your internet connection and try refreshing the page.'
         } 
       };
     }
-  } catch (error) {
+  } catch (error: any) {
     // This catches any other unexpected errors
     console.error('Unexpected error in getUserWatchlist:', error);
     return { 
       success: false, 
       error: { 
         message: 'An unexpected error occurred while fetching watchlist data',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: error.message || 'Unknown error'
       } 
     };
   }
@@ -361,27 +553,157 @@ export async function getUserWatchlist(userId: string, contentType?: 'anime' | '
 // Get user's favorites
 export async function getUserFavorites(userId: string, contentType?: 'anime' | 'manga') {
   try {
+    // First get the favorites
     let query = supabase
       .from('favorites')
-      .select(`
-        *,
-        content:content_id (*)
-      `)
+      .select('*')
       .eq('user_id', userId)
     
     if (contentType) {
       query = query.eq('content_type', contentType)
     }
     
-    const { data, error } = await query
+    const { data: favoritesData, error } = await query
 
     if (error) {
+      console.error('Error fetching favorites:', error);
       throw error
     }
 
-    return { success: true, favorites: data }
+    // If no favorites, return empty array
+    if (!favoritesData || favoritesData.length === 0) {
+      return { success: true, favorites: [] };
+    }
+
+    // Then get the content details separately
+    const contentIds = favoritesData.map(item => item.content_id);
+    
+    const { data: contentData, error: contentError } = await supabase
+      .from('content')
+      .select('*')
+      .in('id', contentIds);
+    
+    if (contentError) {
+      console.error('Error fetching content data for favorites:', contentError);
+      // Continue anyway, we'll just return favorites without content details
+    }
+    
+    // Merge the favorites and content data
+    const mergedData = favoritesData.map(favoriteItem => {
+      const content = contentData?.find(c => c.id === favoriteItem.content_id) || null;
+      return {
+        ...favoriteItem,
+        content
+      };
+    });
+
+    return { success: true, favorites: mergedData }
   } catch (error) {
     console.error('Get favorites error:', error)
     return { success: false, error }
+  }
+}
+
+// This is a minimal auth setup to make the comments feature work
+// In a real app, you would connect this to your actual authentication system
+export const authOptions: NextAuthOptions = {
+  providers: [
+    CredentialsProvider({
+      name: "Credentials",
+      credentials: {
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" }
+      },
+      async authorize(credentials) {
+        // This is a mock implementation
+        // In a real app, you would verify the credentials against your database
+        if (credentials?.email === "user@example.com" && credentials?.password === "password") {
+          return {
+            id: "user-1",
+            name: "Demo User",
+            email: "user@example.com",
+            image: "https://i.pravatar.cc/150?img=1"
+          }
+        }
+        return null
+      }
+    })
+  ],
+  session: {
+    strategy: "jwt"
+  },
+  pages: {
+    signIn: "/login"
+  },
+  callbacks: {
+    async session({ session, token }) {
+      if (token && session.user) {
+        // Make sure we always have an ID in the session
+        session.user.id = token.sub as string
+        
+        // Add empty defaults for user_metadata (to match Supabase structure)
+        if (!session.user.name) {
+          session.user.name = "User"
+        }
+      }
+      return session
+    },
+    async jwt({ token, user }) {
+      if (user) {
+        token.id = user.id
+      }
+      return token
+    }
+  }
+}
+
+// Re-fetch and sync user data after login
+export async function syncUserAfterLogin(userId: string) {
+  try {
+    console.log("Syncing user data after login for:", userId);
+    
+    // Get user profile from database
+    const { success, profile } = await getUserProfile(userId);
+    
+    if (!success || !profile) {
+      console.log("No profile found or error fetching profile during sync");
+      return { success: false };
+    }
+    
+    console.log("Found profile, updating session metadata with profile data");
+    
+    // Update user metadata with profile data
+    const supabase = createClient();
+    const { data: userData } = await supabase.auth.getUser();
+    
+    if (!userData?.user) {
+      console.log("No authenticated user found during sync");
+      return { success: false };
+    }
+    
+    // Create updated metadata that preserves auth provider data but prioritizes our profile
+    const updatedMetadata = {
+      ...userData.user.user_metadata,
+      // Store original OAuth avatar for reference
+      oauth_avatar_url: userData.user.user_metadata?.avatar_url,
+      // Override with our profile avatar if available
+      ...(profile.avatar_url && { avatar_url: profile.avatar_url })
+    };
+    
+    // Update user metadata
+    const { error } = await supabase.auth.updateUser({
+      data: updatedMetadata
+    });
+    
+    if (error) {
+      console.error("Error updating user metadata during sync:", error);
+      return { success: false, error };
+    }
+    
+    console.log("Successfully synced user data after login");
+    return { success: true };
+  } catch (error) {
+    console.error("Error syncing user after login:", error);
+    return { success: false, error };
   }
 } 

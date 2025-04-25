@@ -14,10 +14,23 @@ import {
   ChevronRight, 
   MenuIcon,
   Bookmark,
-  Download,
   Share,
   Users,
-  Info
+  Info,
+  Book,
+  Home,
+  Search,
+  BookMarked,
+  History,
+  Settings,
+  ListChecks,
+  Plus,
+  Check,
+  CheckCheck,
+  PauseCircle,
+  XCircle,
+  X,
+  ChevronDown
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { MangaReader } from '@/components/manga-reader'
@@ -26,6 +39,23 @@ import { RelatedContent } from '@/components/related-content'
 import { RecommendedContent } from '@/components/recommended-content'
 import { DetailViewSkeleton } from '@/components/ui/skeleton'
 import { getMangaById, stripHtml, formatStatus } from '@/lib/anilist'
+import { getContentById, getChapters } from '@/lib/content'
+import { CharacterSection } from '@/components/character-section'
+import { CommentSection } from '@/components/comment-section'
+import ChapterManager from '@/components/admin/chapter-manager'
+import { isValid } from "date-fns";
+import { getMangaProgress, getChapterProgress, getReadPercentage, getMangaTotalProgress, getLatestChapterRead, calculateMangaProgressByChapter } from '@/lib/reading-history'
+import { Progress } from '@/components/ui/progress'
+import { MediaStatus, MediaType, getLibraryItem, getLibraryItemSync, hasStatus, hasStatusSync, updateItemStatus } from '@/lib/user-library'
+import { toast } from '@/components/ui/use-toast'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator
+} from "@/components/ui/dropdown-menu"
+import { Button } from "@/components/ui/button"
 
 // Animation variants
 const pageVariants = {
@@ -56,6 +86,19 @@ const itemVariants = {
   }
 };
 
+// Helper function to safely create a valid date string or undefined
+const formatSafeDate = (dateString: string | undefined) => {
+  if (!dateString) return undefined;
+  
+  try {
+    const date = new Date(dateString);
+    return isNaN(date.getTime()) ? undefined : dateString;
+  } catch (e) {
+    console.warn("Invalid date format:", dateString);
+    return undefined;
+  }
+};
+
 export default function MangaPage({ params }: { params: { id: string } }) {
   const router = useRouter()
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -68,6 +111,10 @@ export default function MangaPage({ params }: { params: { id: string } }) {
   const [isBookmarked, setIsBookmarked] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [mangaData, setMangaData] = useState<any>(null)
+  const [isFromDatabase, setIsFromDatabase] = useState(false)
+  const [readingProgress, setReadingProgress] = useState<any>(null)
+  const [initialReaderPage, setInitialReaderPage] = useState(0)
+  const [libraryStatus, setLibraryStatus] = useState<MediaStatus | null>(null)
 
   // Handle scroll effect for background
   useEffect(() => {
@@ -90,21 +137,190 @@ export default function MangaPage({ params }: { params: { id: string } }) {
     }
   }, [])
 
-  // Fetch manga data from AniList API
-  useEffect(() => {
-    async function fetchMangaData() {
-      try {
-        const data = await getMangaById(mangaId);
-        setMangaData(data);
-      } catch (error) {
-        console.error("Error fetching manga data:", error);
-      } finally {
-        setIsLoading(false);
+  // Define fetchMangaData outside useEffect
+  const fetchMangaData = async () => {
+    try {
+      setIsLoading(true);
+      // First, try to get the content from our database
+      const dbResult = await getContentById(mangaId);
+      
+      if (dbResult.success && dbResult.content && dbResult.content.type === 'manga') {
+        console.log("Found manga in database:", dbResult.content);
+        
+        // Fetch chapters for this manga
+        const chaptersResult = await getChapters(mangaId);
+        const chapters = chaptersResult.success ? chaptersResult.chapters : [];
+        console.log("Fetched chapters:", chapters);
+        
+        // Format content with chapters data
+        setMangaData({
+          ...formatDatabaseContent(dbResult.content),
+          chaptersData: chapters
+        });
+        setIsFromDatabase(true);
+      } else {
+        // If not found in database, try AniList
+        try {
+          console.log("Manga not found in database, fetching from AniList API");
+          const anilistData = await getMangaById(mangaId);
+          console.log("AniList data received:", anilistData ? "Data found" : "No data");
+          
+          // Debug log the full character data structure
+          if (anilistData && anilistData.characters) {
+            console.log("Full character data from AniList:", {
+              edges: anilistData.characters.edges,
+              nodes: anilistData.characters.nodes,
+              rawData: anilistData.characters
+            });
+          }
+          
+          if (anilistData) {
+            console.log("AniList data structure check:", {
+              hasRecommendations: !!anilistData.recommendations,
+              recCount: anilistData.recommendations?.nodes?.length,
+              hasRelations: !!anilistData.relations,
+              relCount: anilistData.relations?.edges?.length,
+              hasCharacters: !!anilistData.characters,
+              charCount: anilistData.characters?.nodes?.length,
+              score: anilistData.averageScore
+            });
+          }
+          setMangaData(anilistData);
+        } catch (anilistError) {
+          console.error("Error fetching from AniList:", anilistError);
+          throw anilistError; // Re-throw to trigger the not found state
+        }
       }
+    } catch (error) {
+      console.error("Error fetching manga data:", error);
+    } finally {
+      setIsLoading(false);
     }
+  };
 
+  // Fetch manga data on component mount
+  useEffect(() => {
     fetchMangaData();
   }, [mangaId]);
+
+  // Get reading progress for this manga
+  useEffect(() => {
+    if (mangaId) {
+      const progress = getMangaProgress(mangaId)
+      setReadingProgress(progress)
+    }
+  }, [mangaId, isReaderOpen])
+
+  // Updated formatDatabaseContent function to remove volumes
+  const formatDatabaseContent = (content: any) => {
+    console.log("Formatting database content:", content);
+    
+    // Extract release date details for logging
+    const releaseYear = content.release_year || null;
+    const releaseMonth = content.release_month || null;
+    const releaseDay = content.release_day || null;
+    
+    console.log("Release date information:", { 
+      year: releaseYear, 
+      month: releaseMonth, 
+      day: releaseDay 
+    });
+    
+    // Return content in a format that matches what the UI expects
+    return {
+      id: content.id,
+      title: {
+        english: content.title,
+        romaji: content.title,
+        native: content.georgian_title || content.alternative_titles?.[0] || content.title,
+      },
+      description: content.description,
+      coverImage: {
+        large: content.thumbnail,
+        extraLarge: content.thumbnail,
+      },
+      bannerImage: content.banner_image || content.thumbnail,
+      status: content.status.toUpperCase(),
+      averageScore: typeof content.rating === 'number' ? content.rating * 10 : 70, // Convert 0-10 to 0-100
+      popularity: content.popularity || 0,
+      genres: content.genres || [],
+      startDate: {
+        year: releaseYear !== null ? parseInt(releaseYear) : new Date().getFullYear(),
+        month: releaseMonth !== null ? parseInt(releaseMonth) : 1,
+        day: releaseDay !== null ? parseInt(releaseDay) : 1,
+      },
+      chapters: content.chapters || 12, // Default value
+      // Remove volumes
+      // Add empty relation and recommendation objects for consistent structure
+      relations: { 
+        edges: content.relations?.map((rel: any) => ({
+          relationType: rel.type || "RELATED",
+          node: {
+            id: rel.id,
+            title: {
+              romaji: rel.title,
+              english: rel.title
+            },
+            coverImage: {
+              large: rel.image
+            },
+            startDate: {
+              year: rel.year
+            }
+          }
+        })) || [] 
+      },
+      recommendations: { 
+        nodes: content.recommendations?.map((rec: any) => ({
+          mediaRecommendation: {
+            id: rec.id,
+            title: {
+              romaji: rec.title,
+              english: rec.title
+            },
+            coverImage: {
+              large: rec.image
+            },
+            startDate: {
+              year: rec.year
+            },
+            genres: rec.genres || []
+          }
+        })) || [] 
+      },
+      characters: { 
+        nodes: content.characters?.map((char: any) => ({
+          id: char.id,
+          name: {
+            full: char.name
+          },
+          image: {
+            large: char.image
+          }
+        })) || [],
+        edges: content.characters?.map((char: any) => ({
+          role: char.role || "MAIN",
+          node: {
+            id: char.id
+          }
+        })) || []
+      },
+      staff: {
+        edges: content.staff?.map((staff: any) => ({
+          role: staff.role,
+          node: {
+            id: staff.id,
+            name: {
+              full: staff.name
+            },
+            image: {
+              large: staff.image
+            }
+          }
+        })) || []
+      }
+    };
+  };
 
   const handleBackClick = () => {
     if (isReaderOpen) {
@@ -114,56 +330,378 @@ export default function MangaPage({ params }: { params: { id: string } }) {
     }
   }
 
-  const handleReadClick = (chapterIndex = 0) => {
-    setSelectedChapter(chapterIndex)
-    setIsReaderOpen(true)
-    window.scrollTo({ top: 0, behavior: "smooth" })
-  }
+  const handleReadClick = (chapterIndex = 0, resumeFromProgress = false) => {
+    let selectedIndex = chapterIndex;
+    let initialPage = 0;
+    
+    // If resuming from progress, find the chapter index that matches the stored progress
+    if (resumeFromProgress && readingProgress && processedData) {
+      const progressChapterIndex = processedData.chapterList.findIndex(
+        (ch: any) => ch.id === readingProgress.chapterId || 
+                     ch.number === readingProgress.chapterNumber
+      );
+      
+      if (progressChapterIndex !== -1) {
+        selectedIndex = progressChapterIndex;
+        // Also set the initial page to resume from
+        initialPage = readingProgress.currentPage;
+      }
+    }
+    
+    setSelectedChapter(selectedIndex);
+    // Store the initial page to use when opening the reader
+    setInitialReaderPage(initialPage);
+    setIsReaderOpen(true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
-  // Generate mock chapters since AniList doesn't provide chapter info
-  const generateMockChapters = (count: number) => {
-    return Array.from({ length: count }, (_, i) => ({
-      number: i + 1,
-      title: `Chapter ${i + 1}`,
-      releaseDate: new Date(Date.now() - (i * 7 * 24 * 60 * 60 * 1000)).toLocaleDateString(), // 1 week apart
-      thumbnail: mangaData.coverImage.large, // Add thumbnail property
-      pages: Array.from({ length: Math.floor(Math.random() * 10) + 15 }, (_, j) => 
-        `/manga-page-placeholder.jpg` // Change to string array
-      )
+  // Replace the generateMockChapters function with a formatChapters function
+  const formatChapters = (chaptersData: any[] = []) => {
+    if (!chaptersData || chaptersData.length === 0) {
+      // Return empty array or fallback to mock data if needed
+      console.log("No chapters available, returning empty array");
+      return Array.from({ length: 1 }, (_, i) => ({
+        number: i + 1,
+        title: `No chapters available`,
+        releaseDate: new Date().toLocaleDateString(),
+        thumbnail: mangaData.coverImage?.large || "/placeholder.svg", 
+        pages: ["/manga-page-placeholder.jpg"]
+      }));
+    }
+    
+    return chaptersData.map((chapter) => ({
+      id: chapter.id,
+      number: chapter.number,
+      title: chapter.title,
+      releaseDate: chapter.release_date ? new Date(chapter.release_date).toLocaleDateString() : "Unknown",
+      thumbnail: chapter.thumbnail || mangaData.coverImage?.large || "/placeholder.svg",
+      pages: chapter.pages || ["/manga-page-placeholder.jpg"]
     }));
   };
 
-  // Process data for UI if available
+  // Update the processedData to display actual chapter amounts and remove volumes
   const processedData = mangaData ? {
     id: mangaData.id,
-    title: mangaData.title.english || mangaData.title.romaji,
-    subtitle: mangaData.title.native,
-    coverImage: mangaData.coverImage.large,
-    bannerImage: mangaData.bannerImage,
-    releaseDate: mangaData.startDate ? `${mangaData.startDate.year || "?"}-${mangaData.startDate.month || "?"}` : "Unknown",
-    status: formatStatus(mangaData.status),
-    chapters: mangaData.chapters || "Ongoing",
-    volumes: mangaData.volumes || "?",
-    rating: mangaData.averageScore / 10,
-    popularity: mangaData.popularity,
-    genres: mangaData.genres,
-    author: "Unknown Author", // AniList doesn't provide author info directly
-    synopsis: stripHtml(mangaData.description || "No description available"),
-    chapterList: generateMockChapters(10),
-    relations: mangaData.relations?.edges?.map((relation: any) => ({
-      id: relation.node.id,
-      title: relation.node.title.romaji,
-      type: relation.relationType,
-      year: relation.node.startDate?.year || "Unknown",
-      image: relation.node.coverImage.large,
-    })) || [],
-    recommendations: mangaData.recommendations?.nodes?.map((rec: any) => ({
-      id: rec.mediaRecommendation.id,
-      title: rec.mediaRecommendation.title.romaji,
-      year: rec.mediaRecommendation.startDate?.year || "Unknown",
-      image: rec.mediaRecommendation.coverImage.large,
-    })) || [],
+    title: mangaData.title?.english || mangaData.title?.romaji || "Unknown Title",
+    subtitle: mangaData.title?.native,
+    georgianTitle: isFromDatabase ? mangaData.georgian_title : null,
+    coverImage: mangaData.coverImage?.large || "/placeholder.svg",
+    bannerImage: mangaData.bannerImage || mangaData.coverImage?.large || "/placeholder.svg",
+    // Better release date formatting with fallback - only display year
+    releaseDate: mangaData.startDate && mangaData.startDate.year 
+      ? `${mangaData.startDate.year}`
+      : "Unknown",
+    status: formatStatus(mangaData.status || ""),
+    // Use actual chapter count if available, otherwise show chapter list length
+    chapters: mangaData.chaptersData?.length || mangaData.chapters || "?",
+    // Remove volumes info
+    rating: mangaData.averageScore ? Math.max(0, Math.min(10, mangaData.averageScore / 10)) : null,
+    popularity: mangaData.popularity || 0,
+    genres: mangaData.genres || [],
+    author: mangaData.staff?.edges?.find((staff: any) => 
+      staff.role?.toLowerCase().includes('author') || 
+      staff.role?.toLowerCase().includes('story')
+    )?.node?.name?.full || "Unknown Author",
+    synopsis: isFromDatabase ? mangaData.description : stripHtml(mangaData.description || "No description available"),
+    chapterList: formatChapters(mangaData.chaptersData),
+    // Fix the relations mapping to handle edge cases better
+    relations: mangaData.relations?.edges?.filter((edge: any) => edge?.node && edge?.node?.id)
+      .map((relation: any) => ({
+        id: relation.node.id,
+        title: relation.node.title?.english || relation.node.title?.romaji || "Unknown",
+        type: relation.relationType || "RELATED",
+        year: relation.node.startDate?.year || "Unknown",
+        image: relation.node.coverImage?.large || relation.node.coverImage?.medium || "/placeholder.svg",
+      })) || [],
+    // Fix the recommendations mapping to handle edge cases better
+    recommendations: mangaData.recommendations?.nodes?.filter((node: any) => node?.mediaRecommendation && node?.mediaRecommendation?.id)
+      .map((rec: any) => ({
+        id: rec.mediaRecommendation.id,
+        title: rec.mediaRecommendation.title?.english || rec.mediaRecommendation.title?.romaji || "Unknown",
+        year: rec.mediaRecommendation.startDate?.year || "Unknown",
+        image: rec.mediaRecommendation.coverImage?.large || rec.mediaRecommendation.coverImage?.medium || "/placeholder.svg",
+        genres: rec.mediaRecommendation.genres || [],
+      })) || [],
+    // Fix the characters mapping to ensure proper extraction
+    characters: mapCharacters(mangaData)
   } : null;
+
+  // Add a debug log for the processed data
+  if (processedData) {
+    console.log("Final processed data:", {
+      dataAvailable: !!processedData,
+      hasCharacters: !!processedData.characters,
+      characterCount: processedData.characters?.length || 0,
+      charactersSample: processedData.characters?.slice(0, 2) || []
+    });
+  }
+
+  // Add this useEffect for debug logging
+  useEffect(() => {
+    if (processedData) {
+      if (!processedData.relations || processedData.relations.length === 0) {
+        console.log("No relations data to display");
+      }
+      if (!processedData.recommendations || processedData.recommendations.length === 0) {
+        console.log("No recommendations data to display");
+      }
+    }
+  }, [processedData]);
+
+  // Add a debug effect to specifically log character data
+  useEffect(() => {
+    // Debug logging for character data
+    console.log("Character data available:", !!mangaData?.characters);
+    
+    if (mangaData?.characters) {
+      console.log("Raw character data from API:", {
+        nodes: mangaData.characters.nodes?.length || 0,
+        edges: mangaData.characters.edges?.length || 0,
+        sample: mangaData.characters.nodes?.[0] || 'No characters'
+      });
+    }
+    
+    if (processedData && processedData.characters) {
+      console.log("Processed character data:", {
+        count: processedData.characters.length,
+        sample: processedData.characters[0] || 'No processed characters'
+      });
+    }
+  }, [mangaData, processedData]);
+
+  function mapCharacters(data: any) {
+    if (!data) {
+      console.log('No data provided for character mapping');
+      return [];
+    }
+    
+    try {
+      // Check if characters data exists in any expected format
+      if (!data.characters) {
+        console.log('No characters property in data');
+        
+        // WORKAROUND: Try to extract character data from alternative_titles
+        if (data.alternative_titles && Array.isArray(data.alternative_titles)) {
+          const characterEntries = data.alternative_titles.filter((entry: string) => 
+            typeof entry === 'string' && entry.startsWith('character:')
+          );
+          
+          if (characterEntries.length > 0) {
+            console.log(`Found ${characterEntries.length} characters in alternative_titles`);
+            const extractedCharacters = characterEntries.map((entry: string) => {
+              // Extract the JSON part after "character:"
+              const jsonStr = entry.substring(10); // 'character:'.length = 10
+              const charData = JSON.parse(jsonStr);
+              console.log('Extracted character:', charData);
+              return {
+                id: charData.id || `char-${Math.random().toString(36).substring(2, 9)}`,
+                name: charData.name || 'Unknown',
+                image: charData.image || '/placeholder-character.jpg',
+                role: charData.role || 'SUPPORTING',
+                voiceActor: null
+              };
+            });
+            console.log(`Successfully extracted ${extractedCharacters.length} characters`);
+            return extractedCharacters;
+          }
+        }
+        
+        return [];
+      }
+      
+      console.log('Character data structure:', {
+        hasCharacters: !!data.characters,
+        hasEdges: !!data.characters.edges,
+        edgeCount: data.characters.edges?.length || 0,
+        hasNodes: !!data.characters.nodes,
+        nodeCount: data.characters.nodes?.length || 0
+      });
+
+      // Similar to anime page: Map nodes with roles from edges
+      if (data.characters.nodes && data.characters.nodes.length > 0) {
+        console.log('Mapping characters from nodes with roles from edges');
+        
+        const mappedChars = data.characters.nodes
+          .filter((node: any) => node?.id && node?.name)
+          .map((char: any) => {
+            // Try to find the role from edges
+            const role = data.characters?.edges?.find((edge: any) => 
+              edge?.node?.id === char.id
+            )?.role || 'SUPPORTING';
+            
+            return {
+              id: char.id || `char-${Math.random().toString(36).substring(2, 9)}`,
+              name: char.name?.full || 'Unknown',
+              image: char.image?.large || char.image?.medium || '/placeholder-character.jpg',
+              role: role,
+              voiceActor: null
+            };
+          });
+        
+        console.log(`Mapped ${mappedChars.length} characters from nodes with roles`);
+        return mappedChars;
+      }
+      
+      // Fallback to edges if nodes aren't available
+      if (data.characters.edges && data.characters.edges.length > 0) {
+        console.log('Mapping characters from edges data');
+        
+        const mappedChars = data.characters.edges
+          .filter((char: any) => char && char.node)
+          .map((char: any) => {
+            const nodeData = char.node;
+            return {
+              id: nodeData.id || `char-${Math.random().toString(36).substring(2, 9)}`,
+              name: nodeData.name?.full || 'Unknown',
+              image: nodeData.image?.large || nodeData.image?.medium || '/placeholder-character.jpg',
+              role: char.role || 'SUPPORTING',
+              voiceActor: null
+            };
+          });
+        
+        console.log(`Mapped ${mappedChars.length} characters from edges`);
+        return mappedChars;
+      }
+      
+      // Last resort - handle array of character objects (database format)
+      if (Array.isArray(data.characters)) {
+        console.log('Mapping characters from array data (database format)');
+        
+        const mappedChars = data.characters
+          .filter((char: any) => char)
+          .map((char: any) => {
+            return {
+              id: char.id || `char-${Math.random().toString(36).substring(2, 9)}`,
+              name: char.name || 'Unknown',
+              image: char.image || '/placeholder-character.jpg',
+              role: char.role || 'SUPPORTING',
+              voiceActor: null
+            };
+          });
+        
+        console.log(`Mapped ${mappedChars.length} characters from array`);
+        return mappedChars;
+      }
+      
+      console.log('No usable character data found in any expected format');
+      return [];
+    } catch (err) {
+      console.error('Error mapping characters:', err);
+      return [];
+    }
+  }
+
+  // Once processedData is defined, add the URL check effect here
+  // Check for resume parameter in URL after processedData is defined
+  useEffect(() => {
+    if (processedData && typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const shouldResume = urlParams.get('resume') === 'true';
+      const pageParam = urlParams.get('page');
+      const startPage = pageParam ? parseInt(pageParam, 10) : 0;
+      
+      if (shouldResume && readingProgress) {
+        // Find chapter index that matches the stored reading progress
+        const chapterIndex = processedData.chapterList.findIndex(
+          (ch: any) => ch.id === readingProgress.chapterId || 
+                       ch.number === readingProgress.chapterNumber
+        );
+        
+        if (chapterIndex !== -1) {
+          // Use the page from URL if available, otherwise use the stored progress
+          const initialPage = startPage || readingProgress.currentPage;
+          setInitialReaderPage(initialPage);
+          handleReadClick(chapterIndex, true);
+        }
+      }
+    }
+  }, [readingProgress, processedData]);
+
+  // Check library status when manga data is loaded
+  useEffect(() => {
+    async function checkLibraryStatus() {
+      if (mangaId && processedData) {
+        try {
+          const item = await getLibraryItem(mangaId, 'manga');
+          if (item) {
+            setLibraryStatus(item.status);
+          } else {
+            setLibraryStatus(null);
+          }
+        } catch (error) {
+          console.error("Error checking library status:", error);
+          // Fallback to sync check for immediate feedback
+          const item = getLibraryItemSync(mangaId, 'manga');
+          if (item) {
+            setLibraryStatus(item.status);
+          } else {
+            setLibraryStatus(null);
+          }
+        }
+      }
+    }
+    
+    checkLibraryStatus();
+  }, [mangaId, processedData]);
+
+  const handleStatusChange = async (status: MediaStatus) => {
+    if (!processedData) return;
+    
+    // Get total chapters as a number for progress tracking
+    const totalChapters = typeof processedData.chapters === 'number' 
+      ? processedData.chapters 
+      : processedData.chapterList?.length || 0;
+    
+    // Get current progress from reading history
+    const progress = readingProgress ? readingProgress.chapterNumber : 0;
+    
+    try {
+      await updateItemStatus(
+        mangaId, 
+        'manga', 
+        status, 
+        processedData.title, 
+        processedData.coverImage,
+        progress,
+        totalChapters
+      );
+      
+      setLibraryStatus(status);
+      
+      toast({
+        title: "სტატუსი განახლდა",
+        description: `"${processedData.title}" - მარკირებულია როგორც ${status.replace('_', ' ')}`,
+        duration: 3000,
+      });
+    } catch (error) {
+      console.error("Error updating status:", error);
+      toast({
+        title: "შეცდომა",
+        description: "სტატუსის განახლება ვერ მოხერხდა. გთხოვთ, სცადოთ თავიდან.",
+        duration: 3000,
+      });
+    }
+  };
+
+  // Get status icon and color
+  const getStatusInfo = (status: MediaStatus | null) => {
+    switch (status) {
+      case 'reading':
+        return { icon: <BookOpen className="h-5 w-5" />, label: 'ვკითხულობ', color: 'text-green-500' };
+      case 'completed':
+        return { icon: <CheckCheck className="h-5 w-5" />, label: 'დასრულებული', color: 'text-blue-500' };
+      case 'on_hold':
+        return { icon: <PauseCircle className="h-5 w-5" />, label: 'შეჩერებული', color: 'text-yellow-500' };
+      case 'dropped':
+        return { icon: <XCircle className="h-5 w-5" />, label: 'მიტოვებული', color: 'text-red-500' };
+      case 'plan_to_read':
+        return { icon: <Bookmark className="h-5 w-5" />, label: 'სამომავლოდ', color: 'text-purple-500' };
+      default:
+        return { icon: <Plus className="h-5 w-5" />, label: 'დამატება ბიბლიოთეკაში', color: 'text-gray-400' };
+    }
+  };
+
+  const statusInfo = getStatusInfo(libraryStatus);
 
   if (isLoading) {
     return (
@@ -177,9 +715,9 @@ export default function MangaPage({ params }: { params: { id: string } }) {
     return (
       <div className="min-h-screen bg-black text-white flex justify-center items-center">
         <div className="text-center">
-          <h1 className="text-2xl font-bold mb-4">Manga not found</h1>
+          <h1 className="text-2xl font-bold mb-4">მანგა ვერ მოიძებნა</h1>
           <button onClick={() => router.back()} className="px-4 py-2 bg-purple-600 rounded-md">
-            Go Back
+            უკან დაბრუნება
           </button>
         </div>
       </div>
@@ -189,12 +727,14 @@ export default function MangaPage({ params }: { params: { id: string } }) {
   // Calculate gradient opacity based on scroll
   const topGradientOpacity = Math.min(0.7, scrollPosition / 500)
   const sideGradientOpacity = Math.min(0.6, 0.3 + (scrollPosition / 800))
+  const fullOverlayOpacity = Math.min(0.9, scrollPosition / 300)
 
   return (
     <div className="flex min-h-screen bg-[#070707] text-white antialiased">
+
       <motion.div 
         ref={scrollRef}
-        className="flex-1 min-h-screen text-white relative overflow-y-auto overflow-x-hidden"
+        className="flex-1 min-h-screen text-white relative overflow-y-auto overflow-x-hidden pl-16 md:pl-20"
         variants={pageVariants}
         initial="initial"
         animate="animate"
@@ -204,43 +744,25 @@ export default function MangaPage({ params }: { params: { id: string } }) {
         <AnimatePresence>
           {!isLoading && (
             <motion.div 
-              className="fixed inset-0 z-0"
+              className="fixed inset-0 z-0 pl-16 md:pl-20"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.8 }}
             >
               {/* Background image - higher quality with better cropping */}
               <div
-                className="absolute inset-0 bg-cover bg-top"
+                className="absolute inset-0 bg-cover bg-center"
                 style={{ 
                   backgroundImage: `url(${processedData.bannerImage || processedData.coverImage})`,
-                  filter: 'brightness(0.9) contrast(1.1)'
                 }}
               />
               
               {/* Dynamic gradient overlays */}
               <div className="absolute inset-0 pointer-events-none">
-                {/* Top gradient - lighter initially, gets darker on scroll */}
-                <div 
-                  className="absolute inset-0 bg-gradient-to-b from-[#070707]/30 via-[#070707]/60 to-[#070707]"
-                  style={{ opacity: topGradientOpacity }}
-                />
-                
-                {/* Always present bottom and side gradients */}
                 <div className="absolute inset-0 bg-gradient-to-t from-[#070707] via-[#070707]/90 to-transparent" />
-                <div 
-                  className="absolute inset-0 bg-gradient-to-r from-[#070707]/80 via-[#070707]/40 to-transparent"
-                  style={{ opacity: sideGradientOpacity }}
-                />
-                <div 
-                  className="absolute inset-0 bg-gradient-to-l from-[#070707]/80 via-[#070707]/40 to-transparent"
-                  style={{ opacity: sideGradientOpacity }}
-                />
-                
-                {/* Left side vertical gradient - new */}
-                <div className="absolute left-0 top-0 h-full w-48 bg-gradient-to-r from-[#070707] via-[#070707]/50 to-transparent z-10" />
-                
-                {/* Subtle texture overlay for more depth */}
+                <div className="absolute inset-0 bg-gradient-to-r from-[#070707]/80 via-[#070707]/40 to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-l from-[#070707]/80 via-[#070707]/40 to-transparent" />
+                <div className="absolute inset-0 bg-[#070707]/50" />
                 <div className="absolute inset-0 opacity-30" 
                   style={{ 
                     backgroundImage: 'url("/noise-texture.png")',
@@ -254,11 +776,11 @@ export default function MangaPage({ params }: { params: { id: string } }) {
         </AnimatePresence>
 
         {/* Content */}
-        <div className="relative z-10 container mx-auto px-4 py-6 pb-20 pl-[100px]">
+        <div className="relative z-10 container mx-auto px-6 py-6 pb-20">
           {/* Back button */}
           <motion.button 
             onClick={handleBackClick} 
-            className="flex items-center gap-2 text-gray-400 hover:text-white mb-4 mt-2"
+            className="flex items-center gap-2 text-gray-400 hover:text-white mb-6"
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.2 }}
@@ -266,7 +788,7 @@ export default function MangaPage({ params }: { params: { id: string } }) {
             whileTap={{ scale: 0.95 }}
           >
             <ArrowLeft className="h-5 w-5" />
-            <span>{isReaderOpen ? "Close reader" : "Back"}</span>
+            <span>{isReaderOpen ? "დახურვა" : "უკან"}</span>
           </motion.button>
 
           <AnimatePresence mode="wait">
@@ -292,7 +814,7 @@ export default function MangaPage({ params }: { params: { id: string } }) {
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
                     <h2 className="text-xl font-bold">
-                      {processedData.title}: {processedData.chapterList[selectedChapter].title}
+                      {processedData.georgianTitle || processedData.title}: {processedData.chapterList[selectedChapter].title}
                     </h2>
                     <span className="text-gray-400">{processedData.chapterList[selectedChapter].releaseDate}</span>
                   </div>
@@ -303,6 +825,9 @@ export default function MangaPage({ params }: { params: { id: string } }) {
                   onClose={() => setIsReaderOpen(false)}
                   chapterList={processedData.chapterList}
                   onChapterSelect={setSelectedChapter}
+                  mangaId={mangaId}
+                  mangaTitle={processedData.title}
+                  initialPage={initialReaderPage}
                 />
               </motion.div>
             ) : (
@@ -315,186 +840,368 @@ export default function MangaPage({ params }: { params: { id: string } }) {
               >
                 {/* Manga header */}
                 <motion.div 
-                  className="flex flex-col md:flex-row gap-6 mb-8"
+                  className="flex flex-col md:flex-row gap-8 mb-12"
                   variants={itemVariants}
                 >
                   {/* Cover image */}
                   <motion.div 
-                    className="w-full md:w-64 flex-shrink-0"
+                    className="w-full md:w-[260px] flex-shrink-0"
                     whileHover={{ scale: 1.03 }}
                     transition={{ duration: 0.3 }}
                   >
-                    <ImageSkeleton
-                      src={processedData.coverImage || "/placeholder.svg"}
-                      alt={processedData.title}
-                      className="w-full aspect-[2/3] rounded-lg overflow-hidden"
-                    />
+                    <div className="relative">
+                      <ImageSkeleton
+                        src={processedData.coverImage || "/placeholder.svg"}
+                        alt={processedData.title}
+                        className="w-full aspect-[2/3] rounded-xl overflow-hidden shadow-2xl"
+                      />
+                      {processedData.rating && (
+                        <div className="absolute -bottom-4 -right-4 bg-gradient-to-br from-purple-500 to-blue-600 rounded-full h-16 w-16 flex items-center justify-center shadow-xl">
+                          <div className="text-lg font-bold">{processedData.rating.toFixed(1)}</div>
+                        </div>
+                      )}
+                    </div>
                   </motion.div>
 
                   {/* Details */}
                   <div className="flex-1">
-                    <motion.h1 
-                      className="text-3xl font-bold mb-1"
-                      variants={itemVariants}
-                    >
-                      {processedData.title}
-                    </motion.h1>
-                    
-                    {processedData.subtitle && (
+                    <div className="flex flex-wrap items-center gap-3 mb-2 text-sm">
+                      <div className="px-3 py-1 bg-purple-600/20 text-purple-400 rounded-full">
+                        {processedData.status}
+                      </div>
+                      
+                      {processedData.genres.slice(0, 3).map((genre: string, idx: number) => (
+                        <div key={idx} className="px-3 py-1 bg-gray-800 text-gray-300 rounded-full">
+                          {genre}
+                        </div>
+                      ))}
+                    </div>
+                
+                    {/* Display native title as subtitle if no Georgian title */}
+                    {!processedData.georgianTitle && processedData.subtitle && (
                       <motion.h2 
-                        className="text-xl text-gray-400 mb-4"
+                        className="text-4xl font-bold mb-2"
                         variants={itemVariants}
                       >
                         {processedData.subtitle}
                       </motion.h2>
                     )}
 
+                    <motion.h1 
+                      className="text-xl text-gray-400 mb-4"
+                      variants={itemVariants}
+                    >
+                      {processedData.georgianTitle || processedData.title}
+                    </motion.h1>
+
                     <motion.div 
-                      className="flex items-center gap-4 mb-4"
+                      className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6 text-sm"
                       variants={itemVariants}
                     >
                       <div className="flex items-center gap-2">
                         <CalendarDays className="h-4 w-4 text-gray-400" />
                         <span>{processedData.releaseDate}</span>
                       </div>
-                      <div className="px-2 py-1 bg-purple-600/20 text-purple-400 rounded-full text-sm">
-                        {processedData.status}
-                      </div>
-                    </motion.div>
-
-                    <motion.div 
-                      className="grid grid-cols-2 gap-4 mb-4"
-                      variants={itemVariants}
-                    >
-                      <div className="flex items-center gap-2">
-                        <Star className="h-4 w-4 text-yellow-400" />
-                        <span>{processedData.rating ? `${processedData.rating.toFixed(1)}/10` : "No rating"}</span>
-                      </div>
                       <div className="flex items-center gap-2">
                         <BookOpen className="h-4 w-4 text-gray-400" />
-                        <span>{processedData.chapters} chapters</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <MenuIcon className="h-4 w-4 text-gray-400" />
-                        <span>{processedData.volumes} volumes</span>
+                        <span>
+                          {typeof processedData.chapters === 'number' 
+                            ? `${processedData.chapters} chapter${processedData.chapters !== 1 ? 's' : ''}`
+                            : `${processedData.chapters} chapters`
+                          }
+                        </span>
                       </div>
                       <div className="flex items-center gap-2">
                         <Users className="h-4 w-4 text-gray-400" />
-                        <span>{processedData.genres.join(", ")}</span>
+                        <span>{processedData.popularity.toLocaleString()} readers</span>
                       </div>
                     </motion.div>
 
                     <motion.p 
-                      className="text-gray-300 mb-6"
+                      className="text-gray-300 mb-8 max-w-3xl"
                       variants={itemVariants}
                     >
                       {processedData.synopsis}
                     </motion.p>
 
                     <motion.div 
-                      className="flex gap-3"
+                      className="flex gap-4"
                       variants={itemVariants}
                     >
-                      <motion.button
-                        className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-md flex items-center gap-2"
-                        onClick={() => handleReadClick(0)}
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                      >
-                        <BookOpen className="h-4 w-4" />
-                        Read now
-                      </motion.button>
+                      {readingProgress ? (
+                        <>
+                          <motion.button
+                            className="px-6 py-3 bg-purple-600 hover:bg-purple-700 rounded-lg flex items-center gap-2 shadow-lg shadow-purple-900/20 font-medium"
+                            onClick={() => handleReadClick(0, true)}
+                            whileHover={{ scale: 1.03 }}
+                            whileTap={{ scale: 0.97 }}
+                          >
+                            <BookOpen className="h-5 w-5" />
+                            კითხვის გაგრძელება
+                            <span className="ml-1 text-xs bg-purple-500 px-2 py-0.5 rounded-full">
+                              {readingProgress.chapterNumber}
+                            </span>
+                          </motion.button>
+                          
+                          <motion.button
+                            className="px-6 py-3 bg-black/30 hover:bg-black/40 border border-white/10 rounded-lg flex items-center gap-2"
+                            onClick={() => handleReadClick(0, false)}
+                            whileHover={{ scale: 1.03 }}
+                            whileTap={{ scale: 0.97 }}
+                          >
+                            <BookOpen className="h-5 w-5" />
+                            თავიდან დაწყება
+                          </motion.button>
+                        </>
+                      ) : (
+                        <motion.button
+                          className="px-6 py-3 bg-purple-600 hover:bg-purple-700 rounded-lg flex items-center gap-2 shadow-lg shadow-purple-900/20 font-medium"
+                          onClick={() => handleReadClick(0)}
+                          whileHover={{ scale: 1.03 }}
+                          whileTap={{ scale: 0.97 }}
+                        >
+                          <BookOpen className="h-5 w-5" />
+                          კითხვის დაწყება
+                        </motion.button>
+                      )}
                       
-                      <motion.button
-                        className="p-2 text-gray-300 hover:text-white border border-gray-700 hover:border-gray-500 rounded-md"
-                        onClick={() => setIsBookmarked(!isBookmarked)}
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                      >
-                        <Bookmark className={cn("h-4 w-4", isBookmarked && "fill-purple-500 text-purple-500")} />
-                      </motion.button>
-                      
-                      <motion.button
-                        className="p-2 text-gray-300 hover:text-white border border-gray-700 hover:border-gray-500 rounded-md"
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                      >
-                        <Download className="h-4 w-4" />
-                      </motion.button>
-                      
-                      <motion.button
-                        className="p-2 text-gray-300 hover:text-white border border-gray-700 hover:border-gray-500 rounded-md"
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                      >
-                        <Share className="h-4 w-4" />
-                      </motion.button>
+                      {/* Library Status Dropdown */}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button 
+                            variant="outline" 
+                            style={{height: "52px"}}
+                            className="bg-black/30 border-gray-700 hover:border-gray-500"
+                          >
+                            <span className={statusInfo.color}>{statusInfo.icon}</span>
+                            <span className="ml-2">{statusInfo.label}</span>
+                            <ChevronDown className="ml-2 h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        
+                        <DropdownMenuContent className="w-48 bg-gray-900/95 backdrop-blur-md border-white/10">
+                          <DropdownMenuItem 
+                            className={libraryStatus === 'reading' ? "bg-green-900/20 text-green-400" : ""} 
+                            onClick={() => handleStatusChange('reading')}
+                          >
+                            <BookOpen className="mr-2 h-4 w-4" />
+                            <span>ვკითხულობ</span>
+                          </DropdownMenuItem>
+                          
+                          <DropdownMenuItem 
+                            className={libraryStatus === 'plan_to_read' ? "bg-purple-900/20 text-purple-400" : ""} 
+                            onClick={() => handleStatusChange('plan_to_read')}
+                          >
+                            <Bookmark className="mr-2 h-4 w-4" />
+                            <span>სამომავლოდ</span>
+                          </DropdownMenuItem>
+                          
+                          <DropdownMenuItem 
+                            className={libraryStatus === 'completed' ? "bg-blue-900/20 text-blue-400" : ""} 
+                            onClick={() => handleStatusChange('completed')}
+                          >
+                            <CheckCheck className="mr-2 h-4 w-4" />
+                            <span>დასრულებული</span>
+                          </DropdownMenuItem>
+                          
+                          <DropdownMenuItem 
+                            className={libraryStatus === 'on_hold' ? "bg-yellow-900/20 text-yellow-400" : ""} 
+                            onClick={() => handleStatusChange('on_hold')}
+                          >
+                            <PauseCircle className="mr-2 h-4 w-4" />
+                            <span>შეჩერებული</span>
+                          </DropdownMenuItem>
+                          
+                          <DropdownMenuItem 
+                            className={libraryStatus === 'dropped' ? "bg-red-900/20 text-red-400" : ""} 
+                            onClick={() => handleStatusChange('dropped')}
+                          >
+                            <XCircle className="mr-2 h-4 w-4" />
+                            <span>მიტოვებული</span>
+                          </DropdownMenuItem>
+
+                          {libraryStatus && (
+                            <>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem 
+                                className="text-gray-400"
+                                onClick={() => {
+                                  setLibraryStatus(null);
+                                  updateItemStatus(mangaId, 'manga', 'plan_to_read', '', '', 0);
+                                }}
+                              >
+                                <X className="mr-2 h-4 w-4" />
+                                <span>ამოშლა ბიბლიოთეკიდან</span>
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </motion.div>
                   </div>
                 </motion.div>
 
-                {/* Chapters */}
-                <motion.section 
-                  className="mb-8"
-                  variants={sectionVariants}
-                >
-                  <motion.h2 
-                    className="text-2xl font-bold mb-4"
-                    variants={itemVariants}
-                  >
-                    Chapters
-                  </motion.h2>
-                  <div className="grid gap-2">
-                    {processedData.chapterList.map((chapter: any, index: number) => (
-                      <motion.div 
-                        key={`chapter-${index}`}
-                        className="bg-black/30 backdrop-blur-sm border border-white/5 rounded-lg p-4 hover:bg-black/50 transition-colors cursor-pointer"
-                        onClick={() => handleReadClick(index)}
-                        variants={itemVariants}
-                        whileHover={{ x: 5 }}
-                      >
-                        <div className="flex justify-between items-center">
-                          <div>
-                            <h3 className="font-semibold">{chapter.title}</h3>
-                            <p className="text-sm text-gray-400">{chapter.releaseDate}</p>
+                {/* Main content container with chapters and characters side by side */}
+                <div className="flex flex-col mt-8 mb-12">
+                  <div className="flex flex-col lg:flex-row gap-8">
+                    {/* Left side: Chapters list in table format */}
+                    <div className="lg:w-3/5">
+                      <div className="flex justify-between items-center mb-4">
+                        <h2 className="text-xl font-bold">თავები</h2>
+                        {readingProgress && (
+                          <button 
+                            onClick={() => handleReadClick(0, true)}
+                            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-md text-sm flex items-center gap-2"
+                          >
+                            კითხვის გაგრძელება
+                          </button>
+                        )}
+                      </div>
+                      
+                      <div className="bg-black/30 backdrop-blur-sm border border-white/10 rounded-lg overflow-hidden">
+                        <table className="w-full">
+                          <thead>
+                            <tr className="border-b border-white/10 text-left text-gray-400 text-sm">
+                              <th className="py-3 px-4 font-medium">სახელი</th>
+                              <th className="py-3 px-4 font-medium text-right">თავი</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {processedData?.chapterList?.map((chapter: any, index: number) => {
+                              const chapterId = chapter.id || `chapter-${chapter.number}`;
+                              const readPercentage = getReadPercentage(mangaId, chapterId);
+                              const isCurrentlyReading = readingProgress?.chapterId === chapterId;
+                              
+                              return (
+                                <tr 
+                                  key={`chapter-${index}`}
+                                  className={cn(
+                                    "border-b border-white/5 hover:bg-white/5 transition-colors cursor-pointer",
+                                    isCurrentlyReading && "bg-purple-900/20"
+                                  )}
+                                  onClick={() => handleReadClick(index)}
+                                >
+                                  <td className="py-3 px-4">
+                                    <div className="flex flex-col">
+                                      <span className="font-medium">{chapter.title}</span>
+                                      {readPercentage > 0 && (
+                                        <div className="mt-1 w-24">
+                                          <Progress 
+                                            value={readPercentage} 
+                                            className="h-1" 
+                                          />
+                                        </div>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="py-3 px-4 text-right">
+                                    <span className="font-medium">{chapter.number}</span>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                    
+                    {/* Right side: Characters grid */}
+                    <div className="lg:w-2/5">
+                      <h2 className="text-xl font-bold mb-4">პერსონაჟები</h2>
+                      
+                      <div className="grid grid-cols-2 gap-4">
+                        {processedData.characters && processedData.characters.length > 0 ? (
+                          processedData.characters.map((character: any, index: number) => (
+                            <div
+                              key={`character-${index}`}
+                              className="bg-black/30 backdrop-blur-sm border border-white/10 rounded-lg overflow-hidden flex items-center gap-3 p-2"
+                            >
+                              <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0 relative">
+                                <Image 
+                                  src={character.image || "/placeholder-character.jpg"}
+                                  alt={character.name}
+                                  fill
+                                  className="object-cover"
+                                />
+                              </div>
+                              <div className="overflow-hidden">
+                                <h3 className="font-medium text-sm truncate">{character.name}</h3>
+                                <p className="text-xs text-gray-400">{character.role === "MAIN" ? "მთავარი" : "მეორეხარისხოვანი"}</p>
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="col-span-full text-center py-8 bg-black/20 rounded-lg">
+                            <p className="text-gray-400">პერსონაჟების შესახებ ინფორმაცია არ არის</p>
                           </div>
-                          <ChevronRight className="h-5 w-5 text-gray-400" />
-                        </div>
-                      </motion.div>
-                    ))}
+                        )}
+                      </div>
+                    </div>
                   </div>
-                </motion.section>
+                </div>
+
+                {/* Add Chapter Manager as a separate section but only if from database */}
+                {isFromDatabase && (
+                  <motion.section 
+                    className="mb-12"
+                    variants={sectionVariants}
+                  >
+                    <ChapterManager 
+                      contentId={mangaId}
+                      onChaptersUpdated={fetchMangaData}
+                      initialChapters={processedData.chapterList.map((chapter: any) => ({
+                        id: chapter.id || `temp-${chapter.number}`,
+                        number: chapter.number,
+                        title: chapter.title,
+                        releaseDate: formatSafeDate(chapter.releaseDate),
+                        thumbnail: chapter.thumbnail,
+                        pages: Array.isArray(chapter.pages) ? chapter.pages : []
+                      }))}
+                    />
+                  </motion.section>
+                )}
 
                 {/* Related manga */}
-                {processedData.relations.length > 0 && (
+                {processedData.relations && processedData.relations.length > 0 ? (
                   <motion.section 
-                    className="mb-8"
+                    className="mb-12"
                     variants={sectionVariants}
                   >
                     <motion.h2 
-                      className="text-2xl font-bold mb-4"
+                      className="text-2xl font-bold mb-6 flex items-center"
                       variants={itemVariants}
                     >
-                      Related content
+                      <ChevronRight className="mr-2 h-5 w-5 text-purple-400" />
+                      მსგავსი კონტენტი
                     </motion.h2>
                     <RelatedContent items={processedData.relations} />
                   </motion.section>
-                )}
+                ) : null}
 
                 {/* Recommendations */}
-                {processedData.recommendations.length > 0 && (
+                {processedData.recommendations && processedData.recommendations.length > 0 ? (
                   <motion.section
+                    className="mb-12"
                     variants={sectionVariants}
                   >
                     <motion.h2 
-                      className="text-2xl font-bold mb-4"
+                      className="text-2xl font-bold mb-6 flex items-center"
                       variants={itemVariants}
                     >
-                      You might also like
+                      <Bookmark className="mr-2 h-5 w-5 text-purple-400" />
+                      შეიძლება მოგეწონოთ
                     </motion.h2>
                     <RecommendedContent items={processedData.recommendations} />
                   </motion.section>
-                )}
+                ) : null}
+                
+                {/* Comments section */}
+                <CommentSection 
+                  contentId={mangaId}
+                  contentType="manga"
+                  sectionVariants={sectionVariants}
+                  itemVariants={itemVariants}
+                />
               </motion.div>
             )}
           </AnimatePresence>

@@ -11,7 +11,6 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { SearchIcon, Loader2 } from "lucide-react"
 import { ImageSkeleton } from "./image-skeleton"
 import { searchContent } from "@/lib/content"
-import { debounce } from "@/lib/utils"
 
 interface SearchModalProps {
   isOpen: boolean
@@ -159,7 +158,7 @@ export function SearchModal({ isOpen, onClose }: SearchModalProps) {
                     type="text"
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Search anime or manga..."
+                    placeholder="მოძებნეთ ანიმე ან მანგა..."
                     className="flex-1 bg-transparent text-white placeholder:text-gray-500 focus:outline-none text-lg"
                   />
                   {query && (
@@ -180,13 +179,13 @@ export function SearchModal({ isOpen, onClose }: SearchModalProps) {
                       active={searchType === "anime"}
                       onClick={() => setSearchType("anime")}
                       icon={<Film className="h-4 w-4" />}
-                      label="Anime"
+                      label="ანიმე"
                     />
                     <ToggleButton
                       active={searchType === "manga"}
                       onClick={() => setSearchType("manga")}
                       icon={<BookOpen className="h-4 w-4" />}
-                      label="Manga"
+                      label="მანგა"
                     />
                   </div>
                   
@@ -195,7 +194,7 @@ export function SearchModal({ isOpen, onClose }: SearchModalProps) {
                     className="py-1.5 px-3 bg-[hsl(var(--primary))] text-white rounded-lg flex items-center gap-1 text-sm font-medium hover:brightness-110 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                     disabled={query.length < 2}
                   >
-                    Search
+                    ძიება
                     <ArrowRight className="h-3.5 w-3.5 ml-1" />
                   </button>
                 </div>
@@ -213,7 +212,7 @@ export function SearchModal({ isOpen, onClose }: SearchModalProps) {
                       className="p-8 text-center text-gray-400"
                     >
                       <div className="w-8 h-8 rounded-full border-2 border-t-[hsl(var(--primary))] border-r-[hsl(var(--primary))] border-b-gray-700 border-l-gray-700 animate-spin mx-auto mb-3"></div>
-                      <p>Searching...</p>
+                      <p>მიმდინარეობს ძიება...</p>
                     </m.div>
                   ) : results.length > 0 ? (
                     <m.div
@@ -278,7 +277,7 @@ export function SearchModal({ isOpen, onClose }: SearchModalProps) {
                       exit={{ opacity: 0 }}
                       className="p-8 text-center text-gray-400"
                     >
-                      <p>No results found</p>
+                      <p>შედეგები ვერ მოიძებნა</p>
                     </m.div>
                   ) : query.length > 0 ? (
                     <m.div
@@ -288,7 +287,7 @@ export function SearchModal({ isOpen, onClose }: SearchModalProps) {
                       exit={{ opacity: 0 }}
                       className="p-8 text-center text-gray-400"
                     >
-                      <p>Keep typing to search</p>
+                      <p>გააგრძელეთ ტექსტის შეყვანა ძიებისთვის</p>
                     </m.div>
                   ) : (
                     <m.div
@@ -298,7 +297,7 @@ export function SearchModal({ isOpen, onClose }: SearchModalProps) {
                       exit={{ opacity: 0 }}
                       className="p-8 text-center text-gray-400"
                     >
-                      <p>Type to search for {searchType}</p>
+                      <p>დაიწყეთ ტექსტის შეყვანა {searchType === "anime" ? "ანიმეს" : "მანგის"} მოსაძებნად</p>
                     </m.div>
                   )}
                 </AnimatePresence>

@@ -1,12 +1,12 @@
 "use client"
 
 import { useEffect, useState, useRef } from "react"
-import { Star, ChevronRight, Play, Plus, BookOpen, Clock, Info, Calendar } from "lucide-react"
+import { Star, ChevronRight } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { motion as m, AnimatePresence } from "framer-motion"
 import { ImageSkeleton } from "@/components/image-skeleton"
-import { getTrendingContent, getAllContent } from "@/lib/content"
-import { CardSkeleton, CarouselSkeleton, CategorySkeleton } from "@/components/ui/skeleton"
+import { getAllContent } from "@/lib/content"
+import { CategorySkeleton } from "@/components/ui/skeleton"
 
 // Helper function for drag scrolling
 function setupDragScroll(element: HTMLDivElement | null) {
@@ -37,7 +37,7 @@ function setupDragScroll(element: HTMLDivElement | null) {
     if (!isDown) return;
     e.preventDefault();
     const x = e.pageX - element.offsetLeft;
-    const walk = (x - startX) * 0.8; // Reduced scroll speed multiplier
+    const walk = (x - startX) * 0.8;
     element.scrollLeft = scrollLeft - walk;
   };
   
@@ -54,31 +54,14 @@ function setupDragScroll(element: HTMLDivElement | null) {
   };
 }
 
-// Helper function for auto scrolling
-function setupAutoScroll(element: HTMLDivElement | null, interval: number) {
-  if (!element || element.children.length <= 1) return () => {};
-  
-  const timer = setInterval(() => {
-    const cardWidth = element.scrollWidth / element.children.length;
-    const newScrollPosition = element.scrollLeft + cardWidth;
-    
-    if (newScrollPosition + element.clientWidth >= element.scrollWidth) {
-      element.scrollTo({ left: 0, behavior: "smooth" });
-    } else {
-      element.scrollTo({ left: newScrollPosition, behavior: "smooth" });
-    }
-  }, interval);
-  
-  return () => clearInterval(timer);
-}
-
 // Animation variants
 const containerVariants = {
   hidden: { opacity: 0 },
   visible: { 
     opacity: 1,
     transition: { 
-      staggerChildren: 0.15 
+      staggerChildren: 0.1,
+      ease: [0.22, 1, 0.36, 1]
     } 
   }
 };
@@ -93,92 +76,49 @@ const itemVariants = {
 };
 
 const cardHoverVariants = {
-  initial: { scale: 1, y: 0 },
+  initial: { scale: 1, y: 0, boxShadow: "0px 0px 0px rgba(0, 0, 0, 0)" },
   hover: { 
     scale: 1.05,
-    y: -8,
-    transition: { duration: 0.3, ease: "easeOut" },
-    boxShadow: "0 10px 20px rgba(0, 0, 0, 0.3)"
+    y: -10,
+    boxShadow: "0 20px 30px rgba(0, 0, 0, 0.4)",
+    transition: { 
+      duration: 0.3, 
+      ease: [0.22, 1, 0.36, 1],
+      boxShadow: { delay:.05 }
+    }
   }
 };
 
 interface MangaViewProps {
-  selectedCategory: string
-  setSelectedCategory: (category: string) => void
-  categories: string[]
-  hoveredCard: number | null
-  setHoveredCard: (id: number | null) => void
-  mangaData?: any[]
+  selectedCategory?: string
+  setSelectedCategory?: (category: string) => void
+  categories?: string[]
+  hoveredCard?: number | null
+  setHoveredCard?: (id: number | null) => void
+  items?: any[]
+  title?: string
 }
 
 export function MangaView({
-  selectedCategory,
-  setSelectedCategory,
-  categories,
-  hoveredCard,
-  setHoveredCard,
-  mangaData: propMangaData,
+  selectedCategory = "All",
+  setSelectedCategory = () => {},
+  categories = [],
+  hoveredCard = null,
+  setHoveredCard = () => {},
+  items = [],
+  title = "Available Manga"
 }: MangaViewProps) {
   const router = useRouter()
   const categoriesRef = useRef<HTMLDivElement>(null)
-  const [isLoading, setIsLoading] = useState(propMangaData ? false : true)
-  const [mangaData, setMangaData] = useState<any[]>(propMangaData || [])
-  
-  // Refs for carousel containers
-  const trendingMangaRef = useRef<HTMLDivElement>(null)
-  const trendingManhwaRef = useRef<HTMLDivElement>(null)
-  const popularSeriesRef = useRef<HTMLDivElement>(null)
-  
-  // Fetch manga data if not provided
-  useEffect(() => {
-    if (propMangaData) return
-    
-    async function fetchData() {
-      try {
-        const response = await getTrendingContent('manga', 15);
-        
-        if (response.success && response.content) {
-          // Transform data to match UI needs
-          const transformedData = response.content.map((manga: any) => ({
-            id: manga.id,
-            title: manga.title,
-            description: manga.description?.substring(0, 200) + "..." || "No description available",
-            image: manga.thumbnail,
-            thumbnail: manga.thumbnail,
-            rating: manga.rating || 0,
-            status: manga.status,
-            genres: manga.genres,
-            year: manga.releaseYear || "Unknown",
-            chapters: "Chapters available" // We would need to fetch chapters separately
-          }));
-          
-          setMangaData(transformedData);
-        }
-        
-        // Artificial delay for smoother animation
-        setTimeout(() => {
-          setIsLoading(false)
-        }, 500)
-      } catch (error) {
-        console.error("Error fetching manga data:", error)
-        setIsLoading(false)
-      }
-    }
-    
-    fetchData()
-  }, [propMangaData])
+  const [localLoading, setLocalLoading] = useState(items.length === 0)
+  const [localMangaData, setLocalMangaData] = useState<any[]>(items)
   
   // Filter manga based on selected category
   const filteredManga = selectedCategory === "All" 
-    ? mangaData 
-    : mangaData.filter(manga => manga.genres?.includes(selectedCategory))
-  
-  // Split data for different sections
-  const manga = filteredManga.filter(item => !item.title.includes("Season") && !item.title.includes("Vol"))
-  const manhwa = filteredManga.filter(item => item.title.includes("Solo Leveling") || item.title.includes("Tower of God") || item.title.includes("God of High School"))
-  const others = filteredManga.filter(item => !manga.includes(item) && !manhwa.includes(item))
+    ? localMangaData 
+    : localMangaData.filter(manga => manga.genres?.includes(selectedCategory))
 
-  // Handle card click - show hover preview and navigate to manga detail page
+  // Handle card click - navigate to manga detail page
   const handleCardClick = (id: number) => {
     setHoveredCard(id)
     setTimeout(() => {
@@ -199,364 +139,172 @@ export function MangaView({
     }
   };
 
-  // Set up drag scrolling and auto-scrolling for all carousels
+  // Set up drag scrolling for categories
   useEffect(() => {
-    const cleanupFunctions: Array<() => void> = [];
-    
-    // Setup for categories carousel
     if (categoriesRef.current) {
-      cleanupFunctions.push(setupDragScroll(categoriesRef.current));
+      const cleanup = setupDragScroll(categoriesRef.current);
+      return cleanup;
     }
-    
-    // Setup for manga carousels with different timings
-    const carousels = [
-      { ref: trendingMangaRef.current, interval: 5000 },
-      { ref: trendingManhwaRef.current, interval: 5300 },
-      { ref: popularSeriesRef.current, interval: 5700 }
-    ];
-    
-    carousels.forEach(({ ref, interval }) => {
-      if (ref) {
-        cleanupFunctions.push(setupDragScroll(ref));
-        cleanupFunctions.push(setupAutoScroll(ref, interval));
-      }
-    });
-    
-    return () => {
-      cleanupFunctions.forEach(cleanup => cleanup());
-    };
   }, []);
 
-  if (isLoading) {
-    return (
-      <m.div 
-        className="space-y-10"
-        variants={containerVariants}
-        initial="hidden"
-        animate="visible"
-      >
-        <m.div variants={itemVariants}>
-          <h1 className="text-3xl font-bold mb-6">Trending Manga</h1>
-          <CategorySkeleton count={8} />
-          <div className="mt-6">
-            <CarouselSkeleton count={6} />
-          </div>
-        </m.div>
+  // If items is not provided, fetch manga data
+  useEffect(() => {
+    if (items.length > 0) {
+      setLocalMangaData(items);
+      setLocalLoading(false);
+      return;
+    }
+    
+    async function fetchData() {
+      try {
+        // Get manga from our database
+        const response = await getAllContent('manga', 50);
+        
+        if (response.success && response.content) {
+          const transformedData = response.content.map((content: any) => ({
+            id: content.id,
+            title: content.title,
+            description: content.description?.substring(0, 160) + "..." || "აღწერა არ არის ხელმისაწვდომი",
+            image: content.banner_image || content.thumbnail,
+            thumbnail: content.thumbnail,
+            rating: content.rating || 0,
+            status: content.status,
+            releaseYear: content.release_year,
+            genres: content.genres
+          }));
+          
+          setLocalMangaData(transformedData);
+        }
+      } catch (error) {
+        console.error("Error fetching manga:", error);
+      } finally {
+        setLocalLoading(false);
+      }
+    }
+    
+    fetchData();
+  }, [items]);
 
-        <m.div variants={itemVariants}>
-          <h2 className="text-2xl font-bold mb-4">Trending Manhwa</h2>
-          <CarouselSkeleton count={5} />
-        </m.div>
-
-        <m.div variants={itemVariants}>
-          <h2 className="text-2xl font-bold mb-4">Popular Series</h2>
-          <CarouselSkeleton count={5} />
-        </m.div>
-      </m.div>
-    )
+  if (localLoading) {
+    return <CategorySkeleton />;
   }
 
   return (
-    <m.div 
-      className="space-y-12"
+    <m.div
       variants={containerVariants}
       initial="hidden"
       animate="visible"
+      className="space-y-12"
     >
-      <m.section variants={itemVariants}>
-        <div className="flex justify-between items-center mb-5">
-          <div className="flex items-center gap-4">
-            {manga.length > 0 && (
-              <div className="h-14 w-14 rounded-lg overflow-hidden border-2 border-white/20 shadow-lg flex-shrink-0">
-                <ImageSkeleton
-                  src={manga[0]?.thumbnail || manga[0]?.image || "/placeholder.svg"}
-                  alt={manga[0]?.title || "Trending manga"}
-                  className="w-full h-full object-cover"
-                />
-              </div>
-            )}
-            <h1 className="text-3xl font-bold mb-0 text-glow">Trending Manga</h1>
-          </div>
-          <button className="flex items-center gap-1 text-sm font-medium text-white/70 hover:text-white transition-colors">
-            View All
-            <ChevronRight className="h-4 w-4" />
-          </button>
+      {/* Categories filter */}
+      <div className="relative">
+        <div className="flex items-center mb-2">
+          <h2 className="text-xl font-bold">კატეგორიები</h2>
         </div>
-
-        <div className="mb-6 relative">
-          <div 
+        <div className="relative group">
+          <div
             ref={categoriesRef}
-            className="category-nav" 
+            className="flex space-x-2 overflow-x-auto pb-2 scrollbar-hide"
           >
-            {["All", ...categories.filter(cat => cat !== "All")].map((category) => (
-              <m.button
+            <button
+              onClick={() => setSelectedCategory("All")}
+              className={`px-4 py-1.5 rounded-full whitespace-nowrap transition-colors ${
+                selectedCategory === "All"
+                  ? "bg-primary text-white"
+                  : "bg-white/10 hover:bg-white/20"
+              }`}
+            >
+              ყველა
+            </button>
+            
+            {categories.map((category) => (
+              <button
                 key={category}
                 onClick={() => setSelectedCategory(category)}
-                className={`category-button ${
+                className={`px-4 py-1.5 rounded-full whitespace-nowrap transition-colors ${
                   selectedCategory === category
-                    ? "bg-white text-black font-medium"
-                    : "bg-white/10 backdrop-blur-sm text-gray-200 border border-white/5 hover:border-white/20"
+                    ? "bg-primary text-white"
+                    : "bg-white/10 hover:bg-white/20"
                 }`}
-                whileHover={{ scale: 1.05, y: -2 }}
-                whileTap={{ scale: 0.95 }}
-                transition={{ duration: 0.2 }}
               >
                 {category}
-              </m.button>
+              </button>
             ))}
-        </div>
-          <m.div 
-            className="absolute right-0 top-1/2 transform -translate-y-1/2 bg-gradient-to-l from-[#070707] via-[#070707]/90 to-transparent pl-8 pr-1 py-4"
-            whileHover={{ x: -2 }}
-            whileTap={{ x: 2 }}
+          </div>
+          
+          {/* Navigation buttons */}
+          <button
+            className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-6 bg-black/30 rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/50"
+            onClick={() => scrollCategories('left')}
           >
-            <m.button 
-              onClick={() => scrollCategories('right')}
-              className="bg-white/10 p-2 rounded-full backdrop-blur-sm border border-white/10 hover:bg-white/20 transition-all duration-200"
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-            >
-              <ChevronRight className="h-5 w-5" />
-            </m.button>
-          </m.div>
+            <ChevronRight className="w-4 h-4 rotate-180" />
+          </button>
+          
+          <button
+            className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-6 bg-black/30 rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/50"
+            onClick={() => scrollCategories('right')}
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
         </div>
+      </div>
 
-        <AnimatePresence mode="wait">
-          <m.div 
-            key={selectedCategory}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.3 }}
-          >
-            <div>
-              {manga.length > 0 ? (
-                <div 
-                  ref={trendingMangaRef}
-                  className="flex overflow-x-auto pb-4 space-x-5 cursor-grab no-scrollbar"
+      {/* Manga grid */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-2xl font-bold">{title}</h2>
+        </div>
+        
+        {filteredManga.length === 0 ? (
+          <div className="text-center py-20 bg-white/5 rounded-xl">
+            <p className="text-white/60">ამ კატეგორიაში მანგა ვერ მოიძებნა</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+            {filteredManga.map((manga) => (
+              <m.div
+                key={manga.id}
+                variants={itemVariants}
+                onClick={() => handleCardClick(manga.id)}
+                className="cursor-pointer relative group"
+              >
+                <m.div
+                  initial="initial"
+                  whileHover="hover"
+                  variants={cardHoverVariants}
+                  className="relative overflow-hidden rounded-lg aspect-[2/3] bg-white/5"
                 >
-                  {manga.map((item) => (
-                    <m.div 
-                      key={item.id}
-                      className="relative flex-none w-[180px] sm:w-[200px] group cursor-pointer card-hover" 
-                      onClick={() => handleCardClick(item.id)}
-                      whileHover="hover"
-                      variants={cardHoverVariants}
-                    >
-                      <div className="relative aspect-[2/3] rounded-md overflow-hidden card-shadow border border-white/10">
-                        <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/80 z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                        <ImageSkeleton
-                          src={item.image}
-                          alt={item.title}
-                          className="w-full h-full object-cover transition-all duration-500 group-hover:scale-110"
-                        />
-                        <div className="absolute top-2 right-2 flex items-center gap-0.5 bg-black/70 backdrop-blur-sm px-2 py-1 rounded-full text-xs z-20">
-                          <Star className="h-3 w-3 text-yellow-400 fill-yellow-400" />
-                          <span className="font-medium">{item.rating.toFixed(1)}</span>
-                        </div>
-                        
-                        <div className="absolute bottom-0 left-0 right-0 p-3 z-20 transform translate-y-full opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-300">
-                          <div className="flex gap-2">
-                            <button className="bg-white text-black rounded-full p-1.5 hover:bg-opacity-90 transition-colors">
-                              <BookOpen className="h-3 w-3" />
-                            </button>
-                            <button className="bg-white/20 backdrop-blur-sm rounded-full p-1.5 hover:bg-white/30 transition-colors">
-                              <Plus className="h-3 w-3" />
-                            </button>
-                          </div>
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent z-10" />
+                  <ImageSkeleton
+                    src={manga.thumbnail}
+                    alt={manga.title}
+                    className="object-cover w-full h-full transition-transform"
+                  />
+                  
+                  <div className="absolute bottom-0 left-0 right-0 p-3 z-20">
+                    <div className="flex justify-between items-end">
+                      <div>
+                        <h3 className="text-sm font-medium line-clamp-2">{manga.title}</h3>
+                        <div className="flex items-center mt-1 text-xs text-white/60">
+                          {manga.releaseYear && <span className="mr-2">{manga.releaseYear}</span>}
+                          <span className="capitalize">{manga.status}</span>
                         </div>
                       </div>
-                      <div className="mt-2">
-                        <h3 className="font-medium text-sm line-clamp-2 group-hover:text-white transition-colors">{item.title}</h3>
-                        {item.genres && (
-                          <p className="text-xs text-gray-400 mt-1 line-clamp-1">
-                            {item.genres.slice(0, 3).join(', ')}
-                          </p>
-                        )}
-                      </div>
-                    </m.div>
-                  ))}
-                </div>
-              ) :
-                <m.div 
-                  className="text-gray-400 py-8 text-center bg-white/5 rounded-lg border border-white/10 backdrop-blur-sm"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 0.2 }}
-                >
-                  No manga found in this category.
+                      
+                      {manga.rating > 0 && (
+                        <div className="flex items-center bg-black/40 rounded px-1.5 py-0.5">
+                          <Star className="w-3 h-3 text-yellow-400 mr-1" />
+                          <span className="text-xs">{manga.rating.toFixed(1)}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </m.div>
-              }
-        </div>
-          </m.div>
-        </AnimatePresence>
-      </m.section>
-
-      <m.section variants={itemVariants}>
-        <div className="flex justify-between items-center mb-4">
-          <div className="flex items-center gap-4">
-            {manhwa.length > 0 ? (
-              <div className="h-12 w-12 rounded-lg overflow-hidden border-2 border-white/20 shadow-lg flex-shrink-0">
-                <ImageSkeleton
-                  src={manhwa[0]?.thumbnail || manhwa[0]?.image || "/placeholder.svg"}
-                  alt={manhwa[0]?.title || "Trending manhwa"}
-                  className="w-full h-full object-cover"
-                />
-              </div>
-            ) : filteredManga.length > 0 && (
-              <div className="h-12 w-12 rounded-lg overflow-hidden border-2 border-white/20 shadow-lg flex-shrink-0">
-                <ImageSkeleton
-                  src={filteredManga[0]?.thumbnail || filteredManga[0]?.image || "/placeholder.svg"}
-                  alt={filteredManga[0]?.title || "Trending manhwa"}
-                  className="w-full h-full object-cover"
-                />
-              </div>
-            )}
-            <h2 className="text-2xl font-bold mb-0">Trending Manhwa</h2>
+              </m.div>
+            ))}
           </div>
-          <button className="flex items-center gap-1 text-sm font-medium text-white/70 hover:text-white transition-colors">
-            View All
-            <ChevronRight className="h-4 w-4" />
-          </button>
-        </div>
-        <div 
-          ref={trendingManhwaRef}
-          className="flex overflow-x-auto pb-4 space-x-4 cursor-grab no-scrollbar"
-        >
-          {manhwa.length > 0 ? manhwa.map((item) => (
-            <m.div 
-              key={item.id}
-              className="relative flex-none w-[160px] sm:w-[180px] group cursor-pointer" 
-              onClick={() => handleCardClick(item.id)}
-              whileHover="hover"
-              variants={cardHoverVariants}
-            >
-              <div className="relative aspect-[2/3] rounded-md overflow-hidden">
-                <ImageSkeleton
-                  src={item.image}
-                  alt={item.title}
-                  className="w-full h-full object-cover transition-transform"
-                />
-                {item.rating && (
-                  <div className="absolute top-1 right-1 flex items-center gap-0.5 bg-black/60 px-1.5 py-0.5 rounded text-xs">
-                    <Star className="h-3 w-3 text-yellow-400 fill-yellow-400" />
-                    <span>{item.rating.toFixed(1)}</span>
-                  </div>
-                )}
-              </div>
-              <h3 className="mt-1 text-sm font-medium line-clamp-2">{item.title}</h3>
-              {item.year && <p className="text-xs text-gray-400">{item.year}</p>}
-            </m.div>
-          )) : filteredManga.slice(0, 7).map((item, index) => (
-            <m.div 
-              key={`manhwa-${item.id}-${index}`}
-              className="relative flex-none w-[160px] sm:w-[180px] group cursor-pointer" 
-              onClick={() => handleCardClick(item.id)}
-              whileHover="hover"
-              variants={cardHoverVariants}
-            >
-              <div className="relative aspect-[2/3] rounded-md overflow-hidden">
-                <ImageSkeleton
-                  src={item.image}
-                  alt={item.title}
-                  className="w-full h-full object-cover transition-transform"
-                />
-                {item.rating && (
-                  <div className="absolute top-1 right-1 flex items-center gap-0.5 bg-black/60 px-1.5 py-0.5 rounded text-xs">
-                    <Star className="h-3 w-3 text-yellow-400 fill-yellow-400" />
-                    <span>{item.rating.toFixed(1)}</span>
-                  </div>
-                )}
-              </div>
-              <h3 className="mt-1 text-sm font-medium line-clamp-2">{item.title}</h3>
-              {item.year && <p className="text-xs text-gray-400">{item.year}</p>}
-            </m.div>
-          ))}
-        </div>
-      </m.section>
-
-      <m.section variants={itemVariants}>
-        <div className="flex justify-between items-center mb-4">
-          <div className="flex items-center gap-4">
-            {others.length > 0 ? (
-              <div className="h-12 w-12 rounded-lg overflow-hidden border-2 border-white/20 shadow-lg flex-shrink-0">
-                <ImageSkeleton
-                  src={others[0]?.thumbnail || others[0]?.image || "/placeholder.svg"}
-                  alt={others[0]?.title || "Popular series"}
-                  className="w-full h-full object-cover"
-                />
-              </div>
-            ) : filteredManga.length > 0 && (
-              <div className="h-12 w-12 rounded-lg overflow-hidden border-2 border-white/20 shadow-lg flex-shrink-0">
-                <ImageSkeleton
-                  src={filteredManga[0]?.thumbnail || filteredManga[0]?.image || "/placeholder.svg"}
-                  alt={filteredManga[0]?.title || "Popular series"}
-                  className="w-full h-full object-cover"
-                />
-              </div>
-            )}
-            <h2 className="text-2xl font-bold mb-0">Popular Series</h2>
-          </div>
-          <button className="flex items-center gap-1 text-sm font-medium text-white/70 hover:text-white transition-colors">
-            View All
-            <ChevronRight className="h-4 w-4" />
-          </button>
-        </div>
-        <div 
-          ref={popularSeriesRef}
-          className="flex overflow-x-auto pb-4 space-x-4 cursor-grab no-scrollbar"
-        >
-          {others.length > 0 ? others.map((item, index) => (
-            <m.div 
-              key={`other-${item.id}-${index}`}
-              className="relative flex-none w-[160px] sm:w-[180px] group cursor-pointer" 
-              onClick={() => handleCardClick(item.id)}
-              whileHover="hover"
-              variants={cardHoverVariants}
-            >
-              <div className="relative aspect-[2/3] rounded-md overflow-hidden">
-                <ImageSkeleton
-                  src={item.image}
-                  alt={item.title}
-                  className="w-full h-full object-cover transition-transform"
-                />
-                {item.rating && (
-                  <div className="absolute top-1 right-1 flex items-center gap-0.5 bg-black/60 px-1.5 py-0.5 rounded text-xs">
-                    <Star className="h-3 w-3 text-yellow-400 fill-yellow-400" />
-                    <span>{item.rating.toFixed(1)}</span>
-                  </div>
-                )}
-              </div>
-              <h3 className="mt-1 text-sm font-medium line-clamp-2">{item.title}</h3>
-              {item.year && <p className="text-xs text-gray-400">{item.year}</p>}
-            </m.div>
-          )) : filteredManga.slice(0, 7).map((item, index) => (
-            <m.div 
-              key={`other-${item.id}-${index}`}
-              className="relative flex-none w-[160px] sm:w-[180px] group cursor-pointer" 
-              onClick={() => handleCardClick(item.id)}
-              whileHover="hover"
-              variants={cardHoverVariants}
-            >
-              <div className="relative aspect-[2/3] rounded-md overflow-hidden">
-                <ImageSkeleton
-                  src={item.image}
-                  alt={item.title}
-                  className="w-full h-full object-cover transition-transform"
-                />
-                {item.rating && (
-                  <div className="absolute top-1 right-1 flex items-center gap-0.5 bg-black/60 px-1.5 py-0.5 rounded text-xs">
-                    <Star className="h-3 w-3 text-yellow-400 fill-yellow-400" />
-                    <span>{item.rating.toFixed(1)}</span>
-                  </div>
-                )}
-              </div>
-              <h3 className="mt-1 text-sm font-medium line-clamp-2">{item.title}</h3>
-              {item.year && <p className="text-xs text-gray-400">{item.year}</p>}
-            </m.div>
-          ))}
-        </div>
-      </m.section>
+        )}
+      </div>
     </m.div>
-  )
+  );
 }

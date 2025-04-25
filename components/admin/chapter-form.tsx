@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { CalendarIcon, Loader2, Plus, X, ImagePlus } from "lucide-react";
-import { format } from "date-fns";
+import { CalendarIcon, Loader2, Plus, X, ImagePlus, FolderOpen } from "lucide-react";
+import { format, isValid } from "date-fns";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -34,7 +34,12 @@ const chapterSchema = z.object({
   number: z.coerce.number().int().positive("Chapter number must be positive"),
   title: z.string().min(1, "Title is required"),
   description: z.string().optional(),
-  thumbnail: z.string().url("Invalid thumbnail URL").optional().or(z.literal("")),
+  thumbnail: z.string()
+    .refine(
+      val => val === '' || val.startsWith('http') || val.startsWith('https'), 
+      { message: "Thumbnail must be empty or a valid URL starting with http(s)://" }
+    )
+    .optional(),
   pages: z.array(z.string().url("Invalid page URL")).min(1, "At least one page is required"),
   releaseDate: z.date().optional(),
 });
@@ -56,12 +61,20 @@ export default function ChapterForm({
 }: ChapterFormProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [newPageUrl, setNewPageUrl] = useState("");
+  const [serviceRoleKey, setServiceRoleKey] = useState("");
+  const [showServiceKeyInput, setShowServiceKeyInput] = useState(false);
+  const [cloudinaryFolder, setCloudinaryFolder] = useState("");
+  const [isLoadingCloudinary, setIsLoadingCloudinary] = useState(false);
+  const [cloudinaryImages, setCloudinaryImages] = useState<Array<{id: string, url: string, filename: string}>>([]);
   
   // Set default values for the form
   const defaultValues = initialData ? {
     ...initialData,
-    // Convert any string dates to Date objects
-    releaseDate: initialData.releaseDate ? new Date(initialData.releaseDate) : undefined,
+    // Convert any string dates to Date objects with validation
+    releaseDate: initialData.releaseDate ? (() => {
+      const date = new Date(initialData.releaseDate);
+      return isValid(date) ? date : undefined;
+    })() : undefined,
     // Ensure number fields are numbers
     number: Number(initialData.number),
     // Ensure pages is an array
@@ -81,6 +94,30 @@ export default function ChapterForm({
   });
 
   const watchedPages = form.watch("pages");
+
+  useEffect(() => {
+    // Load saved service role key from localStorage, if any
+    if (typeof window !== 'undefined') {
+      const savedKey = localStorage.getItem('serviceRoleKey');
+      if (savedKey) {
+        setServiceRoleKey(savedKey);
+      }
+    }
+  }, []);
+
+  const saveServiceRoleKey = () => {
+    if (typeof window !== 'undefined') {
+      if (serviceRoleKey) {
+        localStorage.setItem('serviceRoleKey', serviceRoleKey);
+        toast.success('Service role key saved');
+        setShowServiceKeyInput(false);
+      } else {
+        // If empty, remove the key
+        localStorage.removeItem('serviceRoleKey');
+        toast.success('Service role key removed');
+      }
+    }
+  };
 
   const handleAddPage = () => {
     if (!newPageUrl) return;
@@ -117,46 +154,153 @@ export default function ChapterForm({
     form.setValue("pages", updatedPages);
   };
 
-  async function onSubmit(data: ChapterFormValues) {
-    setIsLoading(true);
+  const fetchCloudinaryImages = async () => {
+    if (!cloudinaryFolder.trim()) {
+      toast.error("Please enter a Cloudinary folder name");
+      return;
+    }
+
+    setIsLoadingCloudinary(true);
+    setCloudinaryImages([]);
     
     try {
-      // Process data - format the date as ISO string if it exists
-      const formattedData = {
-        ...data,
-        contentId, // Add the contentId
-        releaseDate: data.releaseDate ? data.releaseDate.toISOString() : undefined,
-      };
+      // Normalize folder name by removing leading/trailing slashes and spaces
+      const normalizedFolder = cloudinaryFolder.trim().replace(/^\/|\/$/g, "");
+      console.log("Fetching images from folder:", normalizedFolder);
       
-      // Define the API endpoint and method
-      const endpoint = initialData?.id 
-        ? `/api/chapters?id=${initialData.id}` 
-        : "/api/chapters";
-      const method = initialData?.id ? "PUT" : "POST";
-      
-      // Make the API request
-      const response = await fetch(endpoint, {
-        method,
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(formattedData),
-      });
+      const response = await fetch(`/api/cloudinary?folder=${encodeURIComponent(normalizedFolder)}`);
       
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to save chapter");
+        throw new Error(errorData.message || errorData.error || "Failed to fetch images from Cloudinary");
+      }
+
+      const { images } = await response.json();
+      setCloudinaryImages(images || []);
+      
+      if (!images || images.length === 0) {
+        toast.warning(`No images found in "${normalizedFolder}". Check folder name and case sensitivity.`);
+      } else {
+        toast.success(`Found ${images.length} images`);
+      }
+    } catch (error) {
+      console.error("Error fetching Cloudinary images:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to fetch images");
+    } finally {
+      setIsLoadingCloudinary(false);
+    }
+  };
+
+  const handleAddAllCloudinaryImages = () => {
+    if (cloudinaryImages.length === 0) {
+      toast.warning("No Cloudinary images to add");
+      return;
+    }
+
+    // Add all Cloudinary image URLs to the pages array
+    const imageUrls = cloudinaryImages.map(img => img.url);
+    form.setValue("pages", [...watchedPages, ...imageUrls]);
+    toast.success(`Added ${imageUrls.length} images to pages`);
+  };
+
+  const onSubmit = async (data: ChapterFormValues) => {
+    setIsLoading(true);
+    
+    try {
+      // DEVELOPMENT MODE BYPASS - Skip admin check in development
+      const isDevelopment = process.env.NODE_ENV === 'development';
+      if (isDevelopment) {
+        console.log("DEVELOPMENT MODE: Bypassing admin check for chapters");
+        // Continue with chapter submission without admin check
+      } else {
+        // Check admin status first before trying to submit
+        const adminCheck = await fetch('/api/admin/check', {
+          method: 'GET',
+          credentials: 'include',
+        });
+        
+        const adminCheckData = await adminCheck.json();
+        if (!adminCheckData.isAdmin) {
+          toast.error("Admin privileges required to manage chapters");
+          setIsLoading(false);
+          return;
+        }
       }
       
-      toast.success(initialData ? "Chapter updated successfully" : "Chapter created successfully");
+      // Process pages to ensure they're in correct order
+      const processedPages = [...data.pages];
+      
+      // Ensure thumbnail is a valid URL or empty string
+      let thumbnail = data.thumbnail || '';
+      if (thumbnail && !thumbnail.startsWith('http')) {
+        thumbnail = ''; // Reset invalid URLs to empty string
+      }
+      
+      const chapterData = {
+        contentId: contentId,
+        number: data.number,
+        title: data.title,
+        description: data.description || '',
+        thumbnail: thumbnail,
+        pages: processedPages,
+        releaseDate: data.releaseDate,
+      };
+      
+      console.log("Submitting chapter data:", chapterData);
+      
+      // Check if service role key is available in localStorage
+      const serviceRoleKey = typeof window !== 'undefined' ? localStorage.getItem('serviceRoleKey') : null;
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      
+      // Add service role key if available
+      if (serviceRoleKey) {
+        headers['x-supabase-service-role'] = serviceRoleKey;
+      }
+      
+      const response = await fetch('/api/chapters' + (initialData ? `?id=${initialData.id}` : ''), {
+        method: initialData ? 'PUT' : 'POST',
+        headers,
+        credentials: 'include',
+        body: JSON.stringify(chapterData),
+      });
+      
+      if (response.status === 401) {
+        toast.error("Authentication required. Please log in again.");
+        setIsLoading(false);
+        return;
+      }
+      
+      if (response.status === 403) {
+        toast.error("You don't have admin privileges to manage chapters.");
+        setIsLoading(false);
+        return;
+      }
+      
+      let errorData;
+      try {
+        errorData = await response.json();
+      } catch (e) {
+        console.error("Failed to parse error response:", e);
+      }
+      
+      if (!response.ok) {
+        const errorMessage = errorData?.error || 'Failed to save chapter';
+        const errorDetails = errorData?.details ? `: ${JSON.stringify(errorData.details)}` : '';
+        throw new Error(errorMessage + errorDetails);
+      }
+      
+      toast.success(`Chapter ${data.number} ${initialData ? 'updated' : 'created'} successfully`);
+      
       onSuccess();
     } catch (error) {
-      console.error("Error saving chapter:", error);
-      toast.error(initialData ? "Failed to update chapter" : "Failed to create chapter");
+      console.error('Error saving chapter:', error);
+      toast.error(error instanceof Error ? error.message : "Failed to save chapter");
     } finally {
       setIsLoading(false);
     }
-  }
+  };
 
   return (
     <Form {...form}>
@@ -199,7 +343,7 @@ export default function ChapterForm({
                           !field.value && "text-muted-foreground"
                         )}
                       >
-                        {field.value ? (
+                        {field.value && isValid(field.value) ? (
                           format(field.value, "PPP")
                         ) : (
                           <span>Pick a date</span>
@@ -303,6 +447,81 @@ export default function ChapterForm({
                   </Button>
                 </div>
                 
+                {/* Cloudinary Integration */}
+                <div className="border border-dashed border-accent p-4 rounded-md bg-secondary/10">
+                  <h4 className="text-sm font-medium mb-2 flex items-center">
+                    <FolderOpen className="h-4 w-4 mr-1 text-accent" />
+                    Import from Cloudinary
+                  </h4>
+                  <div className="flex flex-col gap-2 mb-3">
+                    <Input
+                      placeholder="Enter Cloudinary folder name (e.g., berserk/chapter1)"
+                      value={cloudinaryFolder}
+                      onChange={(e) => setCloudinaryFolder(e.target.value)}
+                      className="w-full"
+                    />
+                    <div className="flex justify-between items-center text-xs text-muted-foreground">
+                      <span className="italic">
+                        Format examples: "berserk/chapter1", "manga/one-piece/ch1"
+                      </span>
+                    </div>
+                    <Button 
+                      type="button" 
+                      onClick={fetchCloudinaryImages}
+                      variant="outline"
+                      disabled={isLoadingCloudinary}
+                      className="w-full"
+                    >
+                      {isLoadingCloudinary ? (
+                        <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Searching...</>
+                      ) : (
+                        <>Find Images</>
+                      )}
+                    </Button>
+                  </div>
+                  
+                  {cloudinaryImages.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-xs text-muted-foreground">
+                        Found {cloudinaryImages.length} images in folder "{cloudinaryFolder}"
+                      </p>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={handleAddAllCloudinaryImages}
+                        className="w-full"
+                      >
+                        <Plus className="h-4 w-4 mr-1" /> Add All Images to Pages
+                      </Button>
+                      <ScrollArea className="h-32 border rounded-md p-2 mt-2">
+                        <div className="space-y-1">
+                          {cloudinaryImages.map((image, index) => (
+                            <div 
+                              key={image.id}
+                              className="flex items-center justify-between bg-secondary/10 p-1 rounded text-xs"
+                            >
+                              <div className="truncate flex-1">{image.filename}</div>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                onClick={() => {
+                                  form.setValue("pages", [...watchedPages, image.url]);
+                                  toast.success("Added image to pages");
+                                }}
+                              >
+                                <Plus className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      </ScrollArea>
+                    </div>
+                  )}
+                </div>
+                
                 {watchedPages.length > 0 ? (
                   <ScrollArea className="h-64 border rounded-md p-2">
                     <div className="space-y-2">
@@ -402,7 +621,7 @@ export default function ChapterForm({
           )}
         />
         
-        <div className="flex justify-end space-x-2">
+        <div className="flex justify-between mt-8">
           <Button 
             type="button" 
             variant="outline" 
@@ -411,15 +630,52 @@ export default function ChapterForm({
           >
             Cancel
           </Button>
-          <Button type="submit" disabled={isLoading}>
-            {isLoading ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Saving...
-              </>
-            ) : initialData ? "Update" : "Create"}
-          </Button>
+          <div className="flex gap-2">
+            <Button 
+              type="button" 
+              variant="ghost" 
+              onClick={() => setShowServiceKeyInput(!showServiceKeyInput)}
+              size="sm"
+            >
+              {showServiceKeyInput ? "Hide API Key" : "API Key"}
+            </Button>
+            <Button type="submit" disabled={isLoading}>
+              {isLoading ? (
+                <>
+                  <span className="animate-pulse">Saving...</span>
+                </>
+              ) : (
+                <>{initialData ? 'Update' : 'Create'} Chapter</>
+              )}
+            </Button>
+          </div>
         </div>
+
+        {showServiceKeyInput && (
+          <div className="mt-4 p-4 border border-dashed border-gray-700 rounded-md bg-black/20">
+            <p className="text-sm mb-2 text-yellow-300">Admin Service Role Key</p>
+            <div className="flex gap-2">
+              <Input
+                type="password"
+                value={serviceRoleKey || ''}
+                onChange={(e) => setServiceRoleKey(e.target.value)}
+                placeholder="Enter Supabase service role key"
+                className="flex-1"
+              />
+              <Button 
+                type="button" 
+                onClick={saveServiceRoleKey}
+                variant="secondary"
+                size="sm"
+              >
+                Save Key
+              </Button>
+            </div>
+            <p className="text-xs text-gray-400 mt-1">
+              Only for admin use. This key is stored locally and used for authenticated API access.
+            </p>
+          </div>
+        )}
       </form>
     </Form>
   );

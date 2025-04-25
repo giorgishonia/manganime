@@ -1,5 +1,5 @@
 "use client"
-
+import { createClient } from "@/lib/supabase/server";
 import type React from "react"
 
 import { useState, useEffect } from "react"
@@ -11,7 +11,8 @@ import {
   Edit,
   Eye,
   Film,
-  Heart,
+  LogOut,
+  Menu,
   MoreHorizontal,
   PauseCircle,
   PlayCircle,
@@ -22,6 +23,7 @@ import {
   TrendingUp,
   X,
   Save,
+  User2,
 } from "lucide-react"
 import { AppSidebar } from "@/components/app-sidebar"
 import { Button } from "@/components/ui/button"
@@ -40,7 +42,7 @@ import {
 import { cn } from "@/lib/utils"
 import { supabase } from "@/lib/supabase"
 import { useRouter } from "next/navigation"
-import { getUserProfile, getUserWatchlist, getUserFavorites, updateProfile } from "@/lib/auth"
+import { getUserProfile, getUserWatchlist, updateProfile, refreshSession } from "@/lib/auth"
 import { useAuth } from "@/components/supabase-auth-provider"
 import { 
   Dialog,
@@ -54,6 +56,8 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "sonner"
 import { format } from "date-fns"
+import { AvatarUploader } from "./components/avatar-uploader"
+import { getLibraryItems } from '@/lib/user-library'
 
 // Interface for user data
 interface UserData {
@@ -135,10 +139,12 @@ export default function ProfilePage() {
     username: "",
     bio: "",
     location: "",
-    avatar_url: "",
+    avatar_url: ""
   })
   const [activities, setActivities] = useState<ActivityItem[]>([])
   const [isSaving, setIsSaving] = useState(false)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const [showRefreshButton, setShowRefreshButton] = useState(false)
 
   useEffect(() => {
     async function loadUserData() {
@@ -161,15 +167,19 @@ export default function ProfilePage() {
         
         if (profileResult.success) {
           if (profileResult.profile) {
+            // Prioritize profile's avatar_url over OAuth provider avatar
+            // The profile table is our source of truth for user data
             setUserData({
               id: profileResult.profile.id,
               username: profileResult.profile.username || 'User',
-              displayName: user.user_metadata?.displayName || profileResult.profile.username,
-              avatar_url: profileResult.profile.avatar_url,
+              // Always prefer user_metadata for displayName, as it may have been updated there
+              displayName: user.user_metadata?.displayName || user.user_metadata?.name || profileResult.profile.username,
+              // Always use profile's avatar_url over the OAuth provider's
+              avatar_url: profileResult.profile.avatar_url || user.user_metadata?.avatar_url || '',
               email: profileResult.profile.email,
-              bio: user.user_metadata?.bio || '',
-              location: user.user_metadata?.location || '',
-              created_at: profileResult.profile.created_at
+              bio: user.user_metadata?.bio || profileResult.profile.bio || '',
+              location: user.user_metadata?.location || profileResult.profile.location || '',
+              created_at: profileResult.profile.created_at,
             })
           } else {
             // No profile found, create a default one
@@ -181,22 +191,26 @@ export default function ProfilePage() {
               avatar_url: user.user_metadata?.avatar_url || '',
               bio: user.user_metadata?.bio || '',
               location: user.user_metadata?.location || '',
-              created_at: user.created_at || new Date().toISOString()
+              created_at: user.created_at || new Date().toISOString(),
             })
           }
         } else if (profileResult.error) {
           console.error("Profile error:", profileResult.error.message, profileResult.error.details || '')
+          toast.error("Failed to load profile data. Please refresh the page.")
           // Still create a default user object from auth data
           setUserData({
             id: userId,
             username: user.email?.split('@')[0] || 'User',
-            displayName: user.user_metadata?.name || user.email?.split('@')[0] || 'User',
+            displayName: user.user_metadata?.displayName || user.user_metadata?.name || user.email?.split('@')[0] || 'User',
             email: user.email || '',
             avatar_url: user.user_metadata?.avatar_url || '',
-            created_at: user.created_at || new Date().toISOString()
+            created_at: user.created_at || new Date().toISOString(),
+            bio: user.user_metadata?.bio || '',
+            location: user.user_metadata?.location || '',
           })
         }
         
+        // Try to load anime watchlist with error handling
         try {
           // Get anime watchlist
           const animeWatchlistResult = await getUserWatchlist(userId, 'anime')
@@ -256,13 +270,25 @@ export default function ProfilePage() {
             }))
           } else if (animeWatchlistResult.error) {
             console.error("Anime watchlist error:", animeWatchlistResult.error.message, animeWatchlistResult.error.details || '')
+            
+            // Show a more user-friendly error
+            if (animeWatchlistResult.error.message.includes('connection')) {
+              toast.error("Could not load anime list. Connection issue detected.")
+              setShowRefreshButton(true)
+            } else if (animeWatchlistResult.error.message.includes('permission')) {
+              toast.error("Session expired. Please refresh the page and log in again.")
+              setShowRefreshButton(true)
+            }
           }
         } catch (animeError) {
           console.error("Failed to load anime watchlist:", animeError)
+          toast.error("Could not load anime list. Please try again later.")
+          setShowRefreshButton(true)
         }
         
+        // Try to load manga watchlist with error handling
         try {
-          // Get manga watchlist
+          // Same approach for manga watchlist
           const mangaWatchlistResult = await getUserWatchlist(userId, 'manga')
           if (mangaWatchlistResult.success && mangaWatchlistResult.watchlist) {
             // Process watchlist data
@@ -320,9 +346,134 @@ export default function ProfilePage() {
             }))
           } else if (mangaWatchlistResult.error) {
             console.error("Manga watchlist error:", mangaWatchlistResult.error.message, mangaWatchlistResult.error.details || '')
+            // No need to show another toast as the anime one would have already shown
           }
         } catch (mangaError) {
           console.error("Failed to load manga watchlist:", mangaError)
+        }
+
+        // After loading database data, now load localStorage items
+        try {
+          // Get localStorage manga items
+          const localMangaItems = await getLibraryItems('manga');
+          console.log('Local manga items:', localMangaItems.length);
+          
+          if (localMangaItems.length > 0) {
+            // Create temporary arrays to hold merged contents
+            const reading: ContentItem[] = [...mangaReading];
+            const completed: ContentItem[] = [...mangaCompleted];
+            const planToRead: ContentItem[] = [...mangaPlanToRead];
+            
+            // Create sets of existing IDs for fast lookup
+            const existingIds = new Set([
+              ...mangaReading.map(item => item.id),
+              ...mangaCompleted.map(item => item.id),
+              ...mangaPlanToRead.map(item => item.id)
+            ]);
+            
+            // Process local items and add new ones to corresponding arrays
+            localMangaItems.forEach(item => {
+              if (existingIds.has(item.id)) return; // Skip items already in arrays
+              
+              const contentItem: ContentItem = {
+                id: item.id,
+                title: item.title || 'Unknown',
+                image: item.thumbnail || '/placeholder.svg?height=450&width=300',
+                progress: item.progress || 0,
+                total: item.totalItems || null,
+                score: item.score || null
+              };
+              
+              if (item.status === 'reading') {
+                reading.push(contentItem);
+              } else if (item.status === 'completed') {
+                completed.push(contentItem);
+              } else if (item.status === 'plan_to_read') {
+                planToRead.push(contentItem);
+              } else if (item.status === 'on_hold' || item.status === 'dropped') {
+                // These statuses aren't displayed in the current UI, but we'll add them
+                // so they're counted in the stats
+                reading.push(contentItem);
+              }
+            });
+            
+            // Update state with merged arrays
+            setMangaReading(reading);
+            setMangaCompleted(completed);
+            setMangaPlanToRead(planToRead);
+            
+            // Update stats with merged counts
+            setStats(prev => ({
+              ...prev,
+              manga: {
+                ...prev.manga,
+                reading: reading.length,
+                completed: completed.length,
+                planToRead: planToRead.length,
+              }
+            }));
+          }
+          
+          // Get localStorage anime items
+          const localAnimeItems = await getLibraryItems('anime');
+          console.log('Local anime items:', localAnimeItems.length);
+          
+          if (localAnimeItems.length > 0) {
+            // Create temporary arrays to hold merged contents
+            const watching: ContentItem[] = [...animeWatching];
+            const completed: ContentItem[] = [...animeCompleted];
+            const planToWatch: ContentItem[] = [...animePlanToWatch];
+            
+            // Create sets of existing IDs for fast lookup
+            const existingIds = new Set([
+              ...animeWatching.map(item => item.id),
+              ...animeCompleted.map(item => item.id),
+              ...animePlanToWatch.map(item => item.id)
+            ]);
+            
+            // Process local items and add new ones to corresponding arrays
+            localAnimeItems.forEach(item => {
+              if (existingIds.has(item.id)) return; // Skip items already in arrays
+              
+              const contentItem: ContentItem = {
+                id: item.id,
+                title: item.title || 'Unknown',
+                image: item.thumbnail || '/placeholder.svg?height=450&width=300',
+                progress: item.progress || 0,
+                total: item.totalItems || null,
+                score: item.score || null
+              };
+              
+              if (item.status === 'reading') { // 'reading' is used for anime "watching" status
+                watching.push(contentItem);
+              } else if (item.status === 'completed') {
+                completed.push(contentItem);
+              } else if (item.status === 'plan_to_read') { // 'plan_to_read' is used for anime "plan to watch" status
+                planToWatch.push(contentItem);
+              } else if (item.status === 'on_hold' || item.status === 'dropped') {
+                // These statuses aren't displayed in the current UI
+                watching.push(contentItem);
+              }
+            });
+            
+            // Update state with merged arrays
+            setAnimeWatching(watching);
+            setAnimeCompleted(completed);
+            setAnimePlanToWatch(planToWatch);
+            
+            // Update stats with merged counts
+            setStats(prev => ({
+              ...prev,
+              anime: {
+                ...prev.anime,
+                watching: watching.length,
+                completed: completed.length,
+                planToWatch: planToWatch.length,
+              }
+            }));
+          }
+        } catch (localStorageError) {
+          console.error('Error loading localStorage items:', localStorageError);
         }
 
         // Load user activities
@@ -391,6 +542,7 @@ export default function ProfilePage() {
         }
       } catch (err) {
         console.error("Error loading user data:", err)
+        toast.error("Failed to load profile data. Please try again later.")
       } finally {
         setIsLoading(false)
       }
@@ -407,7 +559,7 @@ export default function ProfilePage() {
         username: userData.username,
         bio: userData.bio || "",
         location: userData.location || "",
-        avatar_url: userData.avatar_url || "",
+        avatar_url: userData.avatar_url || ""
       })
     }
   }, [userData])
@@ -418,56 +570,115 @@ export default function ProfilePage() {
     
     setIsSaving(true)
     try {
+      // Include displayName in the data sent to updateProfile
+      console.log("Updating profile with all fields including displayName");
       const result = await updateProfile(user.id, {
         username: editProfile.username,
-        displayName: editProfile.displayName,
+        displayName: editProfile.displayName, // Include displayName to update in user metadata
         bio: editProfile.bio,
         location: editProfile.location,
         avatar_url: editProfile.avatar_url
-      })
+      });
       
-      if (result.success) {
-        // Refresh the user data from Supabase
-        const { data: userData } = await supabase.auth.getUser()
+      // Always update local state even if there's an error
+      setUserData(prev => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          username: editProfile.username,
+          displayName: editProfile.displayName,
+          bio: editProfile.bio,
+          location: editProfile.location,
+          avatar_url: editProfile.avatar_url
+        };
+      });
+      
+      if (result.error) {
+        console.error("Profile update error:", result.error);
         
-        // Update local state
-        setUserData(prev => {
-          if (!prev) return null
-          return {
-            ...prev,
-            username: editProfile.username,
-            displayName: editProfile.displayName,
-            bio: editProfile.bio,
-            location: editProfile.location,
-            avatar_url: editProfile.avatar_url
-          }
-        })
-        
-        setIsEditProfileOpen(false)
-        toast.success("Profile updated successfully")
+        const errorMessage = result.error instanceof Error 
+          ? result.error.message 
+          : typeof result.error === 'object' && result.error !== null && 'message' in result.error
+            ? String(result.error.message)
+            : 'Unknown error';
+            
+        if (errorMessage.includes('Auth session missing')) {
+          toast.warning("Your session has expired. Metadata changes (display name, bio, location) will not persist. Please refresh and login again.");
+          setShowRefreshButton(true);
+        } else {
+          toast.warning("Profile updated locally, but some changes may not persist after reload.");
+        }
+        setIsEditProfileOpen(false);
       } else {
-        toast.error(result.error?.message || "Failed to update profile")
+        toast.success("Profile updated successfully!");
+        
+        // Force refresh the session to update the UI components that rely on session data
+        // This ensures avatar updates are reflected immediately in the sidebar and comments
+        console.log("Refreshing session after profile update...");
+        const refreshResult = await refreshSession();
+        if (!refreshResult.success) {
+          console.warn("Session refresh after profile update failed:", refreshResult.error);
+        } else {
+          console.log("Session refreshed successfully");
+        }
+        
+        // Add a small delay before closing the profile dialog to ensure session is updated
+        setTimeout(() => {
+          setIsEditProfileOpen(false);
+        }, 500);
       }
     } catch (error) {
-      console.error("Error updating profile:", error)
-      toast.error("An error occurred while updating profile")
+      console.error("Error updating profile:", error);
+      
+      // Check for auth session errors
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes('Auth session missing')) {
+        toast.warning("Your session has expired. Profile changes may not persist. Please refresh and login again.");
+        setShowRefreshButton(true);
+      } else {
+        toast.error("An error occurred while updating profile");
+      }
+      setIsEditProfileOpen(false);
     } finally {
-      setIsSaving(false)
+      setIsSaving(false);
     }
-  }
+  };
 
   // Helper function to format date
   function getTimeAgo(date: Date): string {
     const now = new Date()
     const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000)
     
-    if (diffInSeconds < 60) return `${diffInSeconds} seconds ago`
-    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)} minutes ago`
-    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)} hours ago`
-    if (diffInSeconds < 604800) return `${Math.floor(diffInSeconds / 86400)} days ago`
-    if (diffInSeconds < 2592000) return `${Math.floor(diffInSeconds / 604800)} weeks ago`
-    if (diffInSeconds < 31536000) return `${Math.floor(diffInSeconds / 2592000)} months ago`
-    return `${Math.floor(diffInSeconds / 31536000)} years ago`
+    if (diffInSeconds < 60) return `${diffInSeconds} წამის წინ`
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)} წუთის წინ`
+    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)} საათის წინ`
+    if (diffInSeconds < 604800) return `${Math.floor(diffInSeconds / 86400)} დღის წინ`
+    if (diffInSeconds < 2592000) return `${Math.floor(diffInSeconds / 604800)} კვირის წინ`
+    if (diffInSeconds < 31536000) return `${Math.floor(diffInSeconds / 2592000)} თვის წინ`
+    return `${Math.floor(diffInSeconds / 31536000)} წლის წინ`
+  }
+
+  const handleRefreshSession = async () => {
+    setIsRefreshing(true)
+    try {
+      const result = await refreshSession()
+      
+      if (result.success) {
+        toast.success("Session refreshed successfully. Reloading data...")
+        // Wait a moment then reload the user data
+        setTimeout(() => {
+          window.location.reload()
+        }, 1000)
+      } else {
+        toast.error(result.error?.message || "Failed to refresh session")
+        console.error("Session refresh failed:", result.error)
+      }
+    } catch (error) {
+      console.error("Error refreshing session:", error)
+      toast.error("Failed to refresh session")
+    } finally {
+      setIsRefreshing(false)
+    }
   }
 
   if (isLoading) {
@@ -477,7 +688,7 @@ export default function ProfilePage() {
         <main className="flex-1 overflow-x-hidden pl-[77px] flex items-center justify-center">
           <div className="text-center">
             <div className="w-12 h-12 border-t-2 border-b-2 border-white rounded-full animate-spin mx-auto mb-4"></div>
-            <p>Loading profile...</p>
+            <p>პროფილი იტვირთება...</p>
           </div>
         </main>
       </div>
@@ -491,9 +702,9 @@ export default function ProfilePage() {
       <main className="flex-1 overflow-x-hidden pl-[77px]">
         {/* Profile header */}
         <div className="relative">
-          {/* Cover image */}
+          {/* Cover image - use static gradient */}
           <div className="h-48 bg-gradient-to-r from-purple-900 to-blue-900">
-            <div className="absolute inset-0 bg-[url('/placeholder.svg?height=300&width=1200')] opacity-20 bg-cover bg-center mix-blend-overlay" />
+            <div className="absolute inset-0 bg-black/30" />
           </div>
 
           {/* Profile info */}
@@ -504,7 +715,7 @@ export default function ProfilePage() {
                 <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-black">
                   <ImageSkeleton
                     src={userData?.avatar_url || "/placeholder.svg"}
-                    alt={userData?.displayName || "User"}
+                    alt={userData?.displayName || "მომხმარებელი"}
                     className="w-full h-full object-cover"
                   />
                 </div>
@@ -518,13 +729,13 @@ export default function ProfilePage() {
               {/* User info */}
               <div className="flex-1">
                 <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4">
-                  <h1 className="text-3xl font-bold">{userData?.displayName || "User"}</h1>
+                  <h1 className="text-3xl font-bold">{userData?.displayName || "მომხმარებელი"}</h1>
                   <div className="text-gray-400">@{userData?.username}</div>
                 </div>
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-2">
                   <div className="flex items-center gap-1 text-gray-400 text-sm">
                     <Calendar className="h-4 w-4" />
-                    <span>Joined {userData?.created_at ? new Date(userData.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : "Recently"}</span>
+                    <span>შემოგვიერთდა {userData?.created_at ? new Date(userData.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : "ცოტა ხნის წინ"}</span>
                   </div>
                   {userData?.location && (
                     <div className="flex items-center gap-1 text-gray-400 text-sm">
@@ -548,7 +759,7 @@ export default function ProfilePage() {
                     </div>
                   )}
                 </div>
-                <p className="mt-2 text-gray-300">{userData?.bio || "No bio added yet."}</p>
+                <p className="mt-2 text-gray-300">{userData?.bio || "ბიოგრაფია არ არის დამატებული."}</p>
               </div>
 
               {/* Actions */}
@@ -559,8 +770,47 @@ export default function ProfilePage() {
                   onClick={() => setIsEditProfileOpen(true)}
                 >
                   <Settings className="h-4 w-4 mr-2" />
-                  Edit Profile
+                  პროფილის რედაქტირება
                 </Button>
+                
+                {showRefreshButton && (
+                  <Button 
+                    variant="outline" 
+                    className="bg-gray-800 border-gray-700 hover:bg-gray-700"
+                    onClick={handleRefreshSession}
+                    disabled={isRefreshing}
+                  >
+                    {isRefreshing ? (
+                      <div className="h-4 w-4 border-t-2 border-b-2 border-white rounded-full animate-spin mr-2"></div>
+                    ) : (
+                      <svg className="h-4 w-4 mr-2" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path 
+                          d="M1 4V10H7" 
+                          stroke="currentColor" 
+                          strokeWidth="2" 
+                          strokeLinecap="round" 
+                          strokeLinejoin="round"
+                        />
+                        <path 
+                          d="M23 20V14H17" 
+                          stroke="currentColor" 
+                          strokeWidth="2" 
+                          strokeLinecap="round" 
+                          strokeLinejoin="round"
+                        />
+                        <path 
+                          d="M20.49 9.00001C19.9828 7.5668 19.1209 6.28542 17.9845 5.27543C16.8482 4.26545 15.4745 3.55976 13.9917 3.22426C12.5089 2.88877 10.9652 2.93436 9.50481 3.35685C8.04437 3.77935 6.71475 4.56397 5.64 5.64001L1 10M23 14L18.36 18.36C17.2853 19.4361 15.9556 20.2207 14.4952 20.6432C13.0348 21.0657 11.4911 21.1113 10.0083 20.7758C8.52547 20.4403 7.1518 19.7346 6.01547 18.7246C4.87913 17.7146 4.01717 16.4332 3.51 15"
+                          stroke="currentColor" 
+                          strokeWidth="2" 
+                          strokeLinecap="round" 
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    )}
+                    სესიის განახლება
+                  </Button>
+                )}
+                
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" className="bg-gray-800 border-gray-700 hover:bg-gray-700 px-2">
@@ -570,16 +820,12 @@ export default function ProfilePage() {
                   <DropdownMenuContent className="bg-gray-900 border-gray-800 text-gray-200">
                     <DropdownMenuItem className="hover:bg-gray-800 cursor-pointer">
                       <Eye className="h-4 w-4 mr-2" />
-                      View as public
-                    </DropdownMenuItem>
-                    <DropdownMenuItem className="hover:bg-gray-800 cursor-pointer">
-                      <Heart className="h-4 w-4 mr-2" />
-                      Add to favorites
+                      საჯაროდ ნახვა
                     </DropdownMenuItem>
                     <DropdownMenuSeparator className="bg-gray-800" />
                     <DropdownMenuItem className="text-red-500 hover:bg-gray-800 hover:text-red-500 cursor-pointer">
                       <Trash2 className="h-4 w-4 mr-2" />
-                      Delete account
+                      ანგარიშის წაშლა
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -596,43 +842,43 @@ export default function ProfilePage() {
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-bold flex items-center">
                   <Film className="h-5 w-5 mr-2 text-blue-400" />
-                  Anime Statistics
+                  ანიმეს სტატისტიკა
                 </h2>
                 <div className="text-sm text-gray-400">
-                  {stats.anime.totalEpisodes} episodes • {stats.anime.daysWatched} days
+                  {stats.anime.totalEpisodes} ეპიზოდი • {stats.anime.daysWatched} დღე
                 </div>
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-6">
                 <StatCard
-                  label="Watching"
+                  label="ვუყურებ"
                   value={stats.anime.watching}
                   icon={<PlayCircle className="h-4 w-4 text-green-400" />}
                 />
                 <StatCard
-                  label="Completed"
+                  label="დასრულებული"
                   value={stats.anime.completed}
                   icon={<Check className="h-4 w-4 text-blue-400" />}
                 />
                 <StatCard
-                  label="On Hold"
+                  label="შეჩერებული"
                   value={stats.anime.onHold}
                   icon={<PauseCircle className="h-4 w-4 text-yellow-400" />}
                 />
                 <StatCard
-                  label="Dropped"
+                  label="მიტოვებული"
                   value={stats.anime.dropped}
                   icon={<X className="h-4 w-4 text-red-400" />}
                 />
                 <StatCard
-                  label="Plan to Watch"
+                  label="სანახავი"
                   value={stats.anime.planToWatch}
                   icon={<Clock className="h-4 w-4 text-purple-400" />}
                 />
               </div>
 
               <div className="flex items-center justify-between mb-2">
-                <div className="text-sm text-gray-400">Mean Score</div>
+                <div className="text-sm text-gray-400">საშუალო შეფასება</div>
                 <div className="flex items-center">
                   <Star className="h-4 w-4 text-yellow-400 fill-yellow-400 mr-1" />
                   <span className="font-medium">{stats.anime.meanScore}</span>
@@ -652,43 +898,43 @@ export default function ProfilePage() {
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-bold flex items-center">
                   <BookOpen className="h-5 w-5 mr-2 text-purple-400" />
-                  Manga Statistics
+                  მანგის სტატისტიკა
                 </h2>
                 <div className="text-sm text-gray-400">
-                  {stats.manga.totalChapters} chapters • {stats.manga.daysRead} days
+                  {stats.manga.totalChapters} თავი • {stats.manga.daysRead} დღე
                 </div>
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-6">
                 <StatCard
-                  label="Reading"
+                  label="ვკითხულობ"
                   value={stats.manga.reading}
                   icon={<BookOpen className="h-4 w-4 text-green-400" />}
                 />
                 <StatCard
-                  label="Completed"
+                  label="დასრულებული"
                   value={stats.manga.completed}
                   icon={<Check className="h-4 w-4 text-blue-400" />}
                 />
                 <StatCard
-                  label="On Hold"
+                  label="შეჩერებული"
                   value={stats.manga.onHold}
                   icon={<PauseCircle className="h-4 w-4 text-yellow-400" />}
                 />
                 <StatCard
-                  label="Dropped"
+                  label="მიტოვებული"
                   value={stats.manga.dropped}
                   icon={<X className="h-4 w-4 text-red-400" />}
                 />
                 <StatCard
-                  label="Plan to Read"
+                  label="წასაკითხი"
                   value={stats.manga.planToRead}
                   icon={<Clock className="h-4 w-4 text-purple-400" />}
                 />
               </div>
 
               <div className="flex items-center justify-between mb-2">
-                <div className="text-sm text-gray-400">Mean Score</div>
+                <div className="text-sm text-gray-400">საშუალო შეფასება</div>
                 <div className="flex items-center">
                   <Star className="h-4 w-4 text-yellow-400 fill-yellow-400 mr-1" />
                   <span className="font-medium">{stats.manga.meanScore}</span>
@@ -711,15 +957,15 @@ export default function ProfilePage() {
             <TabsList className="mb-6">
               <TabsTrigger value="anime" className="flex items-center gap-2">
                 <Film className="h-4 w-4" />
-                Anime
+                ანიმე
               </TabsTrigger>
               <TabsTrigger value="manga" className="flex items-center gap-2">
                 <BookOpen className="h-4 w-4" />
-                Manga
+                მანგა
               </TabsTrigger>
               <TabsTrigger value="activity" className="flex items-center gap-2">
                 <TrendingUp className="h-4 w-4" />
-                Activity
+                აქტივობა
               </TabsTrigger>
             </TabsList>
 
@@ -732,14 +978,14 @@ export default function ProfilePage() {
                       className={cn("text-sm", activeAnimeTab === "watching" ? "bg-gray-800" : "hover:bg-gray-800/50")}
                       onClick={() => setActiveAnimeTab("watching")}
                     >
-                      Watching ({stats.anime.watching})
+                      ვუყურებ ({stats.anime.watching})
                     </Button>
                     <Button
                       variant="ghost"
                       className={cn("text-sm", activeAnimeTab === "completed" ? "bg-gray-800" : "hover:bg-gray-800/50")}
                       onClick={() => setActiveAnimeTab("completed")}
                     >
-                      Completed ({stats.anime.completed})
+                      დასრულებული ({stats.anime.completed})
                     </Button>
                     <Button
                       variant="ghost"
@@ -749,27 +995,27 @@ export default function ProfilePage() {
                       )}
                       onClick={() => setActiveAnimeTab("planToWatch")}
                     >
-                      Plan to Watch ({stats.anime.planToWatch})
+                      სანახავი ({stats.anime.planToWatch})
                     </Button>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" className="text-sm hover:bg-gray-800/50">
-                          More <ChevronDown className="h-4 w-4 ml-1" />
+                          მეტი <ChevronDown className="h-4 w-4 ml-1" />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent className="bg-gray-900 border-gray-800 text-gray-200">
                         <DropdownMenuItem className="hover:bg-gray-800 cursor-pointer">
-                          On Hold ({stats.anime.onHold})
+                          შეჩერებული ({stats.anime.onHold})
                         </DropdownMenuItem>
                         <DropdownMenuItem className="hover:bg-gray-800 cursor-pointer">
-                          Dropped ({stats.anime.dropped})
+                          მიტოვებული ({stats.anime.dropped})
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
                   <Button variant="outline" className="bg-gray-800 border-gray-700 hover:bg-gray-700">
                     <Plus className="h-4 w-4 mr-2" />
-                    Add Anime
+                    ანიმეს დამატება
                   </Button>
                 </div>
 
@@ -777,21 +1023,21 @@ export default function ProfilePage() {
                   {activeAnimeTab === "watching" &&
                     (animeWatching.length > 0 ? 
                       animeWatching.map((anime) => <AnimeListItem key={anime.id} item={anime} />) :
-                      <div className="col-span-full text-center py-10 text-gray-400">No anime in your watching list</div>
+                      <div className="col-span-full text-center py-10 text-gray-400">თქვენს სიაში არ არის ანიმე რომელსაც უყურებთ</div>
                     )
                   }
 
                   {activeAnimeTab === "completed" &&
                     (animeCompleted.length > 0 ? 
                       animeCompleted.map((anime) => <AnimeListItem key={anime.id} item={anime} />) :
-                      <div className="col-span-full text-center py-10 text-gray-400">No anime in your completed list</div>
+                      <div className="col-span-full text-center py-10 text-gray-400">თქვენს სიაში არ არის დასრულებული ანიმე</div>
                     )
                   }
 
                   {activeAnimeTab === "planToWatch" &&
                     (animePlanToWatch.length > 0 ? 
                       animePlanToWatch.map((anime) => <AnimeListItem key={anime.id} item={anime} />) :
-                      <div className="col-span-full text-center py-10 text-gray-400">No anime in your plan to watch list</div>
+                      <div className="col-span-full text-center py-10 text-gray-400">თქვენს სიაში არ არის სანახავი ანიმე</div>
                     )
                   }
                 </div>
@@ -807,14 +1053,14 @@ export default function ProfilePage() {
                       className={cn("text-sm", activeMangaTab === "reading" ? "bg-gray-800" : "hover:bg-gray-800/50")}
                       onClick={() => setActiveMangaTab("reading")}
                     >
-                      Reading ({stats.manga.reading})
+                      ვკითხულობ ({stats.manga.reading})
                     </Button>
                     <Button
                       variant="ghost"
                       className={cn("text-sm", activeMangaTab === "completed" ? "bg-gray-800" : "hover:bg-gray-800/50")}
                       onClick={() => setActiveMangaTab("completed")}
                     >
-                      Completed ({stats.manga.completed})
+                      დასრულებული ({stats.manga.completed})
                     </Button>
                     <Button
                       variant="ghost"
@@ -824,27 +1070,27 @@ export default function ProfilePage() {
                       )}
                       onClick={() => setActiveMangaTab("planToRead")}
                     >
-                      Plan to Read ({stats.manga.planToRead})
+                      წასაკითხი ({stats.manga.planToRead})
                     </Button>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" className="text-sm hover:bg-gray-800/50">
-                          More <ChevronDown className="h-4 w-4 ml-1" />
+                          მეტი <ChevronDown className="h-4 w-4 ml-1" />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent className="bg-gray-900 border-gray-800 text-gray-200">
                         <DropdownMenuItem className="hover:bg-gray-800 cursor-pointer">
-                          On Hold ({stats.manga.onHold})
+                          შეჩერებული ({stats.manga.onHold})
                         </DropdownMenuItem>
                         <DropdownMenuItem className="hover:bg-gray-800 cursor-pointer">
-                          Dropped ({stats.manga.dropped})
+                          მიტოვებული ({stats.manga.dropped})
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
                   <Button variant="outline" className="bg-gray-800 border-gray-700 hover:bg-gray-700">
                     <Plus className="h-4 w-4 mr-2" />
-                    Add Manga
+                    მანგის დამატება
                   </Button>
                 </div>
 
@@ -852,21 +1098,21 @@ export default function ProfilePage() {
                   {activeMangaTab === "reading" &&
                     (mangaReading.length > 0 ? 
                       mangaReading.map((manga) => <MangaListItem key={manga.id} item={manga} />) :
-                      <div className="col-span-full text-center py-10 text-gray-400">No manga in your reading list</div>
+                      <div className="col-span-full text-center py-10 text-gray-400">თქვენს სიაში არ არის მანგა რომელსაც კითხულობთ</div>
                     )
                   }
 
                   {activeMangaTab === "completed" &&
                     (mangaCompleted.length > 0 ? 
                       mangaCompleted.map((manga) => <MangaListItem key={manga.id} item={manga} />) :
-                      <div className="col-span-full text-center py-10 text-gray-400">No manga in your completed list</div>
+                      <div className="col-span-full text-center py-10 text-gray-400">თქვენს სიაში არ არის დასრულებული მანგა</div>
                     )
                   }
 
                   {activeMangaTab === "planToRead" &&
                     (mangaPlanToRead.length > 0 ? 
                       mangaPlanToRead.map((manga) => <MangaListItem key={manga.id} item={manga} />) :
-                      <div className="col-span-full text-center py-10 text-gray-400">No manga in your plan to read list</div>
+                      <div className="col-span-full text-center py-10 text-gray-400">თქვენს სიაში არ არის წასაკითხი მანგა</div>
                     )
                   }
                 </div>
@@ -875,7 +1121,7 @@ export default function ProfilePage() {
 
             <TabsContent value="activity">
               <div className="bg-gray-900/50 backdrop-blur-sm rounded-lg p-6">
-                <h2 className="text-xl font-bold mb-4">Recent Activity</h2>
+                <h2 className="text-xl font-bold mb-4">ბოლო აქტივობა</h2>
 
                 <div className="space-y-4">
                   {activities.length > 0 ? (
@@ -891,7 +1137,7 @@ export default function ProfilePage() {
                     ))
                   ) : (
                     <div className="text-center py-10 text-gray-400">
-                      No recent activity found
+                      აქტივობა არ მოიძებნა
                     </div>
                   )}
                 </div>
@@ -903,36 +1149,27 @@ export default function ProfilePage() {
 
       {/* Edit Profile Dialog */}
       <Dialog open={isEditProfileOpen} onOpenChange={setIsEditProfileOpen}>
-        <DialogContent className="bg-gray-900 border-gray-800 text-white">
+        <DialogContent className="bg-gray-900 border-gray-800 text-white max-w-xl">
           <DialogHeader>
-            <DialogTitle>Edit Profile</DialogTitle>
+            <DialogTitle>პროფილის რედაქტირება</DialogTitle>
             <DialogDescription className="text-gray-400">
-              Update your profile information below.
+              განაახლეთ თქვენი პროფილის ინფორმაცია.
             </DialogDescription>
           </DialogHeader>
           
-          <div className="space-y-4 py-4">
+          <div className="space-y-4">
             <div className="flex justify-center mb-4">
-              <div className="relative">
-                <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-gray-700">
-                  <ImageSkeleton
-                    src={editProfile.avatar_url || "/placeholder.svg"}
-                    alt="Profile"
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-                <Button 
-                  size="sm"
-                  variant="outline"
-                  className="absolute bottom-0 right-0 h-8 w-8 p-0 rounded-full bg-gray-800 border-gray-700"
-                >
-                  <Edit className="h-3.5 w-3.5" />
-                </Button>
-              </div>
+              {user && (
+                <AvatarUploader 
+                  currentAvatarUrl={editProfile.avatar_url}
+                  userId={user.id}
+                  onAvatarUpdate={(newUrl) => setEditProfile({...editProfile, avatar_url: newUrl})}
+                />
+              )}
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="displayName">Display Name</Label>
+              <Label htmlFor="displayName">სახელი</Label>
               <Input
                 id="displayName"
                 value={editProfile.displayName}
@@ -942,7 +1179,7 @@ export default function ProfilePage() {
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="username">Username</Label>
+              <Label htmlFor="username">მომხმარებლის სახელი</Label>
               <Input
                 id="username"
                 value={editProfile.username}
@@ -952,7 +1189,7 @@ export default function ProfilePage() {
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="bio">Bio</Label>
+              <Label htmlFor="bio">ბიოგრაფია</Label>
               <Textarea
                 id="bio"
                 value={editProfile.bio}
@@ -962,7 +1199,7 @@ export default function ProfilePage() {
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="location">Location</Label>
+              <Label htmlFor="location">მდებარეობა</Label>
               <Input
                 id="location"
                 value={editProfile.location}
@@ -978,7 +1215,7 @@ export default function ProfilePage() {
               className="bg-gray-800 border-gray-700 hover:bg-gray-700"
               onClick={() => setIsEditProfileOpen(false)}
             >
-              Cancel
+              გაუქმება
             </Button>
             <Button 
               className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700"
@@ -988,12 +1225,12 @@ export default function ProfilePage() {
               {isSaving ? (
                 <>
                   <div className="h-4 w-4 border-t-2 border-b-2 border-white rounded-full animate-spin mr-2"></div>
-                  Saving...
+                  ინახება...
                 </>
               ) : (
                 <>
                   <Save className="h-4 w-4 mr-2" />
-                  Save Changes
+                  ცვლილებების შენახვა
                 </>
               )}
             </Button>
@@ -1034,16 +1271,12 @@ function AnimeListItem({ item }: { item: any }) {
             <DropdownMenuContent className="bg-gray-900 border-gray-800 text-gray-200">
               <DropdownMenuItem className="hover:bg-gray-800 cursor-pointer">
                 <Edit className="h-4 w-4 mr-2" />
-                Edit
-              </DropdownMenuItem>
-              <DropdownMenuItem className="hover:bg-gray-800 cursor-pointer">
-                <Heart className="h-4 w-4 mr-2" />
-                Favorite
+                რედაქტირება
               </DropdownMenuItem>
               <DropdownMenuSeparator className="bg-gray-800" />
               <DropdownMenuItem className="text-red-500 hover:bg-gray-800 hover:text-red-500 cursor-pointer">
                 <Trash2 className="h-4 w-4 mr-2" />
-                Remove
+                წაშლა
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -1055,7 +1288,7 @@ function AnimeListItem({ item }: { item: any }) {
         {item.progress > 0 && (
           <div className="mt-2">
             <div className="flex items-center justify-between text-xs mb-1">
-              <span className="text-gray-400">Progress</span>
+              <span className="text-gray-400">პროგრესი</span>
               <span>
                 {item.progress}/{item.total || "?"}
               </span>
@@ -1094,16 +1327,12 @@ function MangaListItem({ item }: { item: any }) {
             <DropdownMenuContent className="bg-gray-900 border-gray-800 text-gray-200">
               <DropdownMenuItem className="hover:bg-gray-800 cursor-pointer">
                 <Edit className="h-4 w-4 mr-2" />
-                Edit
-              </DropdownMenuItem>
-              <DropdownMenuItem className="hover:bg-gray-800 cursor-pointer">
-                <Heart className="h-4 w-4 mr-2" />
-                Favorite
+                რედაქტირება
               </DropdownMenuItem>
               <DropdownMenuSeparator className="bg-gray-800" />
               <DropdownMenuItem className="text-red-500 hover:bg-gray-800 hover:text-red-500 cursor-pointer">
                 <Trash2 className="h-4 w-4 mr-2" />
-                Remove
+                წაშლა
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -1115,7 +1344,7 @@ function MangaListItem({ item }: { item: any }) {
         {item.progress > 0 && (
           <div className="mt-2">
             <div className="flex items-center justify-between text-xs mb-1">
-              <span className="text-gray-400">Progress</span>
+              <span className="text-gray-400">პროგრესი</span>
               <span>
                 {item.progress}/{item.total || "?"}
               </span>
@@ -1159,11 +1388,17 @@ function ActivityItemDisplay({
       </div>
       <div className="flex-1">
         <div className="flex items-center gap-2">
-          <span className="font-medium">{action}</span>
+          <span className="font-medium">{action === "watching" ? "უყურებს" : 
+                                         action === "reading" ? "კითხულობს" : 
+                                         action === "completed" ? "დაასრულა" : 
+                                         action === "updated" ? "განაახლა" : action}</span>
           <span className="text-gray-400">•</span>
           <span className="text-gray-300">{title}</span>
         </div>
-        <div className="text-sm text-gray-400">{details}</div>
+        <div className="text-sm text-gray-400">
+          {details.includes("Episode") ? details.replace("Episode", "ეპიზოდი") : 
+           details.includes("Chapter") ? details.replace("Chapter", "თავი") : details}
+        </div>
       </div>
       <div className="text-xs text-gray-500">{time}</div>
     </div>

@@ -6,7 +6,6 @@ import {
   Clock,
   Compass,
   Download,
-  Heart,
   History,
   Home,
   LogOut,
@@ -19,7 +18,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Search,
-  LogIn
+  LogIn,
+  Book,
+  MoveLeft
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { motion as m, AnimatePresence } from "framer-motion"
@@ -29,6 +30,9 @@ import { usePathname } from "next/navigation"
 import Link from "next/link"
 import { SearchModal } from "./search-modal"
 import { useAuth } from "@/components/supabase-auth-provider"
+import { signOut as nextAuthSignOut } from "next-auth/react"
+import { toast } from "sonner"
+import { signOutFromAllProviders } from "@/lib/auth-utils"
 
 // Interface for sidebar items
 interface SidebarItemProps {
@@ -38,10 +42,11 @@ interface SidebarItemProps {
   href?: string
   accentColor?: string
   onClick?: () => void
+  className?: string
 }
 
 // Sidebar item component with Link - text labels hidden in collapsed state
-const SidebarItem = ({ icon, label, isActive, href, accentColor = "hsl(var(--primary))", onClick }: SidebarItemProps) => {
+const SidebarItem = ({ icon, label, isActive, href, accentColor = "hsl(var(--primary))", onClick, className }: SidebarItemProps) => {
   // Common layout and styling for both button and link variants
   const contentElement = (
     <>
@@ -78,7 +83,8 @@ const SidebarItem = ({ icon, label, isActive, href, accentColor = "hsl(var(--pri
     "flex items-center justify-center px-3 py-3 rounded-xl transition-all duration-200 group relative",
     isActive 
       ? "text-white" 
-      : "text-white/60 hover:text-white"
+      : "text-white/60 hover:text-white",
+    className
   );
 
   // Render as button if onClick is provided
@@ -112,7 +118,7 @@ const SidebarSection = ({ title, children }: {
   title: string,
   children: React.ReactNode
 }) => (
-  <div className="mb-7">
+  <div className="mb-5">
     <div className="text-xs uppercase text-gray-500 font-semibold tracking-wider text-center mb-2.5 px-1 truncate" title={title}>
       {title.charAt(0)}
     </div>
@@ -129,7 +135,7 @@ export function AppSidebar() {
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const { user, signOut } = useAuth();
+  const { user, signOut: supabaseSignOut } = useAuth();
   
   // Check if we're on mobile - only run on client side
   useEffect(() => {
@@ -149,6 +155,24 @@ export function AppSidebar() {
   // Function to toggle search modal
   const toggleSearch = () => {
     setIsSearchOpen(!isSearchOpen);
+  };
+  
+  // Handle comprehensive sign out from both providers
+  const handleSignOut = async () => {
+    try {
+      // Use the comprehensive sign out function
+      const { success, error } = await signOutFromAllProviders();
+      
+      if (!success) {
+        throw error || new Error("Failed to sign out");
+      }
+      
+      // Redirect to home page
+      window.location.href = "/";
+    } catch (error) {
+      console.error("Error during sign out:", error);
+      toast.error("Failed to sign out completely. Please try again.");
+    }
   };
   
   // Only render after component has mounted to prevent hydration mismatch
@@ -195,7 +219,7 @@ export function AppSidebar() {
                     toggleSearch();
                   }}
                   user={user}
-                  onSignOut={signOut}
+                  onSignOut={handleSignOut}
                 />
               </m.div>
             </>
@@ -218,7 +242,7 @@ export function AppSidebar() {
         <div className="absolute inset-0 pointer-events-none" />
         
         <div className="h-full flex flex-col relative z-10">
-          <div className="flex items-center justify-center p-5">
+          <div className="flex items-center justify-center p-5 pb-8">
             <Link href="/">
               <div
                 className="h-11 w-11 bg-gradient-to-br from-[hsl(var(--primary))] to-[hsl(var(--secondary))] text-white rounded-xl flex items-center justify-center font-bold text-lg shadow-lg"
@@ -227,42 +251,54 @@ export function AppSidebar() {
               </div>
             </Link>
           </div>
-          <SidebarItem
-                icon={<Search className="stroke-[1.5px]" />}
-                label="Search"
-                isActive={false}
-                onClick={toggleSearch}
-              />
-          <div className="flex-1 overflow-y-auto scrollbar-hide">
-            <SidebarSection title="">
-              <SidebarItem
-                icon={<Home className="stroke-[1.5px]" />}
-                label="Home"
-                href="/"
-                isActive={pathname === "/"}
-              />
-              <SidebarItem
-                icon={<History className="stroke-[1.5px]" />}
-                label="History"
-                href="/history"
-                isActive={pathname === "/history"}
-              />
-              <SidebarItem
-                icon={<Clock className="stroke-[1.5px]" />}
-                label="Watch Later"
-                href="/watch-later"
-                isActive={pathname === "/watch-later"}
-              />
-              <SidebarItem
-                icon={<Heart className="stroke-[1.5px]" />}
-                label="Favorites"
-                href="/favorites"
-                isActive={pathname === "/favorites"}
-              />
-            </SidebarSection>
+          <div className="space-y-1 px-2 mb-4">
+            <SidebarItem
+              icon={<Home className="stroke-[1.5px]" />}
+              label="Home"
+              href="/"
+              isActive={pathname === "/"}
+            />
+            <SidebarItem
+              icon={<Search className="stroke-[1.5px]" />}
+              label="Search"
+              isActive={false}
+              onClick={toggleSearch}
+              className="ml-[10px]"
+            />
+            <SidebarItem
+              icon={<Play className="stroke-[1.5px]" />}
+              label="Watch"
+              href="/watch"
+              isActive={pathname === "/watch"}
+            />
+            <SidebarItem
+              icon={<BookOpen className="stroke-[1.5px]" />}
+              label="Read"
+              href="/read"
+              isActive={pathname === "/read"}
+            />
+          </div>
+          
+          <div className="space-y-1 px-2 mb-4">
+            <SidebarItem
+              icon={<History className="stroke-[1.5px]" />}
+              label="History"
+              href="/history"
+              isActive={pathname === "/history"}
+            />
+          </div>
+          
+          <div className="space-y-1 px-2">
+            <SidebarItem
+              icon={<MessageCircle className="stroke-[1.5px]" />}
+              label="Feedback"
+              href="/feedback"
+              isActive={pathname === "/feedback"}
+            />
           </div>
           
           <div className="mt-auto pb-5 border-t border-white/5 pt-5 mx-3">
+          
             <div className="space-y-1 px-2">
               {user ? (
                 <>
@@ -274,8 +310,11 @@ export function AppSidebar() {
                     )}
                     title="Profile"
                   >
-                    <Avatar className="h-7 w-7 ring-1 ring-white/10">
-                      <AvatarImage src={user.user_metadata?.avatar_url || 'https://api.dicebear.com/7.x/pixel-art/svg?seed=' + user.id} alt="Profile" />
+                    <Avatar className="h-7 w-7 ring-1 ring-white/10" key={user.user_metadata?.avatar_url}>
+                      <AvatarImage 
+                        src={`${user.user_metadata?.avatar_url || 'https://api.dicebear.com/7.x/pixel-art/svg?seed=' + user.id}${user.user_metadata?.avatar_url ? `?_t=${Date.now()}` : ''}`} 
+                        alt="Profile" 
+                      />
                       <AvatarFallback>
                         {user.email?.charAt(0).toUpperCase() || 'U'}
                       </AvatarFallback>
@@ -298,7 +337,7 @@ export function AppSidebar() {
                   <SidebarItem
                     icon={<LogOut className="stroke-[1.5px]" />}
                     label="Logout"
-                    onClick={signOut}
+                    onClick={handleSignOut}
                     accentColor="rgb(248 113 113)"
                   />
                 </>
@@ -338,7 +377,7 @@ function MobileSidebarContent({
 }) {
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between mb-7">
+      <div className="flex items-center justify-between mb-5">
         <Link href="/" className="flex items-center">
           <div className="h-11 w-11 bg-gradient-to-br from-[hsl(var(--primary))] to-[hsl(var(--secondary))] text-white rounded-xl flex items-center justify-center font-bold text-lg shadow-lg">
             M
@@ -355,9 +394,12 @@ function MobileSidebarContent({
       </div>
       
       {user ? (
-        <div className="flex items-center gap-3 p-3 mb-7 rounded-xl bg-white/5 backdrop-blur-md border border-white/5">
-          <Avatar className="h-10 w-10 ring-2 ring-white/10">
-            <AvatarImage src={user.user_metadata?.avatar_url || 'https://api.dicebear.com/7.x/pixel-art/svg?seed=' + user.id} alt="Profile" />
+        <div className="flex items-center gap-3 p-3 mb-5 rounded-xl bg-white/5 backdrop-blur-md border border-white/5">
+          <Avatar className="h-10 w-10 ring-2 ring-white/10" key={user.user_metadata?.avatar_url}>
+            <AvatarImage 
+              src={`${user.user_metadata?.avatar_url || 'https://api.dicebear.com/7.x/pixel-art/svg?seed=' + user.id}${user.user_metadata?.avatar_url ? `?_t=${Date.now()}` : ''}`} 
+              alt="Profile" 
+            />
             <AvatarFallback>{user.email?.charAt(0).toUpperCase() || 'U'}</AvatarFallback>
           </Avatar>
           <div className="flex-1 min-w-0">
@@ -366,7 +408,7 @@ function MobileSidebarContent({
           </div>
         </div>
       ) : (
-        <div className="flex items-center gap-3 p-3 mb-7 rounded-xl bg-white/5 backdrop-blur-md border border-white/5">
+        <div className="flex items-center gap-3 p-3 mb-5 rounded-xl bg-white/5 backdrop-blur-md border border-white/5">
           <Avatar className="h-10 w-10 ring-2 ring-white/10">
             <AvatarImage src="https://api.dicebear.com/7.x/pixel-art/svg?seed=guest" alt="Guest" />
             <AvatarFallback>G</AvatarFallback>
@@ -379,8 +421,8 @@ function MobileSidebarContent({
       )}
       
       <div className="flex-1 overflow-y-auto">
-        <div className="mb-7">
-          <h3 className="text-xs uppercase text-gray-400 font-semibold tracking-wider px-3 mb-3">Discover</h3>
+        <div className="mb-5">
+          <h3 className="text-xs uppercase text-gray-400 font-semibold tracking-wider px-3 mb-2">Discover</h3>
           <div className="space-y-1">
             <Link 
               href="/" 
@@ -404,20 +446,6 @@ function MobileSidebarContent({
               <span>Search</span>
             </button>
             <Link 
-              href="/trending" 
-              className={cn(
-                "flex items-center px-3 py-3 rounded-xl transition-colors",
-                pathname === "/trending" 
-                  ? "bg-white/10 text-white relative" 
-                  : "text-white/70 hover:text-white hover:bg-white/5"
-              )}
-              onClick={onClose}
-            >
-              {pathname === "/trending" && <div className="absolute left-0 top-0 bottom-0 w-1 bg-[hsl(var(--primary))] rounded-r-full" />}
-              <TrendingUp className={cn("h-5 w-5 mr-3 stroke-[1.5px]", pathname === "/trending" && "text-[hsl(var(--primary))]")} />
-              <span>Trending</span>
-            </Link>
-            <Link 
               href="/watch" 
               className={cn(
                 "flex items-center px-3 py-3 rounded-xl transition-colors",
@@ -434,31 +462,50 @@ function MobileSidebarContent({
           </div>
         </div>
         
-        <div className="mb-7">
-          <h3 className="text-xs uppercase text-gray-400 font-semibold tracking-wider px-3 mb-3">Library</h3>
+        <div className="mb-5">
+          <h3 className="text-xs uppercase text-gray-400 font-semibold tracking-wider px-3 mb-2">Library</h3>
           <div className="space-y-1">
             <Link 
-              href="/library" 
+              href="/history" 
               className={cn(
                 "flex items-center px-3 py-3 rounded-xl transition-colors",
-                pathname === "/library" 
+                pathname === "/history" 
                   ? "bg-white/10 text-white relative" 
                   : "text-white/70 hover:text-white hover:bg-white/5"
               )}
               onClick={onClose}
             >
-              {pathname === "/library" && <div className="absolute left-0 top-0 bottom-0 w-1 bg-[hsl(var(--primary))] rounded-r-full" />}
-              <BookOpen className={cn("h-5 w-5 mr-3 stroke-[1.5px]", pathname === "/library" && "text-[hsl(var(--primary))]")} />
-              <span>My Library</span>
+              {pathname === "/history" && <div className="absolute left-0 top-0 bottom-0 w-1 bg-[hsl(var(--primary))] rounded-r-full" />}
+              <History className={cn("h-5 w-5 mr-3 stroke-[1.5px]", pathname === "/history" && "text-[hsl(var(--primary))]")} />
+              <span>History</span>
             </Link>
-            {/* Other library items */}
+          </div>
+        </div>
+        
+        <div className="mb-5">
+          <h3 className="text-xs uppercase text-gray-400 font-semibold tracking-wider px-3 mb-2">Community</h3>
+          <div className="space-y-1">
+            <Link 
+              href="/feedback" 
+              className={cn(
+                "flex items-center px-3 py-3 rounded-xl transition-colors",
+                pathname === "/feedback" 
+                  ? "bg-white/10 text-white relative" 
+                  : "text-white/70 hover:text-white hover:bg-white/5"
+              )}
+              onClick={onClose}
+            >
+              {pathname === "/feedback" && <div className="absolute left-0 top-0 bottom-0 w-1 bg-[hsl(var(--primary))] rounded-r-full" />}
+              <MessageCircle className={cn("h-5 w-5 mr-3 stroke-[1.5px]", pathname === "/feedback" && "text-[hsl(var(--primary))]")} />
+              <span>Feedback</span>
+            </Link>
           </div>
         </div>
       </div>
       
       <div className="mt-auto pt-5 border-t border-white/5">
         <div>
-          <h3 className="text-xs uppercase text-gray-400 font-semibold tracking-wider px-3 mb-3">Settings</h3>
+          <h3 className="text-xs uppercase text-gray-400 font-semibold tracking-wider px-3 mb-2">Settings</h3>
           <div className="space-y-1">
             {user ? (
               <>

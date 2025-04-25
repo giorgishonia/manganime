@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { PlusCircle, Pencil, Trash2, Loader2 } from "lucide-react";
+import { PlusCircle, Pencil, Trash2, Loader2, Users } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -43,13 +43,26 @@ import { useAuth } from "@/components/supabase-auth-provider";
 import { getAllContent, deleteContent, getContentById } from "@/lib/content";
 import { supabase } from "@/lib/supabase";
 
-// Define the content item type
+// Add an interface for Character
+interface Character {
+  id?: string;
+  name: string;
+  image: string;
+  role: string;
+  age?: string;
+  gender?: string;
+}
+
+// Update ContentItem interface to include characters
 interface ContentItem {
   id: string;
   title: string;
   type: string;
   status: string;
   genres?: string[];
+  characters?: Character[];
+  release_year?: number;
+  rating?: number;
   [key: string]: any; // For any other properties
 }
 
@@ -235,6 +248,15 @@ export default function AdminContentPage() {
       setLoading(true);
       getAllContentForAdmin()
         .then((data) => {
+          // Check and log any content with fixed date or rating
+          data.forEach(item => {
+            if (item.release_year === 2025) {
+              console.log("Found content with 2025 release year:", item.title, item);
+            }
+            if (item.rating === 7) {
+              console.log("Found content with rating 7:", item.title, item);
+            }
+          });
           setContentList(data);
         })
         .catch((error) => {
@@ -263,10 +285,32 @@ export default function AdminContentPage() {
   return (
     <div className="container mx-auto py-10">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">Content Management</h1>
-        <Button onClick={handleAddContent}>
-          <PlusCircle className="mr-2 h-4 w-4" /> Add Content
-        </Button>
+        <h1 className="text-3xl font-bold">კონტენტის მართვა</h1>
+        <div className="flex gap-2">
+          <Button 
+            variant="outline" 
+            onClick={async () => {
+              try {
+                const response = await fetch('/api/setup/fix-chapters-schema');
+                const data = await response.json();
+                
+                if (data.success) {
+                  toast.success("თავების სქემა წარმატებით გასწორდა");
+                } else {
+                  toast.error("თავების სქემის გასწორება ვერ მოხერხდა: " + (data.error || "უცნობი შეცდომა"));
+                }
+              } catch (error) {
+                console.error("Error fixing schema:", error);
+                toast.error("შეცდომა სქემის გასწორებისას");
+              }
+            }}
+          >
+            სქემების გასწორება
+          </Button>
+          <Button onClick={handleAddContent}>
+            <PlusCircle className="mr-2 h-4 w-4" /> კონტენტის დამატება
+          </Button>
+        </div>
       </div>
 
       {loading ? (
@@ -275,9 +319,9 @@ export default function AdminContentPage() {
         </div>
       ) : !Array.isArray(contentList) || contentList.length === 0 ? (
         <div className="text-center p-10 border rounded-md">
-          <p className="text-muted-foreground">No content found</p>
+          <p className="text-muted-foreground">კონტენტი ვერ მოიძებნა</p>
           <Button onClick={handleAddContent} className="mt-4">
-            <PlusCircle className="mr-2 h-4 w-4" /> Add Content
+            <PlusCircle className="mr-2 h-4 w-4" /> კონტენტის დამატება
           </Button>
         </div>
       ) : (
@@ -285,11 +329,11 @@ export default function AdminContentPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Title</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Genres</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead>სათაური</TableHead>
+                <TableHead>ტიპი</TableHead>
+                <TableHead>სტატუსი</TableHead>
+                <TableHead>ჟანრები</TableHead>
+                <TableHead className="text-right">მოქმედებები</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -323,7 +367,7 @@ export default function AdminContentPage() {
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="icon">
-                          <span className="sr-only">Open menu</span>
+                          <span className="sr-only">მენიუს გახსნა</span>
                           <svg
                             width="15"
                             height="15"
@@ -343,13 +387,13 @@ export default function AdminContentPage() {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onClick={() => handleEditContent(item)}>
-                          <Pencil className="mr-2 h-4 w-4" /> Edit
+                          <Pencil className="mr-2 h-4 w-4" /> რედაქტირება
                         </DropdownMenuItem>
                         <DropdownMenuItem 
                           className="text-destructive focus:text-destructive"
                           onClick={() => handleDeleteClick(item.id)}
                         >
-                          <Trash2 className="mr-2 h-4 w-4" /> Delete
+                          <Trash2 className="mr-2 h-4 w-4" /> წაშლა
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -364,11 +408,11 @@ export default function AdminContentPage() {
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editContent ? "Edit Content" : "Add Content"}</DialogTitle>
+            <DialogTitle>{editContent ? "კონტენტის რედაქტირება" : "კონტენტის დამატება"}</DialogTitle>
             <DialogDescription>
               {editContent 
-                ? "Update the content information in the form below."
-                : "Fill out the form below to add a new content to the database."}
+                ? "განაახლეთ კონტენტის ინფორმაცია ქვემოთ მოცემულ ფორმაში."
+                : "შეავსეთ ქვემოთ მოცემული ფორმა ახალი კონტენტის ბაზაში დასამატებლად."}
             </DialogDescription>
           </DialogHeader>
           <ContentForm 
@@ -382,19 +426,19 @@ export default function AdminContentPage() {
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogTitle>დარწმუნებული ხართ?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete this content and all associated data like episodes or chapters.
-              This action cannot be undone.
+              ეს სამუდამოდ წაშლის ამ კონტენტს და მასთან დაკავშირებულ ყველა მონაცემს, როგორიცაა ეპიზოდები ან თავები.
+              ეს ქმედება ვერ იქნება გაუქმებული.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>გაუქმება</AlertDialogCancel>
             <AlertDialogAction 
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={handleDeleteConfirm}
             >
-              Delete
+              წაშლა
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
