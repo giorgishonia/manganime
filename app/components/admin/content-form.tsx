@@ -13,6 +13,8 @@ import {
   Loader2
 } from "lucide-react";
 import { createContent, updateContent } from "@/lib/content";
+import { uploadFile } from "@/lib/upload";
+import { supabase } from "@/lib/supabase";
 
 type ContentType = "anime" | "manga";
 
@@ -30,21 +32,21 @@ interface ContentFormProps {
   mode: "create" | "edit";
 }
 
-const statusOptions = [
-  "Ongoing",
-  "Completed",
-  "Hiatus",
-  "Cancelled",
-  "Upcoming"
-];
+const statusOptions = {
+  Ongoing: "მიმდინარე",
+  Completed: "დასრულებული",
+  Hiatus: "შეჩერებული",
+  Cancelled: "გაუქმებული",
+  Upcoming: "მალე"
+};
 
-const genreOptions = [
-  "Action", "Adventure", "Comedy", "Drama", "Fantasy", 
-  "Horror", "Mystery", "Romance", "Sci-Fi", "Slice of Life", 
-  "Sports", "Thriller", "Supernatural", "Mecha", "Music", 
-  "Psychological", "Historical", "School", "Seinen", "Shoujo", 
-  "Shounen"
-];
+const genreOptions = {
+  Action: "მოქმედებითი", Adventure: "სათავგადასავლო", Comedy: "კომედია", Drama: "დრამა", Fantasy: "ფენტეზი", 
+  Horror: "საშინელებათა", Mystery: "მისტიკა", Romance: "რომანტიკა", "Sci-Fi": "სამეცნიერო ფანტასტიკა", "Slice of Life": "ცხოვრების ნაწილი", 
+  Sports: "სპორტული", Thriller: "თრილერი", Supernatural: "ზებუნებრივი", Mecha: "მექა", Music: "მუსიკალური", 
+  Psychological: "ფსიქოლოგიური", Historical: "ისტორიული", School: "სკოლა", Seinen: "სეინენი", Shoujo: "შოუჯო", 
+  Shounen: "შონენი"
+};
 
 export default function ContentForm({ initialData, mode }: ContentFormProps) {
   const isEditing = mode === "edit";
@@ -100,11 +102,24 @@ export default function ContentForm({ initialData, mode }: ContentFormProps) {
     setLoading(true);
     setError(null);
     
+    let finalFormData = { ...formData };
+
+    if (thumbnailFile) {
+      const uploadResult = await uploadFile(thumbnailFile, 'thumbnails');
+      if (uploadResult.success && uploadResult.url) {
+        finalFormData.thumbnail = uploadResult.url;
+      } else {
+        setError(uploadResult.error || "Failed to upload thumbnail.");
+        setLoading(false);
+        return;
+      }
+    }
+    
     try {
       if (isEditing && initialData?.id) {
-        await updateContent(initialData.id, formData, thumbnailFile);
+        await updateContent(initialData.id, finalFormData);
       } else {
-        await createContent(formData, thumbnailFile);
+        await createContent(finalFormData);
       }
       
       router.push("/admin/content");
@@ -121,7 +136,7 @@ export default function ContentForm({ initialData, mode }: ContentFormProps) {
     <form onSubmit={handleSubmit} className="space-y-6 max-w-4xl mx-auto p-6 bg-gray-800 rounded-lg">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-white">
-          {isEditing ? "Edit Content" : "Add New Content"}
+          {isEditing ? "კონტენტის რედაქტირება" : "ახალი კონტენტის დამატება"}
         </h2>
         
         <div className="flex space-x-4">
@@ -135,7 +150,7 @@ export default function ContentForm({ initialData, mode }: ContentFormProps) {
             }`}
           >
             <Film className="mr-2 h-5 w-5" />
-            Anime
+            ანიმე
           </button>
           
           <button
@@ -148,7 +163,7 @@ export default function ContentForm({ initialData, mode }: ContentFormProps) {
             }`}
           >
             <BookOpen className="mr-2 h-5 w-5" />
-            Manga
+            მანგა
           </button>
         </div>
       </div>
@@ -157,7 +172,7 @@ export default function ContentForm({ initialData, mode }: ContentFormProps) {
         <div className="space-y-4">
           <div>
             <label htmlFor="title" className="block mb-2 text-sm font-medium text-gray-300">
-              Title
+              სათაური
             </label>
             <input
               type="text"
@@ -172,7 +187,7 @@ export default function ContentForm({ initialData, mode }: ContentFormProps) {
           
           <div>
             <label htmlFor="description" className="block mb-2 text-sm font-medium text-gray-300">
-              Description
+              აღწერა
             </label>
             <textarea
               id="description"
@@ -188,7 +203,7 @@ export default function ContentForm({ initialData, mode }: ContentFormProps) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label htmlFor="status" className="block mb-2 text-sm font-medium text-gray-300">
-                Status
+                სტატუსი
               </label>
               <select
                 id="status"
@@ -197,9 +212,9 @@ export default function ContentForm({ initialData, mode }: ContentFormProps) {
                 onChange={handleChange}
                 className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
               >
-                {statusOptions.map((status) => (
-                  <option key={status} value={status}>
-                    {status}
+                {Object.entries(statusOptions).map(([key, value]) => (
+                  <option key={key} value={key}>
+                    {value}
                   </option>
                 ))}
               </select>
@@ -207,7 +222,7 @@ export default function ContentForm({ initialData, mode }: ContentFormProps) {
             
             <div>
               <label htmlFor="releaseYear" className="block mb-2 text-sm font-medium text-gray-300">
-                Release Year
+                გამოშვების წელი
               </label>
               <div className="flex items-center">
                 <Calendar className="absolute ml-3 h-5 w-5 text-gray-400" />
@@ -229,7 +244,7 @@ export default function ContentForm({ initialData, mode }: ContentFormProps) {
         <div className="space-y-4">
           <div>
             <label className="block mb-2 text-sm font-medium text-gray-300">
-              Thumbnail
+              მინიატურა
             </label>
             <div className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-gray-600 rounded-lg bg-gray-700 cursor-pointer">
               {thumbnailPreview ? (
@@ -253,8 +268,8 @@ export default function ContentForm({ initialData, mode }: ContentFormProps) {
               ) : (
                 <label htmlFor="thumbnailUpload" className="flex flex-col items-center cursor-pointer">
                   <ImageIcon className="h-12 w-12 text-gray-400 mb-2" />
-                  <p className="text-sm text-gray-400 mb-1">Click to upload thumbnail</p>
-                  <p className="text-xs text-gray-500">JPG, PNG or GIF (max 2MB)</p>
+                  <p className="text-sm text-gray-400 mb-1">დააჭირეთ მინიატურის ასატვირთად</p>
+                  <p className="text-xs text-gray-500">JPG, PNG ან GIF (მაქს. 2MB)</p>
                   <input
                     id="thumbnailUpload"
                     type="file"
@@ -269,21 +284,21 @@ export default function ContentForm({ initialData, mode }: ContentFormProps) {
           
           <div>
             <label className="block mb-2 text-sm font-medium text-gray-300">
-              Genres
+              ჟანრები
             </label>
             <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto bg-gray-700 p-3 rounded-lg">
-              {genreOptions.map((genre) => (
+              {Object.entries(genreOptions).map(([key, value]) => (
                 <button
-                  key={genre}
+                  key={key}
                   type="button"
-                  onClick={() => handleGenreToggle(genre)}
+                  onClick={() => handleGenreToggle(key)}
                   className={`px-3 py-1 rounded-full text-sm ${
-                    formData.genres.includes(genre)
+                    formData.genres.includes(key)
                       ? "bg-purple-600 text-white"
                       : "bg-gray-600 text-gray-300"
                   }`}
                 >
-                  {genre}
+                  {value}
                 </button>
               ))}
             </div>
@@ -303,7 +318,7 @@ export default function ContentForm({ initialData, mode }: ContentFormProps) {
           onClick={() => router.back()}
           className="px-6 py-2 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600"
         >
-          Cancel
+          გაუქმება
         </button>
         <button
           type="submit"
@@ -313,12 +328,12 @@ export default function ContentForm({ initialData, mode }: ContentFormProps) {
           {loading ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Saving...
+              ინახება...
             </>
           ) : isEditing ? (
-            "Update Content"
+            "კონტენტის განახლება"
           ) : (
-            "Create Content"
+            "კონტენტის შექმნა"
           )}
         </button>
       </div>

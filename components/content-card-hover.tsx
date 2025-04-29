@@ -5,18 +5,20 @@ import { Play, Plus, X } from "lucide-react"
 import { motion as m, AnimatePresence } from "framer-motion"
 
 interface ContentCardHoverProps {
-  id: number
+  id: string
   onClose: () => void
   contentType?: "ANIME" | "MANGA" // Add contentType prop
 }
 
 // Mock function to get content details
-function getContentDetails(id: number, type: string) {
+function getContentDetails(id: string, type: string) {
+  const numericId = parseInt(id) || 0; // Simple fallback if needed
+
   return {
     id,
     title: `${type === "ANIME" ? "Anime" : "Manga"} Title ${id}`,
     description: "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
-    image: `/placeholder.svg?seed=${id}`,
+    image: `/placeholder.svg?seed=${numericId}`,
     rating: (Math.random() * 2 + 8).toFixed(1),
     type,
     year: "2023"
@@ -39,7 +41,7 @@ export function ContentCardHover({ id, onClose, contentType = "ANIME" }: Content
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 10 }}
-        className="fixed bottom-8 right-8 z-50 w-64 bg-gray-900 rounded-lg overflow-hidden shadow-xl"
+        className="hidden fixed bottom-8 right-8 z-50 w-64 bg-gray-900 rounded-lg overflow-hidden shadow-xl"
       >
         <div className="relative">
           <img src={details.image || "/placeholder.svg"} alt={details.title} className="w-full h-40 object-cover" />

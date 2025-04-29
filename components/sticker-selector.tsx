@@ -16,7 +16,7 @@ const STICKER_CATEGORIES = [
       { id: 'anime3', url: '/stickers/anime/love.gif', alt: 'Love anime' },
       { id: 'anime4', url: '/stickers/anime/angry.gif', alt: 'Angry anime' },
       { id: 'anime5', url: '/stickers/anime/surprised.gif', alt: 'Surprised anime' },
-      { id: 'anime5', url: '/stickers/anime/laugh.gif', alt: 'Laugh anime' },
+      { id: 'anime6', url: '/stickers/anime/laugh.gif', alt: 'Laugh anime' },
     ]
   },
   {
@@ -33,11 +33,11 @@ const STICKER_CATEGORIES = [
     name: 'Manga',
     stickers: [
       { id: 'manga1', url: '/stickers/manga/baka.gif', alt: 'Baka' },
-      { id: 'manga2', url: '/stickers/manga/solo-statue.gif', alt: 'Smile manga' },
+      { id: 'manga2', url: '/stickers/manga/statue-smile.gif', alt: 'Smile manga' },
       { id: 'manga3', url: '/stickers/manga/guts.gif', alt: 'Berserk manga' },
       { id: 'manga4', url: '/stickers/manga/musashi.gif', alt: 'Vagabond manga' },
       { id: 'manga5', url: '/stickers/manga/climber.gif', alt: 'The climber manga' },
-      { id: 'manga5', url: '/stickers/manga/punpun.gif', alt: 'Punpun manga' },
+      { id: 'manga6', url: '/stickers/manga/punpun.gif', alt: 'Punpun manga' },
 
     ]
   },

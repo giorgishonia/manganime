@@ -17,22 +17,28 @@ import {
   Loader2,
   UserCircle,
   StickyNote,
-  XCircle
+  XCircle,
+  ThumbsUp,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { v5 as uuidv5 } from 'uuid'
 import { 
   getCommentsByContentId, 
-  getAllComments, 
+  getAllComments,
   addComment, 
   deleteComment, 
   updateComment, 
   Comment,
-  ensureCommentsTable
+  ensureCommentsTable,
+  toggleCommentLike
 } from '@/lib/comments'
 import { toast } from 'sonner'
 import { useUnifiedAuth } from '@/components/unified-auth-provider'
 import { StickerSelector, Sticker } from './sticker-selector'
+import { cn } from '@/lib/utils'
+import { createNotification } from "@/lib/notifications"
 
 // UUID namespace for converting non-UUID IDs (same as in comments.ts)
 const NAMESPACE = '1b671a64-40d5-491e-99b0-da01ff1f3341'
@@ -46,6 +52,38 @@ function ensureUUID(id: string): string {
   
   // Convert to a deterministic UUID using the namespace
   return uuidv5(id, NAMESPACE)
+}
+
+// Placeholder type for the return value of the assumed paginated function
+// Adjust this based on the actual implementation in lib/comments.ts
+type PaginatedCommentsResponse = {
+  success: boolean;
+  comments: Comment[];
+  totalCount: number | null; // Total number of comments for pagination
+  error?: any;
+};
+
+// Placeholder for the actual paginated fetching function from lib/comments.ts
+// You'll need to implement this function in lib/comments.ts
+async function getPaginatedComments(
+  contentId: string,
+  contentType: 'anime' | 'manga',
+  page: number,
+  limit: number
+): Promise<PaginatedCommentsResponse> {
+  console.warn("Using placeholder getPaginatedComments. Implement actual fetching in lib/comments.ts");
+  // --- This is placeholder logic --- 
+  // In reality, call your Supabase function with LIMIT and OFFSET
+  const { success, comments, error } = await getAllComments(contentId, contentType); // Fetch all for now
+  if (!success || !comments) {
+    return { success: false, comments: [], totalCount: 0, error };
+  }
+  const totalCount = comments.length;
+  const startIndex = (page - 1) * limit;
+  const endIndex = startIndex + limit;
+  const paginatedComments = comments.slice(startIndex, endIndex);
+  return { success: true, comments: paginatedComments, totalCount, error: null };
+  // --- End placeholder logic --- 
 }
 
 interface CommentSectionProps {
@@ -94,6 +132,12 @@ export function CommentSection({
   const commentBoxRef = useRef<HTMLTextAreaElement>(null)
   const router = useRouter()
 
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalComments, setTotalComments] = useState(0)
+  const commentsPerPage = 5 // Number of comments per page
+
   // Print auth state for debugging
   useEffect(() => {
     console.log("CommentSection auth state:", { isAuthenticated, userId, username, authLoading });
@@ -112,20 +156,27 @@ export function CommentSection({
         const { success, comments } = await getAllComments(contentId, contentType)
         
         if (success && comments) {
-          setComments(comments)
+          // Initialize with default like state - REAL STATE NEEDED FROM getAllComments!
+          const commentsWithLikes = comments.map(c => ({ 
+            ...c, 
+            like_count: 0, // Default - should come from DB query
+            user_has_liked: false // Default - should come from DB query
+          }));
+          setComments(commentsWithLikes)
         } else {
-          toast.error("Failed to load comments")
+          toast.error("კომენტარების ჩატვირთვა ვერ მოხერხდა")
         }
       } catch (error) {
         console.error('Error loading comments:', error)
-        toast.error("Couldn't connect to the comment server")
+        toast.error("კომენტარების სერვერთან დაკავშირება ვერ მოხერხდა")
       } finally {
         setIsLoading(false)
       }
     }
 
-    loadComments()
-  }, [contentId, contentType])
+    loadComments();
+    // Restore dependencies, but keep userId out until initial like state fetching is implemented
+  }, [contentId, contentType]);
 
   // Reload comments when user authentication state changes
   // This ensures profiles and avatars are up-to-date
@@ -175,7 +226,7 @@ export function CommentSection({
       setIsSubmitting(true)
       
       if (!userId) {
-        toast.error("You must be logged in to comment")
+        toast.error("კომენტარის დასატოვებლად უნდა იყოთ ავტორიზებული")
         return
       }
       
@@ -183,7 +234,7 @@ export function CommentSection({
       const tableCheck = await ensureCommentsTable();
       if (!tableCheck.success) {
         console.error("Failed to ensure comments table structure:", tableCheck.error);
-        toast.error("Server issue. Please try again in a moment.");
+        toast.error("სერვერის პრობლემა. გთხოვთ, სცადოთ ხელახლა ცოტა ხანში.");
         return;
       }
       
@@ -204,14 +255,14 @@ export function CommentSection({
         setComments(prevComments => [comment, ...prevComments])
         setNewComment('')
         setSelectedSticker(null)
-        toast.success("Comment posted!")
+        toast.success("კომენტარი დაემატა!")
       } else {
         console.error('Error posting comment:', error)
-        toast.error("Failed to post comment")
+        toast.error("კომენტარის დამატება ვერ მოხერხდა")
       }
     } catch (error) {
       console.error('Error posting comment:', error)
-      toast.error("Something went wrong")
+      toast.error("დაფიქსირდა შეცდომა")
     } finally {
       setIsSubmitting(false)
     }
@@ -262,14 +313,14 @@ export function CommentSection({
         setEditingId(null)
         setEditText('')
         setEditMedia(null)
-        toast.success("Comment updated")
+        toast.success("კომენტარი განახლდა")
       } else {
         console.error('Error updating comment:', error)
-        toast.error("Failed to update comment")
+        toast.error("კომენტარის განახლება ვერ მოხერხდა")
       }
     } catch (error) {
       console.error('Error updating comment:', error)
-      toast.error("Failed to update comment")
+      toast.error("კომენტარის განახლება ვერ მოხერხდა")
     } finally {
       setIsSubmitting(false)
     }
@@ -285,24 +336,97 @@ export function CommentSection({
     if (!userId) return
     
     try {
-      if (window.confirm('Are you sure you want to delete this comment?')) {
+      if (window.confirm('დარწმუნებული ხართ, რომ გსურთ ამ კომენტარის წაშლა?')) {
         // Delete the comment
         const { success, error } = await deleteComment(commentId, userId)
         
         if (success) {
           // Stickers are pre-defined assets, not user uploads - no need to delete them
           setComments(prevComments => prevComments.filter(c => c.id !== commentId))
-          toast.success("Comment deleted")
+          toast.success("კომენტარი წაიშალა")
         } else {
           console.error('Error deleting comment:', error)
-          toast.error("Failed to delete comment")
+          toast.error("კომენტარის წაშლა ვერ მოხერხდა")
         }
       }
     } catch (error) {
       console.error('Error deleting comment:', error)
-      toast.error("Something went wrong")
+      toast.error("დაფიქსირდა შეცდომა")
     }
   }
+
+  // Function to update like state locally
+  const updateLocalLikeState = (commentId: string, liked: boolean, newCount: number) => {
+    setComments(prev => prev.map(c => 
+      c.id === commentId ? { ...c, user_has_liked: liked, like_count: newCount } : c
+    ));
+  };
+
+  // Handle Liking a comment
+  const handleLikeComment = async (comment: Comment) => {
+    if (!isAuthenticated || !userId) {
+      toast.error("კომენტარების მოსაწონებლად უნდა იყოთ ავტორიზებული");
+      router.push('/login');
+      return;
+    }
+
+    const originalLiked = comment.user_has_liked ?? false; 
+    const originalCount = comment.like_count || 0;
+    const optimisticNewLiked = !originalLiked;
+    const optimisticNewCount = optimisticNewLiked ? originalCount + 1 : Math.max(0, originalCount - 1);
+
+    // Optimistically update UI
+    updateLocalLikeState(comment.id, optimisticNewLiked, optimisticNewCount);
+
+    try {
+      const { success, liked, newLikeCount, error } = await toggleCommentLike(comment.id, userId);
+
+      if (!success) {
+        // Revert optimistic update on failure
+        updateLocalLikeState(comment.id, originalLiked, originalCount);
+        toast.error("მოწონების განახლება ვერ მოხერხდა");
+        console.error("Like toggle error:", error);
+        return;
+      }
+
+      updateLocalLikeState(comment.id, liked, newLikeCount);
+
+      // --- Send Notification Logic --- 
+      if (liked && comment.user_id !== ensureUUID(userId)) {
+        console.log(`Attempting to send 'like' notification to user: ${comment.user_id}`);
+        
+        // Call the actual createNotification function
+        try {
+           const notificationResult = await createNotification( 
+               comment.user_id, // Recipient 
+               'comment_like', // Type
+               { // Data payload
+                 sender_user_id: userId, 
+                 sender_username: username, 
+                 comment_id: comment.id, 
+                 content_id: contentId, 
+                 content_type: contentType, 
+                 comment_snippet: comment.text.substring(0, 50) + (comment.text.length > 50 ? '...' : '') 
+               }
+           );
+           if (notificationResult.success) {
+               console.log("Like notification created successfully.");
+           } else {
+               console.error("Failed to create like notification:", notificationResult.error);
+           }
+        } catch (notifError) {
+           console.error("Error calling createNotification:", notifError);
+        }
+      } 
+      // --- End Notification Logic --- 
+
+    } catch (err) {
+      // Revert optimistic update on error
+      updateLocalLikeState(comment.id, originalLiked, originalCount);
+      toast.error("კომენტარის მოწონებისას დაფიქსირდა შეცდომა");
+      console.error("Like handling error:", err);
+    }
+  };
 
   return (
     <motion.section
@@ -325,9 +449,9 @@ export function CommentSection({
         {isAuthenticated ? (
           <div className="flex gap-4 bg-black/40 backdrop-blur-sm border border-white/10 rounded-xl p-4">
             <Avatar className="h-10 w-10 border-2 border-purple-500/30">
-              <AvatarImage src={avatarUrl || ''} alt={username || 'User'} />
+              <AvatarImage src={avatarUrl || ''} alt={username || 'მომხმარებელი'} />
               <AvatarFallback className="bg-purple-900 text-white">
-                {(username?.[0] || 'U').toUpperCase()}
+                {(username?.[0] || 'მ').toUpperCase()}
               </AvatarFallback>
             </Avatar>
             <div className="flex-1">
@@ -341,10 +465,10 @@ export function CommentSection({
               {/* Sticker preview */}
               {selectedSticker && (
                 <div className="relative mb-3 inline-block">
-                  <div className="relative w-40 h-40 overflow-hidden rounded-md border border-white/10">
+                  <div className="relative w-fit h-fit overflow-hidden rounded-md border border-white/10">
                     <Image 
                       src={selectedSticker.url} 
-                      alt={selectedSticker.alt} 
+                      alt={selectedSticker.alt || 'სტიკერი'}
                       width={150}
                       height={150}
                       className="object-contain"
@@ -371,8 +495,7 @@ export function CommentSection({
                     className="border-white/10 hover:bg-white/5"
                     disabled={isSubmitting}
                   >
-                    <StickyNote className="h-4 w-4 mr-2" />
-                    სტიკერის დამატება
+                    <StickyNote className="h-4 w-4" />
                   </Button>
                   
                   {/* Sticker selector popup */}
@@ -392,11 +515,10 @@ export function CommentSection({
                   className="bg-purple-600 hover:bg-purple-700 transition-all"
                 >
                   {isSubmitting ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
-                    <Send className="h-4 w-4 mr-2" />
+                    <Send className="h-4 w-4" />
                   )}
-                  კომენტარის დამატება
                 </Button>
               </div>
             </div>
@@ -408,7 +530,7 @@ export function CommentSection({
             <UserCircle className="h-12 w-12 text-purple-400 mb-3" />
             <h3 className="text-lg font-medium mb-2">შემოგვიერთდით საუბარში!</h3>
             <p className="text-gray-300 mb-4 max-w-md">
-              შედით სისტემაში თქვენი აზრის გასაზიარებლად და სხვა ფანებთან დასაკავშირებლად.
+              შედით სისტემაში თქვენი აზრის გასაზიარებლად და სხვა მომხმარებლებთან დასაკავშირებლად.
             </p>
             <Button 
               onClick={() => router.push('/login')}
@@ -447,7 +569,11 @@ export function CommentSection({
             </motion.div>
           ) : (
             <motion.div 
-              key="comments"
+              key={`comments-page-${currentPage}`}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
               className="space-y-4"
             >
               {comments.map((comment) => (
@@ -455,20 +581,18 @@ export function CommentSection({
                   key={comment.id}
                   className="bg-black/40 backdrop-blur-sm border border-white/5 rounded-xl p-5 transition-all hover:border-white/10"
                   variants={itemVariants}
-                  initial="initial"
-                  animate="animate"
                   layout
                 >
-                  <div className="flex justify-between">
-                    <div className="flex gap-3 items-center">
-                      <Avatar className="h-10 w-10 border-2 border-purple-500/30">
-                        <AvatarImage src={comment.user_profile?.avatar_url || ''} alt={comment.user_profile?.username || 'User'} />
+                  <div className="flex justify-between items-start">
+                    <div className="flex gap-3 items-center flex-1 min-w-0">
+                      <Avatar className="h-10 w-10 border-2 border-purple-500/30 flex-shrink-0">
+                        <AvatarImage src={comment.user_profile?.avatar_url || ''} alt={comment.user_profile?.username || 'მომხმარებელი'} />
                         <AvatarFallback className="bg-purple-900 text-white">
-                          {(comment.user_profile?.username?.[0] || 'U').toUpperCase()}
+                          {(comment.user_profile?.username?.[0] || 'მ').toUpperCase()}
                         </AvatarFallback>
                       </Avatar>
-                      <div>
-                        <p className="font-medium">{comment.user_profile?.username || 'User'}</p>
+                      <div className="min-w-0">
+                        <p className="font-medium truncate">{comment.user_profile?.username || 'მომხმარებელი'}</p>
                         <p className="text-sm text-gray-400">
                           {formatDistanceToNow(new Date(comment.created_at), { addSuffix: true })}
                           {comment.updated_at && comment.updated_at !== comment.created_at && 
@@ -477,28 +601,24 @@ export function CommentSection({
                       </div>
                     </div>
                     
-                    {isOwnComment(comment) && (
-                      <div className="flex gap-2">
-                        {editingId !== comment.id && (
-                          <>
-                            <Button 
-                              variant="ghost" 
-                              size="sm" 
-                              onClick={() => handleEditComment(comment)}
-                              className="h-8 w-8 p-0 text-gray-400 hover:text-purple-400 hover:bg-purple-500/10"
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button 
-                              variant="ghost" 
-                              size="sm" 
-                              onClick={() => handleDeleteComment(comment.id)}
-                              className="h-8 w-8 p-0 text-gray-400 hover:text-red-400 hover:bg-red-500/10"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </>
-                        )}
+                    {isOwnComment(comment) && editingId !== comment.id && (
+                      <div className="flex gap-1 flex-shrink-0 ml-2">
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={() => handleEditComment(comment)}
+                          className="h-8 w-8 p-0 text-gray-400 hover:text-purple-400 hover:bg-purple-500/10"
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={() => handleDeleteComment(comment.id)}
+                          className="h-8 w-8 p-0 text-gray-400 hover:text-red-400 hover:bg-red-500/10"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </div>
                     )}
                   </div>
@@ -515,10 +635,10 @@ export function CommentSection({
                       {/* Edit media preview */}
                       {editMedia && (
                         <div className="relative mb-3 inline-block">
-                          <div className="relative w-40 h-40 overflow-hidden rounded-md border border-white/10">
+                          <div className="relative w-fit h-fit overflow-hidden rounded-md border border-white/10">
                             <Image 
                               src={editMedia} 
-                              alt="Sticker" 
+                              alt="სტიკერი"
                               width={150}
                               height={150}
                               className="object-contain"
@@ -562,7 +682,7 @@ export function CommentSection({
                     </div>
                   ) : (
                     <div>
-                      <p className="mt-3 text-gray-200 whitespace-pre-line">{comment.text}</p>
+                      <p className="mt-3 text-gray-200 whitespace-pre-line break-words">{comment.text}</p>
                       
                       {/* Comment media/sticker */}
                       {comment.media_url && (
@@ -570,7 +690,7 @@ export function CommentSection({
                           <div className="relative max-w-[200px] max-h-[200px] overflow-hidden rounded-md border border-white/10 inline-block">
                             <Image 
                               src={comment.media_url} 
-                              alt="Comment sticker" 
+                              alt="კომენტარის სტიკერი"
                               width={200}
                               height={200}
                               className="object-contain"
@@ -578,6 +698,27 @@ export function CommentSection({
                           </div>
                         </div>
                       )}
+                    </div>
+                  )}
+
+                  {/* Like Button - Placed below content/edit form */} 
+                  {editingId !== comment.id && ( 
+                    <div className="mt-3 pt-3 border-t border-white/10 flex items-center gap-2">
+                      <Button 
+                        variant="ghost"
+                        size="sm"
+                        className={cn(
+                          "flex items-center gap-1.5 text-xs h-7 px-2",
+                          comment.user_has_liked 
+                            ? "text-purple-400 hover:bg-purple-500/10"
+                            : "text-gray-400 hover:text-purple-400 hover:bg-purple-500/10"
+                        )}
+                        onClick={() => handleLikeComment(comment)}
+                        disabled={!isAuthenticated} // Disable if not logged in
+                      >
+                        <ThumbsUp className={cn("h-3.5 w-3.5", comment.user_has_liked && "fill-current")} />
+                        <span>{comment.like_count || 0}</span>
+                      </Button>
                     </div>
                   )}
                 </motion.div>

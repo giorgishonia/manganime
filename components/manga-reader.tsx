@@ -18,11 +18,16 @@ import {
   Pause,
   Play,
   FastForward,
-  Rewind
+  Rewind,
+  ChevronUp,
+  BookOpen,
+  Eye,
+  EyeOff
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Progress } from "@/components/ui/progress"
 import { updateReadingProgress } from "@/lib/reading-history"
+import { Switch } from "@/components/ui/switch"
 
 interface Chapter {
   number: number
@@ -49,46 +54,44 @@ type PageStretch = "None" | "Stretch"
 
 export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, mangaId, mangaTitle, initialPage = 0 }: MangaReaderProps) {
   const [currentPage, setCurrentPage] = useState(initialPage)
-  const [visibleStartPage, setVisibleStartPage] = useState(0) // Track the first visible page for scrolling up
+  const [visibleStartPage, setVisibleStartPage] = useState(0)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [showControls, setShowControls] = useState(true)
   const [showSettings, setShowSettings] = useState(false)
+  const [showChapterDropdown, setShowChapterDropdown] = useState(false)
   const [readingMode, setReadingMode] = useState<ReadingMode>("Single Page")
   const [readingDirection, setReadingDirection] = useState<ReadingDirection>("Left to Right")
   const [pageFit, setPageFit] = useState<PageFit>("Contain")
   const [pageStretch, setPageStretch] = useState<PageStretch>("None")
   const [showPageGap, setShowPageGap] = useState(true)
+  const [showLongStripGap, setShowLongStripGap] = useState(true)
   const [showProgressBar, setShowProgressBar] = useState(true)
   const [showBottomBar, setShowBottomBar] = useState(true)
   const [showChapterList, setShowChapterList] = useState(false)
   const [showPageNumbers, setShowPageNumbers] = useState(true)
-  // Autoscroll states
+  const [autoHideControls, setAutoHideControls] = useState(true)
   const [isAutoScrolling, setIsAutoScrolling] = useState(false)
-  const [autoScrollSpeed, setAutoScrollSpeed] = useState(1) // 1-5 scale
+  const [autoScrollSpeed, setAutoScrollSpeed] = useState(1)
   
-  // Track loaded state for each page
   const [loadedPages, setLoadedPages] = useState<Record<number, boolean>>({})
   
-  // Local preloaded images cache
   const [preloadedImages, setPreloadedImages] = useState<Record<string, boolean>>({})
 
   const readerRef = useRef<HTMLDivElement>(null)
   const longStripRef = useRef<HTMLDivElement>(null)
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-  const autoScrollIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const autoScrollRafRef = useRef<number | null>(null)
+  const lastScrollTimeRef = useRef<number>(0)
   const scrollListenerRef = useRef<any>(null)
   const [currentVisiblePage, setCurrentVisiblePage] = useState(0)
   const [isLongStripStabilized, setIsLongStripStabilized] = useState(false)
   
-  // Use ref to prevent frequent re-renders causing stutter
   const pageProgressRef = useRef<number>(0)
   
-  // ... existing refs ...
   const progressBarRef = useRef<HTMLDivElement>(null)
   
   const totalPages = chapter.pages.length
 
-  // Auto-hide controls
   useEffect(() => {
     const handleMouseMove = () => {
       setShowControls(true)
@@ -96,13 +99,19 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
       if (controlsTimeoutRef.current) {
         clearTimeout(controlsTimeoutRef.current)
       }
-
-      controlsTimeoutRef.current = setTimeout(() => {
-        setShowControls(false)
-      }, 3000)
+      
+      if (autoHideControls) {
+        controlsTimeoutRef.current = setTimeout(() => {
+          setShowControls(false)
+        }, 3000)
+      }
     }
 
     document.addEventListener("mousemove", handleMouseMove)
+
+    if (!autoHideControls && controlsTimeoutRef.current) {
+      clearTimeout(controlsTimeoutRef.current);
+    }
 
     return () => {
       document.removeEventListener("mousemove", handleMouseMove)
@@ -110,9 +119,8 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
         clearTimeout(controlsTimeoutRef.current)
       }
     }
-  }, [])
+  }, [autoHideControls])
 
-  // Handle fullscreen
   useEffect(() => {
     const handleFullscreenChange = () => {
       setIsFullscreen(!!document.fullscreenElement)
@@ -125,7 +133,6 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
     }
   }, [])
 
-  // Auto-enter fullscreen when reader opens
   useEffect(() => {
     if (readerRef.current) {
       readerRef.current.requestFullscreen().catch((err) => {
@@ -142,16 +149,15 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
     }
   }, [])
 
-  // Preload images
   useEffect(() => {
     const preloadImages = (startIndex: number, count: number) => {
       const endIndex = Math.min(startIndex + count, totalPages)
       
       for (let i = startIndex; i < endIndex; i++) {
         const imageUrl = chapter.pages[i]
+        if (!imageUrl) continue;
         const cacheKey = `${chapter.number}-${i}-${imageUrl}`
         
-        // Skip already preloaded images
         if (preloadedImages[cacheKey]) continue
         
         const img = new Image()
@@ -160,58 +166,59 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
           setPreloadedImages(prev => ({...prev, [cacheKey]: true}))
           setLoadedPages(prev => ({...prev, [i]: true}))
         }
+        img.onerror = () => {
+          console.warn(`Failed to preload image: ${imageUrl}`);
+        }
       }
     }
 
-    // Limit preloading to only necessary images
     if (readingMode === "Long Strip") {
-      // In Long Strip mode, only preload visible pages and a few ahead
-      preloadImages(currentPage, 5)
+      preloadImages(currentVisiblePage, 5)
     } else {
-      // For Single/Double Page modes, preload current page and next few
       preloadImages(currentPage, 3)
       
-      // If in double page mode, also preload previous page if not at start
       if (readingMode === "Double Page" && currentPage > 0) {
         preloadImages(currentPage - 1, 1)
       }
     }
-  }, [currentPage, chapter.number, chapter.pages, readingMode, totalPages, preloadedImages]);
+  }, [currentPage, currentVisiblePage, chapter.number, chapter.pages, readingMode, totalPages, preloadedImages]);
 
-  // More stable calculation for Long Strip progress based on visible pages
   const calculateLongStripProgress = (): number => {
     if (!longStripRef.current || totalPages === 0) return 0;
     
-    // Return a percentage based on current visible page vs total pages
     const percentage = (currentVisiblePage / (totalPages - 1)) * 100;
     return Math.min(100, Math.max(0, percentage));
   };
 
-  // Use Intersection Observer to track which page is most visible
   useEffect(() => {
     if (readingMode !== "Long Strip" || !longStripRef.current) return;
     
     const observerOptions = {
       root: longStripRef.current,
       rootMargin: '0px',
-      threshold: 0.5, // Element is considered visible when 50% visible
+      threshold: 0.5,
     };
     
     const handleIntersection = (entries: IntersectionObserverEntry[]) => {
+      let mostVisibleEntry: IntersectionObserverEntry | null = null;
       for (const entry of entries) {
         if (entry.isIntersecting) {
-          const pageIndex = Number(entry.target.getAttribute('data-page-index'));
-          if (!isNaN(pageIndex)) {
-            setCurrentVisiblePage(pageIndex);
-            // Update the ref value directly to avoid re-renders
-            pageProgressRef.current = pageIndex;
-            
-            // Only update the DOM directly for the progress bar
-            if (progressBarRef.current && readingMode === "Long Strip") {
-              const percentage = (pageIndex / (totalPages - 1)) * 100;
-              const progress = Math.min(100, Math.max(0, percentage));
-              progressBarRef.current.style.transform = `translateX(-${100 - progress}%)`;
-            }
+          if (!mostVisibleEntry || entry.intersectionRatio > mostVisibleEntry.intersectionRatio) {
+            mostVisibleEntry = entry;
+          }
+        }
+      }
+
+      if (mostVisibleEntry) {
+        const pageIndex = Number(mostVisibleEntry.target.getAttribute('data-page-index'));
+        if (!isNaN(pageIndex)) {
+          setCurrentVisiblePage(pageIndex);
+          pageProgressRef.current = pageIndex;
+          
+          if (progressBarRef.current && readingMode === "Long Strip") {
+            const percentage = (pageIndex / (totalPages - 1)) * 100;
+            const progress = Math.min(100, Math.max(0, percentage));
+            progressBarRef.current.style.transform = `translateX(-${100 - progress}%)`;
           }
         }
       }
@@ -219,20 +226,18 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
     
     const observer = new IntersectionObserver(handleIntersection, observerOptions);
     
-    // Observe all page elements
-    document.querySelectorAll('[data-page-element="true"]').forEach(element => {
+    const elements = longStripRef.current.querySelectorAll('[data-page-element="true"]');
+    elements.forEach(element => {
       observer.observe(element);
     });
     
     return () => {
       observer.disconnect();
     };
-  }, [readingMode, totalPages, visibleStartPage, currentPage]);
+  }, [readingMode, totalPages, isLongStripStabilized]);
 
-  // Use a separate effect to stabilize Long Strip once initial loading is done
   useEffect(() => {
     if (readingMode === "Long Strip" && !isLongStripStabilized) {
-      // Delay to allow initial rendering to complete
       const timer = setTimeout(() => {
         setIsLongStripStabilized(true);
       }, 1000);
@@ -247,7 +252,6 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
     };
   }, [readingMode, isLongStripStabilized]);
 
-  // Update for scroll handler to use the more stable calculation
   useEffect(() => {
     if (readingMode !== "Long Strip" || !longStripRef.current) return;
     
@@ -257,26 +261,6 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
       const container = longStripRef.current;
       const { scrollTop, scrollHeight, clientHeight } = container;
       
-      // Don't update the state for progress to avoid re-renders
-      // Progress bar updates will happen through the Intersection Observer
-      
-      // Only load new pages when needed
-      if (scrollTop < 200 && visibleStartPage > 0) {
-        const newStart = Math.max(0, visibleStartPage - 5);
-        setVisibleStartPage(newStart);
-        
-        const oldHeight = scrollHeight;
-        
-        setTimeout(() => {
-          if (container.scrollHeight > oldHeight && scrollTop < 200) {
-            container.scrollTop = container.scrollHeight - oldHeight + scrollTop;
-          }
-        }, 10);
-      }
-      
-      if (scrollHeight - scrollTop - clientHeight < 500 && currentPage + 10 < totalPages) {
-        setCurrentPage(prev => prev + 5);
-      }
     };
     
     const scrollContainer = longStripRef.current;
@@ -284,59 +268,56 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
     scrollListenerRef.current = handleScroll;
     
     return () => {
-      scrollContainer.removeEventListener('scroll', scrollListenerRef.current);
+      if (scrollContainer && scrollListenerRef.current) {
+        scrollContainer.removeEventListener('scroll', scrollListenerRef.current);
+      }
     };
   }, [readingMode, visibleStartPage, currentPage, totalPages]);
 
-  // Save reading progress whenever the current page changes
   useEffect(() => {
+    if (!mangaId || !chapter.id) return;
+
+    let pageToSave = 0;
     if (readingMode === "Long Strip") {
-      // For long strip, save progress based on visible pages
-      if (currentVisiblePage > 0) {
-        updateReadingProgress({
-          mangaId,
-          chapterId: chapter.id || `chapter-${chapter.number}`,
-          chapterNumber: chapter.number,
-          chapterTitle: chapter.title,
-          currentPage: currentVisiblePage,
-          totalPages: chapter.pages.length,
-          lastRead: Date.now(),
-          mangaTitle,
-          mangaThumbnail: chapter.thumbnail
-        });
-      }
+      pageToSave = currentVisiblePage;
     } else {
-      // For Single/Double Page modes
+      pageToSave = currentPage;
+    }
+
+    if (pageToSave >= 0 && pageToSave < totalPages) {
       updateReadingProgress({
         mangaId,
         chapterId: chapter.id || `chapter-${chapter.number}`,
         chapterNumber: chapter.number,
         chapterTitle: chapter.title,
-        currentPage: currentPage,
+        currentPage: pageToSave,
         totalPages: chapter.pages.length,
         lastRead: Date.now(),
         mangaTitle,
         mangaThumbnail: chapter.thumbnail
       });
     }
-  }, [currentPage, currentVisiblePage, readingMode, chapter, mangaId, mangaTitle]);
+  }, [currentPage, currentVisiblePage, readingMode, chapter, mangaId, mangaTitle, totalPages]);
 
-  // Update useEffect to set initial scroll position for Long Strip mode
   useEffect(() => {
-    // If we have an initial page and we're in Long Strip mode, scroll to that position
-    if (initialPage > 0 && readingMode === "Long Strip" && longStripRef.current) {
-      // Give the component time to render before scrolling
+    if (initialPage > 0 && readingMode === "Long Strip" && longStripRef.current && isLongStripStabilized) {
       const timer = setTimeout(() => {
-        const pageElements = document.querySelectorAll('[data-page-element="true"]');
-        if (pageElements.length > initialPage) {
-          const targetElement = pageElements[initialPage] as HTMLElement;
+        const pageElements = longStripRef.current?.querySelectorAll('[data-page-element="true"]');
+        const targetPageIndex = Math.min(initialPage, totalPages - 1);
+        if (pageElements && pageElements.length > targetPageIndex) {
+          const targetElement = pageElements[targetPageIndex] as HTMLElement;
           if (targetElement && longStripRef.current) {
             targetElement.scrollIntoView({ behavior: 'auto', block: 'start' });
-            // Update current visible page
-            setCurrentVisiblePage(initialPage);
+            setCurrentVisiblePage(targetPageIndex);
+
+            if (progressBarRef.current) {
+              const percentage = (targetPageIndex / (totalPages - 1)) * 100;
+              const progress = Math.min(100, Math.max(0, percentage));
+              progressBarRef.current.style.width = `${progress}%`;
+            }
           }
         }
-      }, 300);
+      }, 100);
       
       return () => clearTimeout(timer);
     }
@@ -348,51 +329,58 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
         console.error(`Error attempting to enable fullscreen: ${err.message}`)
       })
     } else {
-      document.exitFullscreen()
+      if (document.fullscreenElement) {
+        document.exitFullscreen();
+      }
     }
   }
 
   const goToNextPage = () => {
     if (currentPage < totalPages - 1) {
       setCurrentPage(currentPage + 1)
+    } else {
+      navigateToNextChapter();
     }
   }
 
   const goToPrevPage = () => {
     if (currentPage > 0) {
       setCurrentPage(currentPage - 1)
+    } else {
+      navigateToPrevChapter();
     }
   }
 
-  // Handle keyboard navigation
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "ArrowRight" || e.key === "right") {
+    if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(e.key)) {
+      e.preventDefault();
+    }
+
+    if (e.key === "ArrowRight" || e.key === " ") {
       if (readingMode === "Long Strip") {
-        // In Long Strip mode, scroll down by a fixed amount
         if (longStripRef.current) {
-          longStripRef.current.scrollBy({
-            top: 200,
-            behavior: 'smooth'
-          });
+          longStripRef.current.scrollBy({ top: window.innerHeight * 0.8, behavior: 'smooth' });
         }
       } else {
-        // In Single/Double Page modes, navigate as before
         const direction = readingDirection === "Left to Right" ? goToNextPage : goToPrevPage
         direction()
       }
-    } else if (e.key === "ArrowLeft" || e.key === "left") {
+    } else if (e.key === "ArrowLeft") {
       if (readingMode === "Long Strip") {
-        // In Long Strip mode, scroll up by a fixed amount
         if (longStripRef.current) {
-          longStripRef.current.scrollBy({
-            top: -200,
-            behavior: 'smooth'
-          });
+          longStripRef.current.scrollBy({ top: -window.innerHeight * 0.8, behavior: 'smooth' });
         }
       } else {
-        // In Single/Double Page modes, navigate as before
         const direction = readingDirection === "Left to Right" ? goToPrevPage : goToNextPage
         direction()
+      }
+    } else if (e.key === "ArrowUp") {
+      if (readingMode === "Long Strip" && longStripRef.current) {
+        longStripRef.current.scrollBy({ top: -window.innerHeight * 0.2, behavior: 'smooth' });
+      }
+    } else if (e.key === "ArrowDown") {
+      if (readingMode === "Long Strip" && longStripRef.current) {
+        longStripRef.current.scrollBy({ top: window.innerHeight * 0.2, behavior: 'smooth' });
       }
     } else if (e.key === "Escape") {
       if (showSettings) {
@@ -408,98 +396,71 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
       setShowSettings(!showSettings)
     } else if (e.key === "b") {
       setShowBottomBar(!showBottomBar)
-    } else if (e.key === "[" || e.key === "(" || e.key === "{") {
-      const prevChapterIndex = chapterList.findIndex(c => c.number === chapter.number) - 1
-      if (prevChapterIndex >= 0) {
-        onChapterSelect(prevChapterIndex)
-      }
-    } else if (e.key === "]" || e.key === ")" || e.key === "}") {
-      const nextChapterIndex = chapterList.findIndex(c => c.number === chapter.number) + 1
-      if (nextChapterIndex < chapterList.length) {
-        onChapterSelect(nextChapterIndex)
-      }
-    } else if (e.key === "u") {
-      // Update progress and go to next chapter
-      const nextChapterIndex = chapterList.findIndex(c => c.number === chapter.number) + 1
-      if (nextChapterIndex < chapterList.length) {
-        onChapterSelect(nextChapterIndex)
-      }
+    } else if (e.key === "c") {
+      setShowChapterList(!showChapterList);
+    } else if (e.key === "[" || e.key === "PageUp") {
+      navigateToPrevChapter()
+    } else if (e.key === "]" || e.key === "PageDown") {
+      navigateToNextChapter()
     }
   }
 
   const getPageFitClass = () => {
     switch (pageFit) {
-      case "Contain":
-        return "object-contain"
-      case "Cover":
-        return "object-cover"
-      case "Overflow":
-        return "object-none"
-      case "True size":
-        return "object-none h-auto w-auto"
-      default:
-        return "object-contain"
+      case "Contain": return "object-contain"; 
+      case "Cover": return "object-cover";
+      case "Overflow": return "object-none max-w-none max-h-none";
+      case "True size": return "object-none h-auto w-auto max-w-none max-h-none";
+      default: return "object-contain";
     }
   }
 
-  const getStretchClass = () => {
-    if (pageStretch === "Stretch" && readingMode === "Long Strip") {
-      return "w-full"
-    }
-    return ""
-  }
-
-  // Skeleton placeholder for single/double page mode
-  const PageSkeleton = ({ className, mode }: { className?: string, mode?: ReadingMode }) => {
-    const currentMode = mode || readingMode;
-    
+  const PageSkeleton = ({ className, mode }: { className?: string, mode: ReadingMode }) => {
+    const isLongStrip = mode === "Long Strip";
     return (
       <div className={cn(
-        "relative flex items-center justify-center bg-gray-800/40 rounded animate-pulse", 
-        currentMode === "Long Strip" ? "h-32 w-full mb-4" : "h-[80vh] max-w-[80%]",
+        "relative flex items-center justify-center bg-gray-800/40 rounded animate-pulse",
+        "w-full h-full min-h-[300px]",
         className
       )}>
         <div className="flex flex-col items-center justify-center">
           <div className="w-12 h-12 rounded-full bg-gray-700/60 flex items-center justify-center text-gray-500 font-bold text-2xl mb-2">
             M
           </div>
-          {currentMode !== "Long Strip" && (
-            <div className="text-xs text-gray-500">Loading...</div>
-          )}
+          <div className="text-xs text-gray-500">იტვირთება...</div>
         </div>
       </div>
     );
   };
 
-  // Memoize the PageImage component to reduce re-renders
-  const PageImage = React.memo(({ 
-    src, 
-    alt, 
-    index, 
+  const PageImage = React.memo(({
+    src,
+    alt,
+    index,
     className,
-    mode 
-  }: { 
-    src: string; 
-    alt: string; 
-    index: number; 
+    mode
+  }: {
+    src: string;
+    alt: string;
+    index: number;
     className?: string;
     mode?: ReadingMode;
   }) => {
     const cacheKey = `${chapter.number}-${index}-${src}`;
     const [isLoaded, setIsLoaded] = useState(preloadedImages[cacheKey] || false);
     const currentMode = mode || readingMode;
-    
+
     useEffect(() => {
-      if (preloadedImages[cacheKey]) {
+      if (preloadedImages[cacheKey] && !isLoaded) {
         setIsLoaded(true);
       }
-    }, [cacheKey, preloadedImages]);
+    }, [cacheKey, preloadedImages, isLoaded]);
 
     return (
-      <div 
+      <div
         className={cn(
           "relative",
-          currentMode === "Long Strip" ? "w-full" : "h-full"
+          currentMode === "Long Strip" ? "w-full" : "h-full w-full flex items-center justify-center"
         )}
         data-page-element="true"
         data-page-index={index}
@@ -509,43 +470,45 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
           src={src}
           alt={alt}
           className={cn(
-            currentMode !== "Long Strip" ? getPageFitClass() : "w-full",
-            currentMode !== "Long Strip" && getStretchClass(),
-            currentMode === "Long Strip" ? "w-full" : "max-h-full",
-            "pointer-events-auto", // Add this for better selectability
+            "pointer-events-auto",
+            currentMode === "Long Strip" ? "w-full h-auto max-w-full block" : "max-h-full max-w-full",
+            currentMode !== "Long Strip" ? getPageFitClass() : "",
             className,
-            !isLoaded && "hidden"
+            !isLoaded && "opacity-0 absolute"
           )}
           onLoad={() => {
             setIsLoaded(true);
             setPreloadedImages(prev => ({...prev, [cacheKey]: true}));
             setLoadedPages(prev => ({...prev, [index]: true}));
           }}
-          style={{ 
-            transform: 'translateZ(0)', // Help prevent shaking
-            willChange: 'transform', // Optimize for animations
-            contain: 'paint' // Improve performance
+          onError={(e) => {
+            console.error(`Failed to load image: ${src}`);
+            setIsLoaded(true);
+            (e.target as HTMLImageElement).style.display = 'none';
+          }}
+          style={{
+            transform: 'translateZ(0)',
+            willChange: 'transform',
+            transition: 'opacity 0.3s ease-in-out',
+            opacity: isLoaded ? 1 : 0,
           }}
         />
       </div>
     );
   });
   
-  // Display name for React.memo component
   PageImage.displayName = 'PageImage';
 
-  // Navigation functions
   const navigateToNextChapter = (e?: React.MouseEvent) => {
     if (e) e.preventDefault();
     const currentIndex = chapterList.findIndex(c => c.number === chapter.number);
     if (currentIndex < chapterList.length - 1) {
-      // Mark current chapter as fully read when navigating to next chapter
       updateReadingProgress({
         mangaId,
         chapterId: chapter.id || `chapter-${chapter.number}`,
         chapterNumber: chapter.number,
         chapterTitle: chapter.title,
-        currentPage: chapter.pages.length, // Mark as fully read
+        currentPage: chapter.pages.length,
         totalPages: chapter.pages.length,
         lastRead: Date.now(),
         mangaTitle,
@@ -564,7 +527,6 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
     }
   };
 
-  // Autoscroll controls
   const toggleAutoScroll = () => {
     setIsAutoScrolling(!isAutoScrolling);
   };
@@ -577,279 +539,257 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
     setAutoScrollSpeed(prev => Math.max(prev - 0.5, 0.5));
   };
 
+  useEffect(() => {
+    if (isAutoScrolling && readingMode === "Long Strip" && longStripRef.current) {
+      const container = longStripRef.current;
+      let lastTimestamp = 0;
+
+      const scrollStep = (timestamp: number) => {
+        if (!isAutoScrolling || !longStripRef.current) {
+          autoScrollRafRef.current = null;
+          return;
+        }
+
+        if (lastTimestamp === 0) {
+          lastTimestamp = timestamp;
+          autoScrollRafRef.current = requestAnimationFrame(scrollStep);
+          return;
+        }
+
+        const deltaTime = timestamp - lastTimestamp;
+        lastTimestamp = timestamp;
+
+        const speedFactor = autoScrollSpeed * 100;
+        
+        const currentScrollTop = container.scrollTop;
+        const targetScrollTop = currentScrollTop + speedFactor * (deltaTime / 16.67);
+
+        const smoothingFactor = 0.1;
+        const newScrollTop = currentScrollTop + (targetScrollTop - currentScrollTop) * smoothingFactor;
+
+        container.scrollTo({ top: newScrollTop, behavior: 'auto' });
+
+        if (container.scrollHeight - newScrollTop <= container.clientHeight + 10) {
+          setIsAutoScrolling(false);
+          autoScrollRafRef.current = null;
+          console.log("Auto-scroll reached end");
+        } else {
+          autoScrollRafRef.current = requestAnimationFrame(scrollStep);
+        }
+      };
+
+      lastTimestamp = 0;
+      autoScrollRafRef.current = requestAnimationFrame(scrollStep);
+    } else {
+      if (autoScrollRafRef.current) {
+        cancelAnimationFrame(autoScrollRafRef.current);
+        autoScrollRafRef.current = null;
+      }
+    }
+
+    return () => {
+      if (autoScrollRafRef.current) {
+        cancelAnimationFrame(autoScrollRafRef.current);
+        autoScrollRafRef.current = null;
+      }
+    };
+  }, [isAutoScrolling, autoScrollSpeed, readingMode]);
+
+  const readingModes: ReadingMode[] = ["Single Page", "Double Page", "Long Strip"]
+  const readingDirections: ReadingDirection[] = ["Left to Right", "Right to Left"]
+  const fitOptions: PageFit[] = ["Contain", "Cover", "Overflow", "True size"]
+
+  useEffect(() => {
+    document.body.classList.add('manga-reader-open');
+    
+    return () => {
+      document.body.classList.remove('manga-reader-open');
+    };
+  }, []);
+
   return (
     <AnimatePresence>
       <motion.div
         ref={readerRef}
-        className="fixed inset-0 z-50 h-full w-full flex flex-col bg-black text-white"
+        className="fixed inset-0 z-50 h-full w-full flex flex-col bg-black text-white outline-none"
         initial={{ y: "100%" }}
         animate={{ y: 0 }}
         exit={{ y: "100%" }}
         transition={{ type: "spring", stiffness: 300, damping: 30 }}
-        tabIndex={0}
+        tabIndex={-1}
         onKeyDown={handleKeyDown}
-        onClick={() => setShowControls(!showControls)}
+        onClick={() => {
+          if (autoHideControls) setShowControls(true);
+        }}
       >
-        {/* Top Bar */}
         <AnimatePresence>
-          {showControls && (
-            <motion.div
-              className="absolute hidden top-0 left-0 right-0 z-30 flex items-center justify-between p-4 bg-black/80 backdrop-blur-sm"
-              initial={{ opacity: 0, y: -50 }}
+          {(showControls || !autoHideControls) && (
+            <motion.div 
+              className="absolute top-0 left-0 right-0 z-30 p-3 bg-gradient-to-b from-black/80 to-transparent flex justify-between items-center"
+              initial={{ opacity: 0, y: -30 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -50 }}
+              exit={{ opacity: 0, y: -30 }}
               transition={{ duration: 0.2 }}
             >
-              <div className="flex items-center gap-4">
-                <button onClick={onClose} className="hover:text-gray-300">
-                  <X className="h-6 w-6" />
-                </button>
-                <h2 className="font-medium text-white/90 truncate">
-                  {chapter.title}
-                </h2>
+              <motion.button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowChapterList(!showChapterList);
+                }}
+                className="p-1.5 rounded-full hover:bg-gray-800/70 transition-colors text-gray-300 hover:text-white"
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.95 }}
+                title="თავების სია (C)"
+              >
+                <Menu className="h-5 w-5" />
+              </motion.button>
+              
+              <div className="text-center text-sm text-gray-300 truncate hidden md:block">
+                 {mangaTitle} - თავი {chapter.number}: {chapter.title}
               </div>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setShowChapterList(!showChapterList)
-                  }}
-                  className="hover:text-gray-300"
-                >
-                  <Menu className="h-5 w-5" />
-                </button>
-                <button 
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setShowSettings(!showSettings)
-                  }}
-                  className="hover:text-gray-300"
-                >
-                  <Settings className="h-5 w-5" />
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    toggleFullscreen()
-                  }}
-                  className="hover:text-gray-300"
-                >
-                  {isFullscreen ? (
-                    <Minimize2 className="h-5 w-5" />
-                  ) : (
-                    <Maximize2 className="h-5 w-5" />
-                  )}
-                </button>
-              </div>
+              
+              <motion.button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onClose();
+                }}
+                className="p-1.5 rounded-full hover:bg-red-600/90 transition-colors text-gray-300 hover:text-white"
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.95 }}
+                title="დახურვა (Esc)"
+              >
+                <X className="h-5 w-5" />
+              </motion.button>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Main Content Container */}
-        <div className="flex-1 relative overflow-hidden">
-          {/* Different layout based on reading mode */}
+        <div className="flex-1 relative overflow-hidden" onClick={(e) => e.stopPropagation()}> 
           {readingMode === "Long Strip" ? (
-            // Long Strip Mode - Full height scrollable container
             <div 
               ref={longStripRef}
-              className="absolute inset-0 overflow-y-auto" 
+              className="absolute inset-0 overflow-y-auto scroll-smooth"
               onClick={(e) => e.stopPropagation()}
             >
-              {/* Use a container with a fixed height estimate to stabilize layout */}
               <div 
-                className="flex flex-col items-center p-4"
-                style={{ 
-                  minHeight: isLongStripStabilized ? `${totalPages * 800}px` : 'auto'
-                }}
+                className="flex flex-col items-center pt-12 pb-24"
+                style={{ minHeight: '100vh' }}
               >
-                {/* Load Previous Pages button */}
-                {visibleStartPage > 0 && (
-                  <button
-                    onClick={() => {
-                      const newStart = Math.max(0, visibleStartPage - 10);
-                      setVisibleStartPage(newStart);
-                    }}
-                    className="mb-8 px-4 py-2 bg-gray-800 text-white rounded-md hover:bg-gray-700"
-                  >
-                    წინა გვერდების ჩატვირთვა
-                  </button>
-                )}
-                
-                {/* Render pages from visibleStartPage to currentPage + buffer */}
-                {Array.from({ length: Math.min(currentPage + 10, totalPages) - visibleStartPage }).map((_, idx) => {
-                  const pageIndex = visibleStartPage + idx;
+                {chapter.pages.map((pageUrl, pageIndex) => {
                   return (
                     <div 
                       key={pageIndex} 
-                      className="mb-4 w-full max-w-3xl"
-                      style={{ contain: 'content' }} // Optimize rendering
+                      className={cn(
+                        "w-full max-w-3xl",
+                        showLongStripGap && pageIndex < totalPages - 1 ? "mb-2" : "mb-0"
+                      )}
+                      style={{ contain: 'paint' }}
                     >
                       <PageImage 
-                        src={chapter.pages[pageIndex]} 
+                        src={pageUrl} 
                         alt={`Page ${pageIndex + 1}`}
                         index={pageIndex}
-                        className={cn(
-                          "w-full",
-                          pageStretch === "Stretch" ? "w-full" : ""
-                        )}
+                        className="w-full block"
                         mode="Long Strip"
                       />
-                      {/* Page number indicator - now conditional */}
                       {showPageNumbers && (
-                        <div className="text-center text-sm text-gray-400 mt-1">
-                          გვერდი {pageIndex + 1}
+                        <div className="text-center text-xs text-gray-500 mt-1 select-none">
+                          {pageIndex + 1}
                         </div>
                       )}
                     </div>
                   );
                 })}
-                
-                {/* Load more button at the bottom */}
-                {currentPage + 10 < totalPages && (
-                  <button
-                    onClick={() => setCurrentPage(prev => prev + 10)}
-                    className="mb-8 px-4 py-2 bg-gray-800 text-white rounded-md hover:bg-gray-700"
-                  >
-                    მეტი გვერდის ჩატვირთვა
-                  </button>
-                )}
               </div>
             </div>
           ) : (
-            // Single/Double Page Mode - Centered content with page controls
             <>
-              {/* Left page control area */}
               <div
-                className="absolute left-0 top-0 h-full w-1/4 cursor-w-resize z-10"
+                className="absolute left-0 top-0 h-full w-1/4 cursor-w-resize z-10 group"
                 onClick={(e) => {
                   e.stopPropagation()
                   readingDirection === "Left to Right" ? goToPrevPage() : goToNextPage()
                 }}
-              />
+              >
+                 <div className="absolute left-4 top-1/2 -translate-y-1/2 p-2 bg-black/30 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
+                  <ChevronLeft size={24} />
+                </div>
+              </div>
 
-              {/* Right page control area */}
               <div
-                className="absolute right-0 top-0 h-full w-1/4 cursor-e-resize z-10"
+                className="absolute right-0 top-0 h-full w-1/4 cursor-e-resize z-10 group"
                 onClick={(e) => {
                   e.stopPropagation()
                   readingDirection === "Left to Right" ? goToNextPage() : goToPrevPage()
                 }}
-              />
+              >
+                <div className="absolute right-4 top-1/2 -translate-y-1/2 p-2 bg-black/30 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
+                  <ChevronRight size={24} />
+                </div>
+              </div>
 
-              {/* Page Content with AnimatePresence */}
               <AnimatePresence mode="wait">
                 <motion.div
                   key={currentPage}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="h-full w-full flex items-center justify-center p-4"
+                  initial={{
+                    opacity: 0,
+                    x: readingDirection === "Left to Right" ? 50 : -50
+                  }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{
+                    opacity: 0,
+                    x: readingDirection === "Left to Right" ? -50 : 50
+                  }}
+                  transition={{ duration: 0.2, ease: "easeInOut" }}
+                  className="absolute inset-0 flex items-center justify-center p-4"
                 >
                   {readingMode === "Double Page" ? (
-                    // Double Page mode
-                    <div className="flex items-center justify-center">
-                      {/* Add conditional rendering based on reading direction */}
-                      {readingDirection === "Left to Right" ? (
-                        // Left to Right layout
-                        <>
-                          {currentPage > 0 && (
-                            <div className="h-full flex items-center relative">
-                              <PageImage 
-                                src={chapter.pages[currentPage - 1]} 
-                                alt={`Page ${currentPage}`}
-                                index={currentPage - 1}
-                                className="max-h-full pointer-events-auto" 
-                              />
-                            </div>
-                          )}
-                          
-                          {/* Use a fixed width div that shows/hides instead of conditional rendering */}
-                          <div className={cn("h-full", showPageGap ? "w-6" : "w-0")} />
-                          
+                    <div className={cn(
+                      "flex items-center justify-center w-full h-full", 
+                      showPageGap ? "gap-4" : "gap-0"
+                      )}>
+                      <div className="w-1/2 h-full flex-shrink-0">
+                        <PageImage 
+                          src={readingDirection === 'Left to Right' && currentPage > 0 ? chapter.pages[currentPage - 1] : chapter.pages[currentPage]}
+                          alt={`Page ${readingDirection === 'Left to Right' && currentPage > 0 ? currentPage : currentPage + 1}`}
+                          index={readingDirection === 'Left to Right' && currentPage > 0 ? currentPage - 1 : currentPage}
+                          className="h-full w-full"
+                          mode="Double Page"
+                        />
+                      </div>
+                      { (readingDirection === 'Left to Right' ? currentPage : currentPage + 1) < totalPages && (
+                        <div className="w-1/2 h-full flex-shrink-0">
                           <PageImage 
-                            src={chapter.pages[currentPage]} 
-                            alt={`Page ${currentPage + 1}`}
-                            index={currentPage}
-                            className="max-h-full pointer-events-auto" 
+                            src={readingDirection === 'Left to Right' ? chapter.pages[currentPage] : chapter.pages[currentPage + 1]}
+                            alt={`Page ${readingDirection === 'Left to Right' ? currentPage + 1 : currentPage + 2}`}
+                            index={readingDirection === 'Left to Right' ? currentPage : currentPage + 1}
+                            className="h-full w-full"
+                            mode="Double Page"
                           />
-                          
-                          {/* Use a fixed width div that shows/hides instead of conditional rendering */}
-                          <div className={cn("h-full", showPageGap ? "w-6" : "w-0")} />
-                          
-                          {currentPage < totalPages - 1 && (
-                            <div className="h-full flex items-center relative">
-                              <PageImage 
-                                src={chapter.pages[currentPage + 1]} 
-                                alt={`Page ${currentPage + 2}`}
-                                index={currentPage + 1}
-                                className="max-h-full pointer-events-auto" 
-                              />
-                            </div>
-                          )}
-                        </>
-                      ) : (
-                        // Right to Left layout
-                        <>
-                          {currentPage < totalPages - 1 && (
-                            <div className="h-full flex items-center relative">
-                              <PageImage 
-                                src={chapter.pages[currentPage + 1]} 
-                                alt={`Page ${currentPage + 2}`}
-                                index={currentPage + 1}
-                                className="max-h-full pointer-events-auto" 
-                              />
-                            </div>
-                          )}
-                          
-                          {/* Use a fixed width div that shows/hides instead of conditional rendering */}
-                          <div className={cn("h-full", showPageGap ? "w-6" : "w-0")} />
-                          
-                          <PageImage 
-                            src={chapter.pages[currentPage]} 
-                            alt={`Page ${currentPage + 1}`}
-                            index={currentPage}
-                            className="max-h-full pointer-events-auto" 
-                          />
-                          
-                          {/* Use a fixed width div that shows/hides instead of conditional rendering */}
-                          <div className={cn("h-full", showPageGap ? "w-6" : "w-0")} />
-                          
-                          {currentPage > 0 && (
-                            <div className="h-full flex items-center relative">
-                              <PageImage 
-                                src={chapter.pages[currentPage - 1]} 
-                                alt={`Page ${currentPage}`}
-                                index={currentPage - 1}
-                                className="max-h-full pointer-events-auto" 
-                              />
-                            </div>
-                          )}
-                        </>
+                        </div>
                       )}
                       
-                      {/* Page number indicator (centered below) - now conditional */}
                       {showPageNumbers && (
-                        <div className="absolute bottom-2 left-0 right-0 text-center text-sm text-gray-400">
-                          გვერდები {currentPage > 0 ? currentPage : ''}{currentPage > 0 && currentPage + 1 < totalPages ? '-' : ''}{currentPage + 1}
-                          {currentPage + 1 < totalPages ? `-${currentPage + 2}` : ''}
+                        <div className="absolute bottom-2 left-0 right-0 text-center text-sm text-gray-400 select-none">
+                          {currentPage > 0 && readingDirection === 'Left to Right' ? `${currentPage} - ` : ''}
+                          {currentPage + 1}
+                          {currentPage + 1 < totalPages && readingDirection === 'Right to Left' ? ` - ${currentPage + 2}` : ''}
                         </div>
                       )}
                     </div>
                   ) : (
-                    // Single Page mode
-                    <div className="relative">
+                    <div className="w-full h-full relative">
                       <PageImage 
                         src={chapter.pages[currentPage]} 
                         alt={`Page ${currentPage + 1}`}
                         index={currentPage}
-                        className="max-h-full" 
+                        className="h-full w-full"
+                        mode="Single Page"
                       />
                       
-                      {/* Page number indicator (centered below) - now conditional */}
                       {showPageNumbers && (
-                        <div className="absolute bottom-2 left-0 right-0 text-center text-sm text-gray-400">
-                          გვერდი {currentPage + 1}
+                        <div className="absolute bottom-2 left-0 right-0 text-center text-sm text-gray-400 select-none">
+                          {currentPage + 1}
                         </div>
                       )}
                     </div>
@@ -859,24 +799,28 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
             </>
           )}
           
-          {/* Auto-scroll controls for Long Strip mode */}
-          {readingMode === "Long Strip" && showControls && (
-            <div className="absolute bottom-20 right-4 bg-black/70 backdrop-blur-sm rounded-lg p-2 flex flex-col items-center space-y-2 z-20">
+          {readingMode === "Long Strip" && (showControls || !autoHideControls) && (
+            <motion.div 
+              className="absolute bottom-24 right-4 bg-black/70 backdrop-blur-sm rounded-lg p-2 flex flex-col items-center space-y-1 z-20 border border-gray-700/50 shadow-lg"
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+            >
               <button 
                 onClick={toggleAutoScroll}
-                className="p-2 hover:bg-gray-800 rounded-full"
-                title={isAutoScrolling ? "პაუზა" : "დაკვრა"}
+                className="p-2 hover:bg-gray-800 rounded-full transition-colors"
+                title={isAutoScrolling ? "პაუზა" : "ავტო სქროლი"}
               >
                 {isAutoScrolling ? <Pause size={20} /> : <Play size={20} />}
               </button>
               
-              <div className="text-xs font-mono text-center">
+              <div className="text-xs font-mono text-center select-none">
                 {autoScrollSpeed.toFixed(1)}x
               </div>
               
               <button 
                 onClick={increaseScrollSpeed}
-                className="p-2 hover:bg-gray-800 rounded-full"
+                className="p-1.5 hover:bg-gray-800 rounded-full transition-colors"
                 title="აჩქარება"
               >
                 <FastForward size={16} />
@@ -884,45 +828,62 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
               
               <button 
                 onClick={decreaseScrollSpeed}
-                className="p-2 hover:bg-gray-800 rounded-full"
+                className="p-1.5 hover:bg-gray-800 rounded-full transition-colors"
                 title="შენელება"
               >
                 <Rewind size={16} />
               </button>
-            </div>
+            </motion.div>
           )}
           
-          {/* Chapter List Sidebar */}
           <AnimatePresence>
             {showChapterList && (
               <motion.div
                 initial={{ opacity: 0, x: -300 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -300 }}
-                transition={{ duration: 0.3 }}
-                className="absolute left-0 top-0 h-full w-72 bg-gray-900/90 backdrop-blur-md z-20 overflow-y-auto"
+                transition={{ duration: 0.3, ease: "circOut" }}
+                className="absolute left-0 top-0 h-full w-72 bg-gradient-to-b from-gray-950/95 to-black/95 backdrop-blur-md z-40 border-r border-gray-800 shadow-2xl"
                 onClick={(e) => e.stopPropagation()}
               >
-                <div className="p-4">
-                  <h3 className="text-lg font-bold mb-4">Chapters</h3>
-                  <div className="space-y-2">
+                 <div className="sticky top-0 z-10 p-3 bg-black/60 backdrop-blur-sm border-b border-gray-800 flex justify-between items-center">
+                  <h3 className="text-base font-semibold text-gray-200">Chapters</h3>
+                  <button
+                    onClick={() => setShowChapterList(false)}
+                    className="p-1 rounded-full hover:bg-gray-700/50 text-gray-400 hover:text-white"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="overflow-y-auto h-[calc(100%-50px)]">
+                  <div className="space-y-1 p-2">
                     {chapterList.map((item, index) => (
                       <motion.button
-                        key={item.number}
+                        key={item.id || item.number}
                         onClick={() => {
                           onChapterSelect(index)
                           setCurrentPage(0)
                           setShowChapterList(false)
                         }}
-                        className={`w-full text-left p-2 rounded ${
+                        className={cn(
+                          "w-full text-left p-2 rounded transition-colors duration-150 flex items-center justify-between",
                           chapter.number === item.number
-                            ? "bg-pink-600/20 text-pink-400"
-                            : "hover:bg-gray-800"
-                        }`}
-                        whileHover={{ x: 5 }}
-                        transition={{ duration: 0.2 }}
+                            ? "bg-purple-900/30 text-purple-300 font-medium"
+                            : "hover:bg-gray-800/60 text-gray-300"
+                        )}
+                        whileHover={{ backgroundColor: chapter.number !== item.number ? 'rgba(55, 65, 81, 0.6)' : undefined }}
+                        whileTap={{ scale: 0.98 }}
+                        layout
                       >
-                        {item.title}
+                        <span className="truncate text-sm">თავი {item.number}: {item.title}</span>
+                        {chapter.number === item.number && (
+                          <motion.div 
+                            layoutId="currentChapterIndicator"
+                            className="p-1 bg-purple-600/50 rounded-full"
+                          >
+                            <BookOpen className="w-3 h-3 text-purple-300" />
+                          </motion.div>
+                        )}
                       </motion.button>
                     ))}
                   </div>
@@ -931,237 +892,123 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
             )}
           </AnimatePresence>
 
-          {/* Settings Panel */}
           <AnimatePresence>
-            {showSettings && (
+            {(showSettings && (showControls || !autoHideControls)) && (
               <motion.div
-                initial={{ opacity: 0, x: 300 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 300 }}
-                transition={{ duration: 0.3 }}
-                className="absolute right-0 top-0 h-full w-80 bg-gray-900/95 backdrop-blur-md z-20 overflow-y-auto"
-                onClick={(e) => e.stopPropagation()}
+                initial={{ opacity: 0, y: 20, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 20, scale: 0.95 }}
+                transition={{ type: "spring", damping: 20, stiffness: 250 }}
+                className="absolute bottom-20 right-4 z-40 p-4 rounded-lg bg-black/90 backdrop-blur-md shadow-xl border border-gray-800 w-72"
               >
-                <div className="p-6">
-                  <div className="flex justify-between items-center mb-6">
-                    <h3 className="text-lg font-bold text-white">Reader Settings</h3>
-                    <button 
-                      onClick={() => setShowSettings(false)}
-                      className="text-gray-400 hover:text-white rounded-full hover:bg-gray-800 p-1"
-                    >
-                      <X className="h-5 w-5" />
-                    </button>
+                <div className="flex items-center justify-between mb-4 pb-2 border-b border-gray-800">
+                  <h3 className="font-medium text-gray-200">პარამეტრები</h3>
+                  <button
+                    onClick={() => setShowSettings(false)}
+                    className="p-1 rounded-full hover:bg-gray-800 text-gray-400 hover:text-white"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-400 mb-2">
+                      კითხვის რეჟიმი
+                    </h4>
+                    <div className="grid grid-cols-2 gap-2">
+                      {readingModes.map((mode) => (
+                        <button
+                          key={mode}
+                          className={cn(
+                            "py-1.5 px-3 rounded-md text-sm transition-colors",
+                            readingMode === mode
+                              ? "bg-purple-900/40 text-purple-300 ring-1 ring-purple-700"
+                              : "bg-gray-800/50 hover:bg-gray-800 text-gray-300"
+                          )}
+                          onClick={() => setReadingMode(mode)}
+                        >
+                          {mode}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                  
-                  <div className="space-y-8">
-                    {/* Reading Mode */}
-                    <div className="space-y-3 bg-gray-800/40 rounded-lg p-4">
-                      <h4 className="text-sm font-medium text-white">კითხვის რეჟიმი</h4>
-                      <div className="grid grid-cols-1 gap-2">
-                        {(["Long Strip", "Single Page", "Double Page"] as ReadingMode[]).map((mode) => (
-                          <button
-                            key={mode}
-                            onClick={() => {
-                              setReadingMode(mode);
-                              setIsLongStripStabilized(false);
-                            }}
-                            className={cn(
-                              "px-3 py-2 rounded-md text-sm transition-colors flex items-center gap-2 justify-center",
-                              mode === readingMode 
-                                ? "bg-blue-600 text-white shadow-md" 
-                                : "bg-gray-800/70 text-gray-300 hover:bg-gray-700"
-                            )}
-                          >
-                            {mode === "Long Strip" && "გრძელი ზოლი"}
-                            {mode === "Single Page" && "ერთი გვერდი"}
-                            {mode === "Double Page" && "ორი გვერდი"}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    
-                    {/* Reading Direction */}
-                    <div className="space-y-3 bg-gray-800/40 rounded-lg p-4">
-                      <h4 className="text-sm font-medium text-white">კითხვის მიმართულება</h4>
-                      <div className="flex gap-2">
-                        {(["Left to Right", "Right to Left"] as ReadingDirection[]).map((direction) => (
-                          <button
-                            key={direction}
-                            onClick={() => setReadingDirection(direction)}
-                            className={cn(
-                              "flex-1 px-3 py-2 rounded-md text-sm transition-colors flex items-center gap-1 justify-center",
-                              direction === readingDirection 
-                                ? "bg-blue-600 text-white shadow-md" 
-                                : "bg-gray-800/70 text-gray-300 hover:bg-gray-700"
-                            )}
-                          >
-                            {direction === "Left to Right" ? (
-                              <ArrowRight className="h-3 w-3 opacity-70" />
-                            ) : (
-                              <ArrowLeft className="h-3 w-3 opacity-70" />
-                            )}
-                            {direction === "Left to Right" ? "მარცხნიდან მარჯვნივ" : "მარჯვნიდან მარცხნივ"}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    
-                    {/* Page Fit */}
-                    <div className="space-y-3 bg-gray-800/40 rounded-lg p-4">
-                      <h4 className="text-sm font-medium text-white">გვერდის მორგება</h4>
-                      <div className="grid grid-cols-2 gap-2">
-                        {(["Contain", "Overflow", "Cover", "True size"] as PageFit[]).map((fit) => (
-                          <button
-                            key={fit}
-                            onClick={() => setPageFit(fit)}
-                            className={cn(
-                              "px-3 py-1.5 rounded-md text-sm transition-colors",
-                              fit === pageFit 
-                                ? "bg-blue-600 text-white shadow-md" 
-                                : "bg-gray-800/70 text-gray-300 hover:bg-gray-700"
-                            )}
-                          >
-                            {fit === "Contain" && "შემცველობა"}
-                            {fit === "Overflow" && "გადავსება"}
-                            {fit === "Cover" && "დაფარვა"}
-                            {fit === "True size" && "ნამდვილი ზომა"}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    
-                    {/* Page Stretch */}
-                    <div className="space-y-3 bg-gray-800/40 rounded-lg p-4">
-                      <h4 className="text-sm font-medium text-white">გვერდის გაჭიმვა</h4>
-                      <div className="flex gap-2">
-                        {(["None", "Stretch"] as PageStretch[]).map((stretch) => (
-                          <button
-                            key={stretch}
-                            onClick={() => setPageStretch(stretch)}
-                            className={cn(
-                              "px-3 py-1.5 rounded-md text-sm transition-colors",
-                              stretch === pageStretch 
-                                ? "bg-blue-600 text-white shadow-md" 
-                                : "bg-gray-800/70 text-gray-300 hover:bg-gray-700"
-                            )}
-                          >
-                            {stretch === "None" && "არაფერი"}
-                            {stretch === "Stretch" && "გაჭიმვა"}
-                          </button>
-                        ))}
-                      </div>
-                      
-                      <p className="text-xs text-gray-400 italic mt-2">
-                        'გაჭიმვა' გვერდებს აიძულებს ჰქონდეთ იგივე სიგანე, რაც კონტეინერს 'გრძელი ზოლის' რეჟიმში.
-                      </p>
-                    </div>
-                    
-                    {/* Toggle options */}
-                    <div className="space-y-4 bg-gray-800/40 rounded-lg p-4">
-                      <h4 className="text-sm font-medium text-white mb-2">ჩვენების პარამეტრები</h4>
-                      
-                      <div className="flex items-center justify-between py-1 border-b border-gray-800">
-                        <span className="text-sm text-gray-300">გვერდებს შორის მანძილი</span>
+
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-400 mb-2">
+                      კითხვის მიმართულება
+                    </h4>
+                    <div className="grid grid-cols-2 gap-2">
+                      {readingDirections.map((direction) => (
                         <button
-                          onClick={() => setShowPageGap(!showPageGap)}
+                          key={direction}
                           className={cn(
-                            "w-10 h-5 rounded-full relative transition-colors duration-200",
-                            showPageGap ? "bg-blue-500" : "bg-gray-700"
+                            "py-1.5 px-3 rounded-md text-sm transition-colors",
+                            readingDirection === direction
+                              ? "bg-purple-900/40 text-purple-300 ring-1 ring-purple-700"
+                              : "bg-gray-800/50 hover:bg-gray-800 text-gray-300"
                           )}
+                          onClick={() => setReadingDirection(direction)}
+                          disabled={readingMode === 'Long Strip'}
                         >
-                          <span
-                            className={cn(
-                              "absolute top-0.5 left-0.5 bg-white rounded-full w-4 h-4 transition-transform duration-200 shadow-sm",
-                              showPageGap && "transform translate-x-5"
-                            )}
-                          />
+                          {direction}
                         </button>
-                      </div>
-                      
-                      <div className="flex items-center justify-between py-1 border-b border-gray-800">
-                        <span className="text-sm text-gray-300">პროგრესის ზოლი</span>
-                        <button
-                          onClick={() => setShowProgressBar(!showProgressBar)}
-                          className={cn(
-                            "w-10 h-5 rounded-full relative transition-colors duration-200",
-                            showProgressBar ? "bg-blue-500" : "bg-gray-700"
-                          )}
-                        >
-                          <span
-                            className={cn(
-                              "absolute top-0.5 left-0.5 bg-white rounded-full w-4 h-4 transition-transform duration-200 shadow-sm",
-                              showProgressBar && "transform translate-x-5"
-                            )}
-                          />
-                        </button>
-                      </div>
-                      
-                      <div className="flex items-center justify-between py-1 border-b border-gray-800">
-                        <span className="text-sm text-gray-300">გვერდის ნომრები</span>
-                        <button
-                          onClick={() => setShowPageNumbers(!showPageNumbers)}
-                          className={cn(
-                            "w-10 h-5 rounded-full relative transition-colors duration-200",
-                            showPageNumbers ? "bg-blue-500" : "bg-gray-700"
-                          )}
-                        >
-                          <span
-                            className={cn(
-                              "absolute top-0.5 left-0.5 bg-white rounded-full w-4 h-4 transition-transform duration-200 shadow-sm",
-                              showPageNumbers && "transform translate-x-5"
-                            )}
-                          />
-                        </button>
-                      </div>
+                      ))}
                     </div>
-                    
-                    <button
-                      onClick={() => {
-                        setReadingMode("Single Page");
-                        setReadingDirection("Left to Right");
-                        setPageFit("Contain");
-                        setPageStretch("None");
-                        setShowPageGap(true);
-                        setShowProgressBar(true);
-                        setShowPageNumbers(true);
-                        setIsAutoScrolling(false);
-                        setAutoScrollSpeed(1);
-                      }}
-                      className="w-full py-2 bg-blue-600 hover:bg-blue-700 rounded-md text-sm text-center text-white font-medium transition-colors shadow-md"
-                    >
-                      საწყის პარამეტრებზე დაბრუნება
-                    </button>
-                    
-                    {/* Keyboard Shortcuts */}
-                    <div className="space-y-3 bg-gray-800/40 rounded-lg p-4 mt-6">
-                      <h4 className="text-sm font-medium text-white mb-2">კლავიატურის კომბინაციები</h4>
-                      
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between py-1">
-                          <span className="bg-gray-800 px-2 py-0.5 rounded text-gray-400 text-xs font-mono">[</span>
-                          <span className="text-sm text-gray-300">წინა თავი</span>
-                        </div>
-                        <div className="flex items-center justify-between py-1">
-                          <span className="bg-gray-800 px-2 py-0.5 rounded text-gray-400 text-xs font-mono">]</span>
-                          <span className="text-sm text-gray-300">შემდეგი თავი</span>
-                        </div>
-                        <div className="flex items-center justify-between py-1">
-                          <span className="bg-gray-800 px-2 py-0.5 rounded text-gray-400 text-xs font-mono">←</span>
-                          <span className="text-sm text-gray-300">წინა გვერდი</span>
-                        </div>
-                        <div className="flex items-center justify-between py-1">
-                          <span className="bg-gray-800 px-2 py-0.5 rounded text-gray-400 text-xs font-mono">→</span>
-                          <span className="text-sm text-gray-300">შემდეგი გვერდი</span>
-                        </div>
-                        <div className="flex items-center justify-between py-1">
-                          <span className="bg-gray-800 px-2 py-0.5 rounded text-gray-400 text-xs font-mono">u</span>
-                          <span className="text-sm text-gray-300">პროგრესის განახლება და შემდეგ თავზე გადასვლა</span>
-                        </div>
-                        <div className="flex items-center justify-between py-1">
-                          <span className="bg-gray-800 px-2 py-0.5 rounded text-gray-400 text-xs font-mono">b</span>
-                          <span className="text-sm text-gray-300">ქვედა ზოლის ჩვენება/დამალვა</span>
-                        </div>
-                      </div>
+                  </div>
+
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-400 mb-2">
+                      გვერდის მორგება
+                    </h4>
+                    <div className="grid grid-cols-2 gap-2">
+                      {fitOptions.map((option) => (
+                        <button
+                          key={option}
+                          className={cn(
+                            "py-1.5 px-3 rounded-md text-sm transition-colors",
+                            pageFit === option
+                              ? "bg-purple-900/40 text-purple-300 ring-1 ring-purple-700"
+                              : "bg-gray-800/50 hover:bg-gray-800 text-gray-300"
+                          )}
+                          onClick={() => setPageFit(option)}
+                          disabled={readingMode === 'Long Strip'}
+                        >
+                          {option}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-gray-800 space-y-2">
+                    <div className="flex items-center justify-between py-1">
+                      <span className="text-sm font-medium text-gray-400 select-none">პროგრესის ჩვენება</span>
+                      <Switch
+                        checked={showProgressBar}
+                        onCheckedChange={setShowProgressBar}
+                      />
+                    </div>
+                     <div className="flex items-center justify-between py-1">
+                       <span className="text-sm font-medium text-gray-400 select-none">კონტროლების ავტომატური დამალვა</span>
+                       <Switch
+                         checked={autoHideControls}
+                         onCheckedChange={setAutoHideControls}
+                       />
+                     </div>
+                    <div className="flex items-center justify-between py-1">
+                      <span className="text-sm font-medium text-gray-400 select-none">გვერდის ნომრები</span>
+                      <Switch
+                        checked={showPageNumbers}
+                        onCheckedChange={setShowPageNumbers}
+                      />
+                    </div>
+                    <div className={`flex items-center justify-between py-1 ${readingMode !== 'Long Strip' ? 'opacity-50' : ''}`}>
+                      <span className="text-sm font-medium text-gray-400 select-none">შუალედი (გრძელი ზოლი)</span>
+                      <Switch
+                        checked={showLongStripGap}
+                        onCheckedChange={setShowLongStripGap}
+                        disabled={readingMode !== 'Long Strip'}
+                      />
                     </div>
                   </div>
                 </div>
@@ -1170,41 +1017,33 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
           </AnimatePresence>
         </div>
 
-        {/* Bottom Navigation */}
         <AnimatePresence>
-          {(showControls || showBottomBar) && (
+          {(showControls || !autoHideControls) && (
             <motion.div
               className="absolute bottom-0 left-0 right-0 z-30 flex flex-col"
               initial={{ opacity: 0, y: 50 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 50 }}
               transition={{ duration: 0.2 }}
+              onClick={(e) => e.stopPropagation()}
             >
-              {/* Progress bar with chapter selector */}
               {showProgressBar && (
                 <div className="h-2 bg-black/50 backdrop-blur-sm flex flex-col">
                   {readingMode === "Long Strip" ? (
-                    // Custom progress bar for Long Strip mode
                     <div className="h-full w-full relative">
                       <div 
                         className="absolute inset-0 overflow-hidden rounded-none"
-                        style={{
-                          background: "linear-gradient(90deg, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.1) 100%)"
-                        }}
+                        style={{ background: "rgba(255, 255, 255, 0.1)" }}
                       >
-                        <div
+                        <motion.div
                           ref={progressBarRef}
-                          className="h-full w-full transition-transform duration-300 ease-in-out"
-                          style={{ 
-                            transform: `translateX(-${100 - calculateLongStripProgress()}%)`,
-                            background: "linear-gradient(90deg, #8A2BE2 0%, #4169E1 100%)",
-                            boxShadow: "0 0 8px rgba(138, 43, 226, 0.5)"
-                          }}
+                          className="h-full bg-gradient-to-r from-purple-500 to-blue-500 shadow-[0_0_8px_rgba(138,43,226,0.6)]"
+                          style={{ width: `${calculateLongStripProgress()}%` }}
+                          transition={{ duration: 0.1, ease: "linear" }}
                         />
                       </div>
                     </div>
                   ) : (
-                    // Original paged progress bar
                     <div className="h-full flex">
                       {Array.from({ length: totalPages }).map((_, idx) => (
                         <button
@@ -1214,11 +1053,11 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
                             setCurrentPage(idx)
                           }}
                           className={cn(
-                            "h-full flex-1 border-r border-black/20 hover:bg-gray-700/50 transition-colors relative group",
-                            currentPage === idx && "bg-gradient-to-r from-purple-500 to-blue-500"
+                            "h-full flex-1 border-r border-black/30 hover:bg-gray-700/50 transition-colors relative group",
+                            currentPage === idx ? "bg-gradient-to-r from-purple-600 to-blue-600 shadow-inner" : "bg-gray-800/40"
                           )}
                         >
-                          <span className="absolute bottom-full mb-1 left-1/2 transform -translate-x-1/2 bg-black px-1.5 py-0.5 rounded text-xs opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                          <span className="absolute bottom-full mb-1 left-1/2 transform -translate-x-1/2 bg-black px-1.5 py-0.5 rounded text-xs opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
                             Page {idx + 1}
                           </span>
                         </button>
@@ -1228,79 +1067,135 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
                 </div>
               )}
               
-              {/* Main controls bar */}
-              <div className="py-3 px-4 bg-black/80 backdrop-blur-sm flex items-center justify-between">
-                <div className="flex items-center">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onClose()
-                    }}
-                    className="mr-3 p-1 rounded-full hover:bg-gray-800"
-                  >
-                    <X className="h-5 w-5" />
-                  </button>
-                  <h3 className="text-sm font-medium">
-                    Chapter {chapter.number}: {chapter.title}
-                  </h3>
-                </div>
-                
-                <div className="flex items-center space-x-2 text-sm">
-                  <button
+              <div className="py-2 px-3 bg-gradient-to-b from-black/70 to-black/95 backdrop-blur-md flex items-center justify-between border-t border-gray-800/50 shadow-lg">
+                 <div className="flex items-center gap-1">
+                  <motion.button
                     onClick={navigateToPrevChapter}
-                    className="p-1 rounded-full hover:bg-gray-800"
+                    className="p-1.5 rounded-full hover:bg-gray-800/70 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                     disabled={chapterList.findIndex(c => c.number === chapter.number) === 0}
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                    title="წინა თავი ([)"
                   >
-                    <ChevronLeft className="h-5 w-5" />
-                  </button>
-                  
-                  <div className="px-2">
-                    <span className="font-bold">{currentPage + 1}</span>
-                    <span className="mx-1 text-gray-400">/</span>
-                    <span className="text-gray-300">{totalPages}</span>
+                    <ArrowLeft className="h-4 w-4" />
+                  </motion.button>
+                  <div className="relative">
+                    <motion.button 
+                      className="flex items-center gap-1 group px-2 py-1 rounded-lg hover:bg-gray-800/40 transition-colors"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowChapterDropdown(!showChapterDropdown);
+                      }}
+                      whileHover={{ y: -1 }}
+                      whileTap={{ y: 0 }}
+                      title="თავების სია"
+                    >
+                       <span className="text-sm font-medium group-hover:text-purple-400 transition-colors">
+                          თავი {chapter.number}
+                        </span>
+                        <motion.div
+                          animate={{ rotate: showChapterDropdown ? 180 : 0 }}
+                          transition={{ duration: 0.3 }}
+                        >
+                          <ChevronUp className="h-3 w-3 text-gray-400 group-hover:text-purple-400" />
+                        </motion.div>
+                    </motion.button>
+                    
+                    <AnimatePresence>
+                      {showChapterDropdown && (
+                        <motion.div
+                          initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                          transition={{ duration: 0.2, ease: "easeOut" }}
+                          className="absolute bottom-full mb-2 left-0 z-40 w-64 bg-black/90 backdrop-blur-md border border-gray-800 rounded-lg max-h-[30vh] overflow-y-auto py-2 shadow-xl shadow-purple-900/20"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="sticky top-0 px-3 py-1 text-xs font-medium text-gray-400 border-b border-gray-800 mb-1 bg-black/95 backdrop-blur-sm flex justify-between items-center">
+                            <span>თავების სია</span>
+                            <span className="text-xs bg-purple-900/30 text-purple-300 px-1.5 py-0.5 rounded-full">
+                              {chapterList.length} თავი
+                            </span>
+                          </div>
+                          <div className="divide-y divide-gray-800/50">
+                            {chapterList.map((item, index) => (
+                              <motion.button
+                                key={item.id || item.number}
+                                onClick={() => {
+                                  onChapterSelect(index);
+                                  setCurrentPage(0);
+                                  setShowChapterDropdown(false);
+                                }}
+                                className={cn(
+                                  "flex items-center w-full px-3 py-1.5 text-left hover:bg-gray-800/50 transition-colors",
+                                  chapter.number === item.number && "bg-purple-900/20 text-purple-400"
+                                )}
+                                whileHover={{ x: 3 }}
+                                whileTap={{ scale: 0.98 }}
+                              >
+                                <span className={cn(
+                                  "h-5 w-5 rounded-full flex items-center justify-center text-xs mr-2 flex-shrink-0 font-mono",
+                                  chapter.number === item.number 
+                                    ? "bg-purple-700 text-white ring-1 ring-purple-500/50" 
+                                    : "bg-gray-800"
+                                )}>
+                                  {item.number}
+                                </span>
+                                <span className="truncate text-xs flex-1">{item.title}</span>
+                                {chapter.number === item.number && (
+                                  <motion.div 
+                                    initial={{ scale: 0.8, opacity: 0 }}
+                                    animate={{ scale: 1, opacity: 1 }}
+                                    transition={{ type: "spring", damping: 10, stiffness: 200 }}
+                                    className="ml-2"
+                                  >
+                                    <BookOpen className="w-3.5 h-3.5 text-purple-500" />
+                                  </motion.div>
+                                )}
+                              </motion.button>
+                            ))}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
-                  
-                  <button
+                  <motion.button
                     onClick={navigateToNextChapter}
-                    className="p-1 rounded-full hover:bg-gray-800"
+                    className="p-1.5 rounded-full hover:bg-gray-800/70 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                     disabled={chapterList.findIndex(c => c.number === chapter.number) === chapterList.length - 1}
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                    title="შემდეგი თავი (])"
                   >
-                    <ChevronRight className="h-5 w-5" />
-                  </button>
+                    <ArrowRight className="h-4 w-4" />
+                  </motion.button>
                 </div>
                 
-                <div className="flex items-center space-x-2">
-                  <button
+                <div className="flex items-center space-x-2 text-sm bg-gray-900/60 px-3 py-1 rounded-full">
+                  <motion.button
                     onClick={(e) => {
-                      e.stopPropagation()
-                      setShowSettings(!showSettings)
+                      e.stopPropagation();
+                      setShowSettings(!showSettings);
                     }}
-                    className="p-1 rounded-full hover:bg-gray-800"
+                    className="p-1.5 rounded-full hover:bg-gray-800/70 transition-colors text-gray-300 hover:text-white"
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                    title="პარამეტრები (S)"
                   >
                     <Settings className="h-5 w-5" />
-                  </button>
-                  <button
+                  </motion.button>
+                  <motion.button
                     onClick={(e) => {
-                      e.stopPropagation()
-                      toggleFullscreen()
+                      e.stopPropagation();
+                      toggleFullscreen();
                     }}
-                    className="p-1 rounded-full hover:bg-gray-800"
+                    className="p-1.5 rounded-full hover:bg-gray-800/70 transition-colors text-gray-300 hover:text-white"
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                    title={isFullscreen ? "ნორმალური ზომა (F)" : "მთლიანი ეკრანი (F)"}
                   >
-                    {isFullscreen ? (
-                      <Minimize2 className="h-5 w-5" />
-                    ) : (
-                      <Maximize2 className="h-5 w-5" />
-                    )}
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      // Show info about the manga/chapter
-                    }}
-                    className="p-1 rounded-full hover:bg-gray-800"
-                  >
-                    <Info className="h-5 w-5" />
-                  </button>
+                    {isFullscreen ? <Minimize2 className="h-5 w-5" /> : <Maximize2 className="h-5 w-5" />}
+                  </motion.button>
                 </div>
               </div>
             </motion.div>

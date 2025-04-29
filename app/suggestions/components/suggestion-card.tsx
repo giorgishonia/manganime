@@ -110,12 +110,27 @@ export default function SuggestionCard({
               )} flex items-center gap-1 px-2 py-0.5`}
             >
               {getTypeIcon(suggestion.type)}
-              {suggestion.type}
+              {suggestion.type === "anime" ? "ანიმე" :
+               suggestion.type === "manga" ? "მანგა" :
+               suggestion.type === "sticker" ? "სტიკერი" :
+               suggestion.type === "bug" ? "შეცდომა" :
+               suggestion.type === "feature" ? "ფუნქცია" :
+               suggestion.type}
             </Badge>
             <span className="text-xs text-gray-400">
-              {formatDistanceToNow(new Date(suggestion.createdAt), {
-                addSuffix: true,
-              })}
+              {suggestion.createdAt ? (() => {
+                try {
+                  const date = new Date(suggestion.createdAt);
+                  // Check if the date is valid
+                  if (!isNaN(date.getTime())) {
+                    return formatDistanceToNow(date, { addSuffix: true });
+                  }
+                  return "ახლახანს"; // Fallback for invalid date
+                } catch (error) {
+                  console.error("Error formatting date:", error, suggestion.createdAt);
+                  return "ახლახანს"; // Fallback for any date parsing errors
+                }
+              })() : "ახლახანს"}
             </span>
           </div>
 

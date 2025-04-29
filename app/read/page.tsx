@@ -408,7 +408,7 @@ export default function ReadPage() {
                   exit="exit"
                   className="flex flex-col items-start gap-6 relative overflow-hidden"
                 >
-                  <div className="flex-1 w-full relative z-10 backdrop-blur-lg bg-black/30 rounded-xl p-6 border border-white/10 shadow-xl">
+                  <div className="flex-1 w-full relative z-10 rounded-xl p-6 shadow-xl">
                     <div className="flex items-center gap-2 mb-3">
                       <span className="bg-gradient-to-r from-purple-500 to-indigo-500 text-xs font-semibold px-2.5 py-0.5 rounded-full text-white shadow-glow-purple">რჩეული მანგა</span>
                       <TrendingUp className="h-4 w-4 text-purple-400" />
@@ -539,106 +539,6 @@ export default function ReadPage() {
             </m.div>
           </div>
         </section>
-
-        {/* Continue Reading Section (if user has reading history) */}
-        {recentlyRead.length > 0 && (
-          <section className="pt-8 px-8 pl-[100px]">
-            <m.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5 }}
-            >
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-bold flex items-center bg-gradient-to-r from-purple-400 to-indigo-400 bg-clip-text text-transparent">
-                  <BookMarked className="mr-2 h-5 w-5 text-purple-400" />
-                  Continue Reading
-                </h2>
-                
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-gray-400 hover:text-white group"
-                  onClick={() => router.push("/history")}
-                >
-                  ყველას ნახვა <ChevronRight className="ml-1 h-4 w-4 group-hover:translate-x-1 transition-transform" />
-                </Button>
-              </div>
-              
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                {recentlyRead.map((item, index) => (
-                  <m.div
-                    key={`recent-${item.id}-${index}`}
-                    variants={cardVariants}
-                    initial="initial"
-                    animate="animate"
-                    exit="exit"
-                    transition={{ delay: index * 0.05 }}
-                    className="group cursor-pointer bg-black/30 hover:bg-black/40 border border-white/5 hover:border-purple-500/30 rounded-lg overflow-hidden flex flex-col transition-all shadow-lg hover:shadow-purple-500/5"
-                    onClick={() => router.push(`/manga/${item.id}`)}
-                    whileHover={{ y: -5 }}
-                  >
-                    <div className="relative aspect-[2/3]">
-                      <Image
-                        src={item.thumbnail || "/placeholder.svg"}
-                        alt={item.title}
-                        fill
-                        className="object-cover transition-all duration-500 group-hover:scale-105"
-                      />
-                      
-                      {/* Reading progress bar */}
-                      <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/50">
-                        <div 
-                          className="h-full bg-gradient-to-r from-purple-500 to-indigo-600 shadow-glow-sm-purple" 
-                          style={{ 
-                            width: `${item.readProgress}%` 
-                          }}
-                        />
-                      </div>
-                      
-                      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/90"></div>
-                      
-                      <div className="absolute bottom-0 left-0 right-0 p-3">
-                        <h3 className="font-semibold text-sm line-clamp-1 group-hover:text-purple-400 transition-colors">
-                          {item.title}
-                        </h3>
-                        <div className="flex justify-between items-center">
-                          <p className="text-xs text-purple-400 mt-1">
-                            Chapter {item.chapterNumber}: {item.chapterTitle}
-                          </p>
-                          <p className="text-xs text-indigo-400 mt-1">
-                            {item.readProgress}% Complete
-                          </p>
-                        </div>
-                      </div>
-                      
-                      <m.button
-                        className="absolute top-2 right-2 p-2 rounded-full bg-purple-600 shadow-lg shadow-purple-900/30 opacity-0 group-hover:opacity-100 transition-opacity"
-                        whileHover={{ scale: 1.1 }}
-                        whileTap={{ scale: 0.9 }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          router.push(`/manga/${item.id}?resume=true&page=${item.currentPage}`);
-                        }}
-                      >
-                        <BookOpen className="w-4 h-4 text-white" />
-                      </m.button>
-                    </div>
-                    
-                    <div className="p-3 flex items-center justify-between mt-auto bg-black/40 backdrop-blur-sm">
-                      <div className="flex items-center gap-1 text-xs text-gray-400">
-                        <Clock className="w-3 h-3" />
-                        <span>
-                          Page {item.currentPage}/{item.totalPages} • Ch. {item.chapterNumber}
-                        </span>
-                      </div>
-                      <div className="text-xs text-gray-400">{item.readDate}</div>
-                    </div>
-                  </m.div>
-                ))}
-              </div>
-            </m.div>
-          </section>
-        )}
 
         {/* Manga Catalog Section */}
         <section className="px-8 py-8 pl-[100px]">
@@ -936,6 +836,105 @@ export default function ReadPage() {
             </AnimatePresence>
           </m.div>
         </section>
+
+                {/* Continue Reading Section (if user has reading history) */}
+                {recentlyRead.length > 0 && (
+          <section className="pt-8 px-8 pl-[100px]">
+            <m.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5 }}
+            >
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-bold flex items-center text-white">
+                  კითხვის გაგრძელება
+                </h2>
+                
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-gray-400 hover:text-white group"
+                  onClick={() => router.push("/history")}
+                >
+                  ყველას ნახვა <ChevronRight className="ml-1 h-4 w-4 group-hover:translate-x-1 transition-transform" />
+                </Button>
+              </div>
+              
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                {recentlyRead.map((item, index) => (
+                  <m.div
+                    key={`recent-${item.id}-${index}`}
+                    variants={cardVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    transition={{ delay: index * 0.05 }}
+                    className="group cursor-pointer bg-black/30 hover:bg-black/40 border border-white/5 hover:border-purple-500/30 rounded-lg overflow-hidden flex flex-col transition-all shadow-lg hover:shadow-purple-500/5"
+                    onClick={() => router.push(`/manga/${item.id}`)}
+                    whileHover={{ y: -5 }}
+                  >
+                    <div className="relative aspect-[2/3]">
+                      <Image
+                        src={item.thumbnail || "/placeholder.svg"}
+                        alt={item.title}
+                        fill
+                        className="object-cover transition-all duration-500 group-hover:scale-105"
+                      />
+                      
+                      {/* Reading progress bar */}
+                      <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/50">
+                        <div 
+                          className="h-full bg-gradient-to-r from-purple-500 to-indigo-600 shadow-glow-sm-purple" 
+                          style={{ 
+                            width: `${item.readProgress}%` 
+                          }}
+                        />
+                      </div>
+                      
+                      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/90"></div>
+                      
+                      <div className="absolute bottom-0 left-0 right-0 p-3">
+                        <h3 className="font-semibold text-sm line-clamp-1 group-hover:text-purple-400 transition-colors">
+                          {item.title}
+                        </h3>
+                        <div className="flex justify-between items-center">
+                          <p className="text-xs text-purple-400 mt-1">
+                            Chapter {item.chapterNumber}: {item.chapterTitle}
+                          </p>
+                          <p className="text-xs text-indigo-400 mt-1">
+                            {item.readProgress}% Complete
+                          </p>
+                        </div>
+                      </div>
+                      
+                      <m.button
+                        className="absolute top-2 right-2 p-2 rounded-full bg-purple-600 shadow-lg shadow-purple-900/30 opacity-0 group-hover:opacity-100 transition-opacity"
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          router.push(`/manga/${item.id}?resume=true&page=${item.currentPage}`);
+                        }}
+                      >
+                        <BookOpen className="w-4 h-4 text-white" />
+                      </m.button>
+                    </div>
+                    
+                    <div className="p-3 flex items-center justify-between mt-auto bg-black/40 backdrop-blur-sm">
+                      <div className="flex items-center gap-1 text-xs text-gray-400">
+                        <Clock className="w-3 h-3" />
+                        <span>
+                          Page {item.currentPage}/{item.totalPages} • Ch. {item.chapterNumber}
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-400">{item.readDate}</div>
+                    </div>
+                  </m.div>
+                ))}
+              </div>
+            </m.div>
+          </section>
+        )}
       </main>
     </div>
   )

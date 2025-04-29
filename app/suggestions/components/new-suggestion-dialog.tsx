@@ -47,12 +47,12 @@ export default function NewSuggestionDialog({
     e.preventDefault();
 
     if (!user) {
-      toast.error("You must be signed in to submit a suggestion");
+      toast.error("მოთხოვნის გასაგზავნად უნდა იყოთ ავტორიზებული");
       return;
     }
 
     if (!title.trim() || !description.trim() || !type) {
-      toast.error("Please fill in all required fields");
+      toast.error("გთხოვთ, შეავსოთ ყველა სავალდებულო ველი");
       return;
     }
 
@@ -66,12 +66,18 @@ export default function NewSuggestionDialog({
         userId: user.id,
       });
 
-      onSuggestionAdded(suggestion);
+      // Ensure the suggestion has a valid created_at timestamp before passing it to parent
+      const enhancedSuggestion = {
+        ...suggestion,
+        created_at: suggestion.created_at || new Date().toISOString()
+      };
+
+      onSuggestionAdded(enhancedSuggestion);
       resetForm();
       onOpenChange(false);
     } catch (error) {
       console.error("Error adding suggestion:", error);
-      toast.error("Failed to add suggestion. Please try again.");
+      toast.error("მოთხოვნის დამატება ვერ მოხერხდა. გთხოვთ, სცადოთ ხელახლა.");
     } finally {
       setIsSubmitting(false);
     }
@@ -87,48 +93,48 @@ export default function NewSuggestionDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle>New Suggestion</DialogTitle>
+          <DialogTitle>ახალი მოთხოვნა</DialogTitle>
           <DialogDescription>
-            Share your ideas, report bugs, or suggest improvements.
+            გაგვიზიარეთ იდეები, შეგვატყობინეთ შეცდომების შესახებ, ან შემოგვთავაზეთ გაუმჯობესებები.
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit}>
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
-              <Label htmlFor="title">Title</Label>
+              <Label htmlFor="title">სათაური</Label>
               <Input
                 id="title"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="Enter a clear, concise title"
+                placeholder="შეიყვანეთ მკაფიო, ლაკონური სათაური"
                 required
               />
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="type">Type</Label>
+              <Label htmlFor="type">ტიპი</Label>
               <Select value={type} onValueChange={(value) => setType(value as SuggestionType)} required>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select type" />
+                  <SelectValue placeholder="აირჩიეთ ტიპი" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="anime">Anime request</SelectItem>
-                  <SelectItem value="manga">Manga request</SelectItem>
-                  <SelectItem value="sticker">Sticker request</SelectItem>
-                  <SelectItem value="feature">Feature request</SelectItem>
-                  <SelectItem value="bug">Bug report</SelectItem>
+                  <SelectItem value="anime">ანიმეს მოთხოვნა</SelectItem>
+                  <SelectItem value="manga">მანგას მოთხოვნა</SelectItem>
+                  <SelectItem value="sticker">სტიკერის მოთხოვნა</SelectItem>
+                  <SelectItem value="feature">ფუნქციის მოთხოვნა</SelectItem>
+                  <SelectItem value="bug">შეცდომის რეპორტი</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="description">Description</Label>
+              <Label htmlFor="description">აღწერა</Label>
               <Textarea
                 id="description"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Provide details about your suggestion"
+                placeholder="მოგვაწოდეთ დეტალები თქვენი მოთხოვნის შესახებ"
                 className="min-h-[120px]"
                 required
               />
@@ -142,16 +148,16 @@ export default function NewSuggestionDialog({
               onClick={() => onOpenChange(false)}
               disabled={isSubmitting}
             >
-              Cancel
+              გაუქმება
             </Button>
             <Button type="submit" disabled={isSubmitting || !user}>
               {isSubmitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Submitting...
+                  იგზავნება...
                 </>
               ) : (
-                "Submit"
+                "გაგზავნა"
               )}
             </Button>
           </DialogFooter>

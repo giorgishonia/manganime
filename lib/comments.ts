@@ -44,6 +44,8 @@ export interface Comment {
     username: string
     avatar_url: string
   }
+  like_count?: number;
+  user_has_liked?: boolean;
 }
 
 // Check if the comments table exists and has the right structure
@@ -366,4 +368,114 @@ export async function deleteCommentMedia(mediaUrl: string): Promise<{ success: b
     console.error('Error deleting comment media:', error)
     return { success: false, error }
   }
+}
+
+// Conceptual: Function to toggle a like on a comment
+export async function toggleCommentLike(commentId: string, userId: string): Promise<{ success: boolean; liked: boolean; newLikeCount: number; error?: any }> {
+  if (!supabase) {
+    return { success: false, liked: false, newLikeCount: 0, error: 'Supabase client not initialized' };
+  }
+  if (!userId || !commentId) {
+    return { success: false, liked: false, newLikeCount: 0, error: 'User ID and Comment ID are required' };
+  }
+
+  const formattedUserId = ensureUUID(userId);
+
+  try {
+    // 1. Check if the user already liked this comment
+    const { data: existingLike, error: checkError } = await supabase
+      .from('comment_likes')
+      .select('id')
+      .eq('comment_id', commentId)
+      .eq('user_id', formattedUserId)
+      .maybeSingle(); // Use maybeSingle to handle 0 or 1 result without erroring
+
+    if (checkError) {
+      console.error('Error checking for existing like:', checkError);
+      throw checkError;
+    }
+
+    let liked = false;
+
+    // 2. If like exists, delete it (unlike)
+    if (existingLike) {
+      const { error: deleteError } = await supabase
+        .from('comment_likes')
+        .delete()
+        .eq('id', existingLike.id);
+
+      if (deleteError) {
+        console.error('Error deleting like:', deleteError);
+        throw deleteError;
+      }
+      liked = false;
+      console.log(`User ${formattedUserId} unliked comment ${commentId}`);
+    }
+    // 3. If like doesn't exist, insert it (like)
+    else {
+      const { error: insertError } = await supabase
+        .from('comment_likes')
+        .insert({ comment_id: commentId, user_id: formattedUserId });
+
+      if (insertError) {
+        console.error('Error inserting like:', insertError);
+        // Handle potential duplicate key error if race condition occurs
+        if (insertError.code === '23505') { 
+          console.warn('Like already existed (race condition?), treating as success.');
+           liked = true; // Assume it's now liked
+        } else {
+          throw insertError;
+        }
+      } else {
+        liked = true;
+        console.log(`User ${formattedUserId} liked comment ${commentId}`);
+      }
+    }
+
+    // 4. Get the new like count for the comment
+    const { count: newLikeCount, error: countError } = await supabase
+      .from('comment_likes')
+      .select('id', { count: 'exact', head: true })
+      .eq('comment_id', commentId);
+
+    if (countError) {
+      console.error('Error fetching new like count:', countError);
+      // Don't fail the whole operation, but log the error
+      // Return the potentially inaccurate liked status with a count of 0
+      return { success: true, liked: liked, newLikeCount: 0, error: countError };
+    }
+
+    // 5. Return success with the new state
+    return { success: true, liked: liked, newLikeCount: newLikeCount ?? 0 };
+
+  } catch (error) {
+    console.error('Error in toggleCommentLike:', error);
+    // Determine the likely state before the error for better UI reversion
+    const likelyPreviousState = await checkUserLikedComment(commentId, formattedUserId); 
+    const {count: fallbackCount} = await getCommentLikeCount(commentId);
+    return { success: false, liked: likelyPreviousState, newLikeCount: fallbackCount, error };
+  }
+}
+
+// Conceptual Helper: Check if user liked a comment (needed for error recovery)
+async function checkUserLikedComment(commentId: string, userId: string): Promise<boolean> {
+   if (!supabase || !userId || !commentId) return false;
+   const formattedUserId = ensureUUID(userId);
+   const { data } = await supabase
+     .from('comment_likes')
+     .select('id')
+     .eq('comment_id', commentId)
+     .eq('user_id', formattedUserId)
+     .limit(1);
+   return !!data && data.length > 0;
+}
+
+// Conceptual Helper: Get like count (needed for error recovery)
+async function getCommentLikeCount(commentId: string): Promise<{count: number}> {
+   if (!supabase || !commentId) return {count: 0};
+   const { count } = await supabase
+     .from('comment_likes')
+     .select('id', { count: 'exact', head: true })
+     .eq('comment_id', commentId);
+   return {count: count ?? 0};
 } 

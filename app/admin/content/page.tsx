@@ -247,17 +247,16 @@ export default function AdminContentPage() {
     if (refresh) {
       setLoading(true);
       getAllContentForAdmin()
-        .then((data) => {
-          // Check and log any content with fixed date or rating
-          data.forEach(item => {
-            if (item.release_year === 2025) {
-              console.log("Found content with 2025 release year:", item.title, item);
-            }
-            if (item.rating === 7) {
-              console.log("Found content with rating 7:", item.title, item);
-            }
-          });
+        .then(async (data) => {
           setContentList(data);
+          
+          const wasCreating = !editContent; 
+          if (wasCreating) {
+              const newContentTitle = "Newly Added Content";
+              const newContentId = "new-id";
+              
+              console.log("Conceptual: Creating new_content notification for all users for:", newContentTitle);
+          }
         })
         .catch((error) => {
           console.error("Error reloading content:", error);
@@ -268,7 +267,6 @@ export default function AdminContentPage() {
         });
     }
     
-    // If we were editing a specific content, go back to the list
     if (contentId) {
       router.push("/admin/content");
     }

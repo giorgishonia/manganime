@@ -334,3 +334,16 @@ h2 {
   opacity: 1;
   transform: translateY(0);
 }
+
+/* Add styles to handle manga reader full-screen mode */
+body.manga-reader-open {
+  overflow: hidden;
+  position: relative;
+}
+
+/* Ensure the manga reader fills the entire viewport */
+body.manga-reader-open .manga-reader-container {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+}

@@ -5,6 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
+import { Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -48,7 +49,9 @@ const genreOptions = [
 
 // Form schema - only including fields we're certain exist in the database
 const contentFormSchema = z.object({
-  title: z.string().min(1, "Title is required"),
+  title: z.string().min(1, {
+    message: "Title is required",
+  }),
   description: z.string().min(1, "Description is required"),
   type: z.enum(["anime", "manga"], {
     required_error: "Content type is required",
@@ -61,6 +64,9 @@ const contentFormSchema = z.object({
   genres: z.array(z.string()).min(1, "At least one genre is required"),
   season: z.string().optional(),
   release_year: z.coerce.number().min(1900, "Invalid year").max(new Date().getFullYear() + 1, "Year cannot be in the future").optional(),
+  content_type: z.string().min(1, {
+    message: "კონტენტის ტიპი სავალდებულოა",
+  }),
 });
 
 type ContentFormValues = z.infer<typeof contentFormSchema>;
@@ -122,7 +128,7 @@ export default function ContentFormFixed({
       onSuccess();
     } catch (error) {
       console.error("Error saving content:", error);
-      toast.error(initialData ? "Failed to update content" : "Failed to create content");
+      toast.error(initialData ? "კონტენტის განახლება ვერ მოხერხდა" : "კონტენტის შექმნა ვერ მოხერხდა");
     } finally {
       setIsLoading(false);
     }
@@ -137,9 +143,9 @@ export default function ContentFormFixed({
             name="title"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Title</FormLabel>
+                <FormLabel>სათაური</FormLabel>
                 <FormControl>
-                  <Input placeholder="Enter title" {...field} />
+                  <Input placeholder="შეიყვანეთ სათაური" {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -152,19 +158,19 @@ export default function ContentFormFixed({
               name="type"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Type</FormLabel>
+                  <FormLabel>ტიპი</FormLabel>
                   <Select 
                     onValueChange={field.onChange} 
                     defaultValue={field.value}
                   >
                     <FormControl>
                       <SelectTrigger>
-                        <SelectValue placeholder="Select type" />
+                        <SelectValue placeholder="აირჩიეთ ტიპი" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="anime">Anime</SelectItem>
-                      <SelectItem value="manga">Manga</SelectItem>
+                      <SelectItem value="anime">ანიმე</SelectItem>
+                      <SelectItem value="manga">მანგა</SelectItem>
                     </SelectContent>
                   </Select>
                   <FormMessage />
@@ -177,20 +183,20 @@ export default function ContentFormFixed({
               name="status"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Status</FormLabel>
+                  <FormLabel>სტატუსი</FormLabel>
                   <Select 
                     onValueChange={field.onChange} 
                     defaultValue={field.value}
                   >
                     <FormControl>
                       <SelectTrigger>
-                        <SelectValue placeholder="Select status" />
+                        <SelectValue placeholder="აირჩიეთ სტატუსი" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="ongoing">Ongoing</SelectItem>
-                      <SelectItem value="completed">Completed</SelectItem>
-                      <SelectItem value="hiatus">Hiatus</SelectItem>
+                      <SelectItem value="ongoing">მიმდინარე</SelectItem>
+                      <SelectItem value="completed">დასრულებული</SelectItem>
+                      <SelectItem value="hiatus">შეჩერებული</SelectItem>
                     </SelectContent>
                   </Select>
                   <FormMessage />
@@ -204,10 +210,10 @@ export default function ContentFormFixed({
             name="description"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Description</FormLabel>
+                <FormLabel>აღწერა</FormLabel>
                 <FormControl>
                   <Textarea 
-                    placeholder="Enter description" 
+                    placeholder="შეიყვანეთ აღწერა" 
                     rows={4}
                     {...field} 
                   />
@@ -223,12 +229,12 @@ export default function ContentFormFixed({
               name="thumbnail"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Thumbnail URL</FormLabel>
+                  <FormLabel>მთავარი სურათის URL</FormLabel>
                   <FormControl>
-                    <Input placeholder="Enter thumbnail URL" {...field} />
+                    <Input placeholder="შეიყვანეთ მთავარი სურათის URL" {...field} />
                   </FormControl>
                   <FormDescription>
-                    URL for the thumbnail image (aspect ratio 2:3 recommended)
+                    მთავარი სურათის URL (რეკომენდებული ასპექტის თანაფარდობა 2:3)
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -240,12 +246,12 @@ export default function ContentFormFixed({
               name="banner_image"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Banner Image URL (Optional)</FormLabel>
+                  <FormLabel>ბანერის სურათის URL (არასავალდებულო)</FormLabel>
                   <FormControl>
-                    <Input placeholder="Enter banner image URL" {...field} />
+                    <Input placeholder="შეიყვანეთ ბანერის სურათის URL" {...field} />
                   </FormControl>
                   <FormDescription>
-                    URL for the banner image (aspect ratio 16:9 recommended)
+                    ბანერის სურათის URL (რეკომენდებული ასპექტის თანაფარდობა 16:9)
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -258,11 +264,11 @@ export default function ContentFormFixed({
             name="genres"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Genres</FormLabel>
+                <FormLabel>ჟანრები</FormLabel>
                 <FormControl>
                   <MultiSelect
                     options={genreOptions}
-                    placeholder="Select genres"
+                    placeholder="აირჩიეთ ჟანრები"
                     selected={field.value}
                     onChange={field.onChange}
                   />
@@ -278,22 +284,22 @@ export default function ContentFormFixed({
               name="season"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Season (Optional)</FormLabel>
+                  <FormLabel>სეზონი (არასავალდებულო)</FormLabel>
                   <Select 
                     onValueChange={field.onChange} 
                     defaultValue={field.value}
                   >
                     <FormControl>
                       <SelectTrigger>
-                        <SelectValue placeholder="Select season" />
+                        <SelectValue placeholder="აირჩიეთ სეზონი" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="none">None</SelectItem>
-                      <SelectItem value="winter">Winter</SelectItem>
-                      <SelectItem value="spring">Spring</SelectItem>
-                      <SelectItem value="summer">Summer</SelectItem>
-                      <SelectItem value="fall">Fall</SelectItem>
+                      <SelectItem value="none">არცერთი</SelectItem>
+                      <SelectItem value="winter">ზამთარი</SelectItem>
+                      <SelectItem value="spring">გაზაფხული</SelectItem>
+                      <SelectItem value="summer">ზაფხული</SelectItem>
+                      <SelectItem value="fall">შემოდგომა</SelectItem>
                     </SelectContent>
                   </Select>
                   <FormMessage />
@@ -306,9 +312,9 @@ export default function ContentFormFixed({
               name="release_year"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Release Year</FormLabel>
+                  <FormLabel>გამოშვების წელი</FormLabel>
                   <FormControl>
-                    <Input type="number" {...field} />
+                    <Input type="number" placeholder="შეიყვანეთ წელი" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -324,15 +330,19 @@ export default function ContentFormFixed({
             onClick={onCancel}
             disabled={isLoading}
           >
-            Cancel
+            გაუქმება
           </Button>
           <Button type="submit" disabled={isLoading}>
             {isLoading ? (
               <>
-                <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-t-transparent"></span>
-                Saving...
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ინახება...
               </>
-            ) : initialData ? "Update" : "Create"}
+            ) : initialData ? (
+              "ცვლილებების შენახვა"
+            ) : (
+              "კონტენტის შექმნა"
+            )}
           </Button>
         </div>
       </form>

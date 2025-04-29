@@ -29,31 +29,31 @@ const STATUS_CONFIG = {
   manga: {
     reading: {
       icon: <BookOpen className="h-4 w-4" />,
-      label: "Reading",
+      label: "ვკითხულობ",
       color: "text-green-400",
       bgColor: "bg-green-900/20"
     },
     plan_to_read: {
       icon: <Bookmark className="h-4 w-4" />,
-      label: "Plan to Read",
+      label: "წასაკითხი",
       color: "text-purple-400",
       bgColor: "bg-purple-900/20"
     },
     completed: {
       icon: <CheckCheck className="h-4 w-4" />,
-      label: "Completed",
+      label: "დასრულებული",
       color: "text-blue-400",
       bgColor: "bg-blue-900/20"
     },
     on_hold: {
       icon: <PauseCircle className="h-4 w-4" />,
-      label: "On Hold",
+      label: "შეჩერებული",
       color: "text-yellow-400",
       bgColor: "bg-yellow-900/20"
     },
     dropped: {
       icon: <X className="h-4 w-4" />,
-      label: "Dropped",
+      label: "მიტოვებული",
       color: "text-red-400",
       bgColor: "bg-red-900/20"
     }
@@ -61,31 +61,31 @@ const STATUS_CONFIG = {
   anime: {
     reading: {
       icon: <Play className="h-4 w-4" />,
-      label: "Watching", // Note: internally still uses "reading" status
+      label: "ვუყურებ",
       color: "text-green-400",
       bgColor: "bg-green-900/20"
     },
     plan_to_read: {
       icon: <Bookmark className="h-4 w-4" />,
-      label: "Plan to Watch", // Note: internally still uses "plan_to_read" status
+      label: "სანახავი",
       color: "text-purple-400", 
       bgColor: "bg-purple-900/20"
     },
     completed: {
       icon: <CheckCheck className="h-4 w-4" />,
-      label: "Completed",
+      label: "დასრულებული",
       color: "text-blue-400",
       bgColor: "bg-blue-900/20"
     },
     on_hold: {
       icon: <PauseCircle className="h-4 w-4" />,
-      label: "On Hold",
+      label: "შეჩერებული",
       color: "text-yellow-400",
       bgColor: "bg-yellow-900/20"
     },
     dropped: {
       icon: <X className="h-4 w-4" />,
-      label: "Dropped",
+      label: "მიტოვებული",
       color: "text-red-400",
       bgColor: "bg-red-900/20"
     }
@@ -96,7 +96,7 @@ const STATUS_CONFIG = {
 const DEFAULT_STATUS_INFO: StatusInfo = {
   status: null,
   icon: <MoreHorizontal className="h-4 w-4" />,
-  label: "Add to Library",
+  label: "ბიბლიოთეკაში დამატება",
   color: "text-gray-400"
 };
 
@@ -183,17 +183,18 @@ export function StatusSelector({
         onStatusChange(status);
       }
       
+      // Translate success toast
       toast({
-        title: "Status Updated",
-        description: `"${mediaTitle}" marked as ${status.replace('_', ' ')}`,
+        title: "სტატუსი განახლდა",
+        description: `"${mediaTitle}" მონიშნულია როგორც '${STATUS_CONFIG[mediaType][status].label}'`,
         duration: 3000,
       });
     } catch (error) {
       console.error("Error updating status:", error);
       toast({
-        title: "Error",
-        description: "Failed to update status. Please try again.",
-        duration: 3000,
+        title: "შეცდომა",
+        description: "სტატუსის განახლება ვერ მოხერხდა.",
+        variant: "destructive",
       });
     } finally {
       setIsUpdating(false);

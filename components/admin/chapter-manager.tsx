@@ -73,31 +73,47 @@ export default function ChapterManager({
   const [showForm, setShowForm] = useState(false);
   const [editingChapter, setEditingChapter] = useState<Chapter | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isAdminCheckComplete, setIsAdminCheckComplete] = useState(false);
   const [chapterToDelete, setChapterToDelete] = useState<string | null>(null);
   const { user } = useAuth();
   
   useEffect(() => {
     async function checkIfAdmin() {
+      console.log("ChapterManager: Starting admin check...");
+      setIsAdminCheckComplete(false);
       if (!user) {
+        console.log("ChapterManager: No user found, setting isAdmin to false.");
         setIsAdmin(false);
+        setIsAdminCheckComplete(true);
         return;
       }
       
-      // DEVELOPMENT MODE BYPASS - Skip admin check in development
+      // DEVELOPMENT MODE BYPASS - Temporarily removing this section
+      /*
       const isDevelopment = process.env.NODE_ENV === 'development';
       if (isDevelopment) {
-        console.log("DEVELOPMENT MODE: Bypassing admin check for chapter manager");
+        console.log("ChapterManager: DEVELOPMENT MODE - Bypassing admin check, setting isAdmin to true.");
         setIsAdmin(true);
+        setIsAdminCheckComplete(true);
         return;
       }
+      */
       
       try {
+        console.log("ChapterManager: Fetching admin status from /api/admin/check...");
         const response = await fetch('/api/admin/check');
         const data = await response.json();
+        console.log("ChapterManager: Admin check response:", data);
         setIsAdmin(data.isAdmin || false);
       } catch (error) {
-        console.error("Failed to check admin status:", error);
+        console.error("ChapterManager: Failed to check admin status:", error);
         setIsAdmin(false);
+      } finally {
+        setIsAdminCheckComplete(true);
+        setIsAdmin(currentIsAdmin => {
+          console.log(`ChapterManager: Admin check complete. isAdmin state is: ${currentIsAdmin}`);
+          return currentIsAdmin;
+        });
       }
     }
     
@@ -218,8 +234,15 @@ export default function ChapterManager({
     setEditingChapter(null);
   };
   
+  const showLoading = isLoading || !isAdminCheckComplete;
+  
+  if (!isAdminCheckComplete) {
+    return <div className="h-20 flex items-center justify-center"><p className="text-gray-400">Checking permissions...</p></div>; 
+  }
+  
   if (!isAdmin) {
-    return null; // Don't render anything for non-admins
+    console.log("ChapterManager: Not rendering component because user is not admin.");
+    return null; 
   }
   
   return (
@@ -268,9 +291,9 @@ export default function ChapterManager({
       </div>
       
       <div className="space-y-3">
-        {isLoading ? (
+        {showLoading ? (
           <div className="h-20 flex items-center justify-center">
-            <p className="text-gray-400">Loading chapters...</p>
+            <p className="text-gray-400">{isLoading ? "Loading chapters..." : "Checking permissions..."}</p>
           </div>
         ) : chapters.length === 0 ? (
           <div className="py-8 text-center border border-dashed rounded-md border-gray-700 bg-black/20">

@@ -52,6 +52,17 @@ import ChapterForm from "@/components/admin/chapter-form";
 import { getContentById, getAllContent } from "@/lib/content";
 import { supabase } from "@/lib/supabase";
 
+// Define types for content items
+type ContentItem = {
+  id: string;
+  title: string;
+  number: number;
+  releaseDate?: string;
+  duration?: number;
+  pages?: string[];
+  [key: string]: any;
+};
+
 // Wrapper function to get all content for admin use
 async function getAllContentForAdmin() {
   try {
@@ -71,6 +82,27 @@ async function getAllContentForAdmin() {
   }
 }
 
+// Declare component prop types for TypeScript
+declare module "@/components/admin/episode-form" {
+  export interface EpisodeFormProps {
+    initialData: any;
+    contentId: string;
+    onSuccess: () => void;
+    onCancel: () => void;
+  }
+  export default function EpisodeForm(props: EpisodeFormProps): JSX.Element;
+}
+
+declare module "@/components/admin/chapter-form" {
+  export interface ChapterFormProps {
+    initialData: any;
+    contentId: string;
+    onSuccess: () => void;
+    onCancel: () => void;
+  }
+  export default function ChapterForm(props: ChapterFormProps): JSX.Element;
+}
+
 export default function AdminEpisodesPage() {
   const router = useRouter();
   const { user, isLoading: authLoading } = useAuth();
@@ -81,14 +113,14 @@ export default function AdminEpisodesPage() {
   const [filteredContent, setFilteredContent] = useState<any[]>([]);
   const [selectedContent, setSelectedContent] = useState<string | null>(null);
   const [contentDetails, setContentDetails] = useState<any | null>(null);
-  const [episodes, setEpisodes] = useState<any[]>([]);
-  const [chapters, setChapters] = useState<any[]>([]);
+  const [episodes, setEpisodes] = useState<ContentItem[]>([]);
+  const [chapters, setChapters] = useState<ContentItem[]>([]);
   
   const [loading, setLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [editItem, setEditItem] = useState(null);
-  const [deleteId, setDeleteId] = useState(null);
+  const [editItem, setEditItem] = useState<ContentItem | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [contentType, setContentType] = useState<string | null>(null);
 
@@ -97,10 +129,8 @@ export default function AdminEpisodesPage() {
     async function checkAuth() {
       if (!authLoading) {
         if (!user) {
-          toast({
-            title: "Unauthorized",
+          toast.error("Unauthorized", {
             description: "You must be logged in to access this page",
-            variant: "destructive",
           });
           router.push("/login");
           return;
@@ -134,10 +164,8 @@ export default function AdminEpisodesPage() {
           .single();
           
         if (userData?.role !== "admin") {
-          toast({
-            title: "Permission Denied",
+          toast.error("Permission Denied", {
             description: "You don't have permission to access this page",
-            variant: "destructive",
           });
           router.push("/");
           return;
@@ -232,12 +260,12 @@ export default function AdminEpisodesPage() {
     setFormOpen(true);
   };
 
-  const handleEditItem = (item) => {
+  const handleEditItem = (item: ContentItem) => {
     setEditItem(item);
     setFormOpen(true);
   };
 
-  const handleDeleteClick = (id) => {
+  const handleDeleteClick = (id: string) => {
     setDeleteId(id);
     setDeleteDialogOpen(true);
   };
@@ -273,26 +301,48 @@ export default function AdminEpisodesPage() {
     setFormOpen(false);
     setEditItem(null);
     
-    if (refresh && selectedContent) {
-      // Reload episodes or chapters
+    if (refresh && selectedContent && contentDetails) {
       setLoading(true);
-      const endpoint = activeTab === "episodes" ? `/api/episodes?contentId=${selectedContent}` : `/api/chapters?contentId=${selectedContent}`;
+      const endpoint = contentDetails.type === "anime" 
+        ? `/api/episodes?contentId=${selectedContent}` 
+        : `/api/chapters?contentId=${selectedContent}`;
       
       fetch(endpoint)
         .then(response => {
-          if (!response.ok) throw new Error(`Failed to fetch ${activeTab === "episodes" ? "episodes" : "chapters"}`);
+          if (!response.ok) throw new Error(`Failed to fetch ${contentDetails.type === "anime" ? "episodes" : "chapters"}`);
           return response.json();
         })
-        .then(data => {
-          if (activeTab === "episodes") {
+        .then(async (data) => { // Make async for notification
+          if (contentDetails.type === "anime") {
             setEpisodes(data || []);
           } else {
             setChapters(data || []);
           }
+          
+          // Conceptual: If a new item was added (not edited), notify subscribers
+          const wasCreating = !editItem; 
+          if (wasCreating) {
+              const itemType = contentDetails.type === 'anime' ? 'new_episode' : 'new_chapter';
+              const itemNumber = data?.number || 'new'; // Get number from response if possible
+              const itemName = contentDetails.title;
+              
+              console.log(`Conceptual: Creating ${itemType} notification for subscribers of: ${itemName}`);
+              // const { success: subSuccess, userIds } = await getSubscribedUsers(selectedContent);
+              // if (subSuccess && userIds && userIds.length > 0) {
+              //   const notificationPromises = userIds.map(subUserId => 
+              //     createNotification(subUserId, itemType, {
+              //       content_id: selectedContent,
+              //       content_title: itemName,
+              //       message: `${itemType === 'new_episode' ? 'Episode' : 'Chapter'} ${itemNumber} of ${itemName} is out!`
+              //     })
+              //   );
+              //   await Promise.all(notificationPromises);
+              // }
+          }
         })
         .catch(error => {
-          console.error(`Error reloading ${activeTab === "episodes" ? "episodes" : "chapters"}:`, error);
-          toast.error(`Failed to reload ${activeTab === "episodes" ? "episodes" : "chapters"}`);
+          console.error(`Error reloading ${contentDetails.type === "anime" ? "episodes" : "chapters"}:`, error);
+          toast.error(`Failed to reload ${contentDetails.type === "anime" ? "episodes" : "chapters"}`);
         })
         .finally(() => {
           setLoading(false);
@@ -541,21 +591,21 @@ export default function AdminEpisodesPage() {
                 : `Fill out the form below to add a new ${contentDetails?.type === "anime" ? "episode" : "chapter"} to ${contentDetails?.title}.`}
             </DialogDescription>
           </DialogHeader>
-          {contentDetails?.type === "anime" ? (
+          {selectedContent && contentDetails?.type === "anime" ? (
             <EpisodeForm 
               initialData={editItem} 
-              contentId={selectedContent}
+              contentId={selectedContent!}
               onSuccess={() => handleFormClose(true)}
               onCancel={() => setFormOpen(false)}
             />
-          ) : (
+          ) : selectedContent && contentDetails?.type === "manga" ? (
             <ChapterForm 
               initialData={editItem} 
-              contentId={selectedContent}
+              contentId={selectedContent!}
               onSuccess={() => handleFormClose(true)}
               onCancel={() => setFormOpen(false)}
             />
-          )}
+          ) : null}
         </DialogContent>
       </Dialog>
 

@@ -34,12 +34,17 @@ const chapterSchema = z.object({
   number: z.coerce.number().int().positive("Chapter number must be positive"),
   title: z.string().min(1, "Title is required"),
   description: z.string().optional(),
-  thumbnail: z.string()
-    .refine(
-      val => val === '' || val.startsWith('http') || val.startsWith('https'), 
-      { message: "Thumbnail must be empty or a valid URL starting with http(s)://" }
-    )
-    .optional(),
+  thumbnail: z.preprocess(
+    // Preprocess: Convert null/undefined/whitespace to empty string
+    (val) => (typeof val === 'string' ? val.trim() : ''),
+    // Base validation: Must be a string
+    z.string()
+      .refine(
+        // Refine: Must be empty or a valid URL
+        (val) => val === '' || val.startsWith('http://') || val.startsWith('https://'),
+        { message: "Thumbnail must be empty or a valid URL starting with http:// or https://" }
+      )
+  ).optional(), // Make the entire processed field optional
   pages: z.array(z.string().url("Invalid page URL")).min(1, "At least one page is required"),
   releaseDate: z.date().optional(),
 });
@@ -231,8 +236,8 @@ export default function ChapterForm({
       const processedPages = [...data.pages];
       
       // Ensure thumbnail is a valid URL or empty string
-      let thumbnail = data.thumbnail || '';
-      if (thumbnail && !thumbnail.startsWith('http')) {
+      let thumbnail = data.thumbnail?.trim() || '';
+      if (thumbnail && !(thumbnail.startsWith('http://') || thumbnail.startsWith('https://'))) {
         thumbnail = ''; // Reset invalid URLs to empty string
       }
       
@@ -278,22 +283,24 @@ export default function ChapterForm({
         return;
       }
       
-      let errorData;
-      try {
-        errorData = await response.json();
-      } catch (e) {
-        console.error("Failed to parse error response:", e);
-      }
-      
       if (!response.ok) {
+        // Try to parse error JSON
+        let errorData;
+        try {
+          errorData = await response.json();
+        } catch (e) {
+          console.error("Failed to parse error response:", e);
+        }
+        
         const errorMessage = errorData?.error || 'Failed to save chapter';
         const errorDetails = errorData?.details ? `: ${JSON.stringify(errorData.details)}` : '';
         throw new Error(errorMessage + errorDetails);
+      } else {
+        // Parse successful response
+        const data = await response.json();
+        toast.success(`Chapter ${data.number || ''} ${initialData ? 'updated' : 'created'} successfully`);
+        onSuccess();
       }
-      
-      toast.success(`Chapter ${data.number} ${initialData ? 'updated' : 'created'} successfully`);
-      
-      onSuccess();
     } catch (error) {
       console.error('Error saving chapter:', error);
       toast.error(error instanceof Error ? error.message : "Failed to save chapter");

@@ -30,7 +30,9 @@ import {
   PauseCircle,
   XCircle,
   X,
-  ChevronDown
+  ChevronDown,
+  Bell,
+  Loader2
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { MangaReader } from '@/components/manga-reader'
@@ -56,6 +58,8 @@ import {
   DropdownMenuSeparator
 } from "@/components/ui/dropdown-menu"
 import { Button } from "@/components/ui/button"
+import { useUnifiedAuth } from '@/components/unified-auth-provider'
+import { useAuth } from '@/components/supabase-auth-provider'
 
 // Animation variants
 const pageVariants = {
@@ -115,6 +119,12 @@ export default function MangaPage({ params }: { params: { id: string } }) {
   const [readingProgress, setReadingProgress] = useState<any>(null)
   const [initialReaderPage, setInitialReaderPage] = useState(0)
   const [libraryStatus, setLibraryStatus] = useState<MediaStatus | null>(null)
+  const [isSubscribed, setIsSubscribed] = useState(false)
+  const [isSubProcessing, setIsSubProcessing] = useState(false)
+  const { userId, isAuthenticated } = useUnifiedAuth()
+  const { user } = useAuth(); // Get user from Supabase auth for admin check
+  const [isAdmin, setIsAdmin] = useState(false); // State for admin status in page
+  const [isAdminCheckComplete, setIsAdminCheckComplete] = useState(false); // Track completion
 
   // Handle scroll effect for background
   useEffect(() => {
@@ -202,6 +212,46 @@ export default function MangaPage({ params }: { params: { id: string } }) {
   useEffect(() => {
     fetchMangaData();
   }, [mangaId]);
+
+  // Add useEffect for admin check within the page component
+  useEffect(() => {
+    async function checkIfAdmin() {
+      console.log("MangaPage: Starting admin check...");
+      setIsAdminCheckComplete(false);
+      if (!user) {
+        console.log("MangaPage: No user, not admin.");
+        setIsAdmin(false);
+        setIsAdminCheckComplete(true);
+        return;
+      }
+
+      // DEVELOPMENT MODE BYPASS - Temporarily removing this section
+      /*
+      const isDevelopment = process.env.NODE_ENV === 'development';
+      if (isDevelopment) {
+        console.log("MangaPage: DEVELOPMENT MODE - Bypassing admin check.");
+        setIsAdmin(true);
+        setIsAdminCheckComplete(true);
+        return;
+      }
+      */
+
+      try {
+        console.log("MangaPage: Fetching admin status...");
+        const response = await fetch('/api/admin/check');
+        const data = await response.json();
+        console.log("MangaPage: Admin check response:", data);
+        setIsAdmin(data.isAdmin || false);
+      } catch (error) {
+        console.error("MangaPage: Failed to check admin status:", error);
+        setIsAdmin(false);
+      } finally {
+        setIsAdminCheckComplete(true);
+        console.log(`MangaPage: Admin check complete. isAdmin: ${isAdmin}`);
+      }
+    }
+    checkIfAdmin();
+  }, [user]); // Rerun check if user changes
 
   // Get reading progress for this manga
   useEffect(() => {
@@ -644,6 +694,62 @@ export default function MangaPage({ params }: { params: { id: string } }) {
     checkLibraryStatus();
   }, [mangaId, processedData]);
 
+  // Check subscription status when manga data and user ID are available
+  useEffect(() => {
+    async function checkSub() {
+      if (mangaId && userId) {
+        // Conceptual: Call checkSubscription
+        // const { success, subscribed } = await checkSubscription(userId, mangaId);
+        const success = true; // Placeholder
+        const subscribed = false; // Placeholder
+        if (success) {
+          setIsSubscribed(subscribed);
+        }
+      }
+    }
+    checkSub();
+  }, [mangaId, userId]);
+
+  // Handle subscription toggle
+  const handleToggleSubscription = async () => {
+    if (!isAuthenticated || !userId) {
+      toast({ title: "Please log in to subscribe.", variant: "destructive" });
+      router.push('/login');
+      return;
+    }
+    if (!processedData) return;
+
+    setIsSubProcessing(true);
+    const originalSubscribed = isSubscribed;
+
+    // Optimistic update
+    setIsSubscribed(!originalSubscribed);
+
+    try {
+      // Conceptual: Call backend toggle function
+      // const { success, subscribed, error } = await toggleSubscription(userId, mangaId);
+      const success = true; // Placeholder
+      const subscribed = !originalSubscribed; // Placeholder
+      const error: any = null; // Placeholder - explicitly type as any
+
+      if (!success) {
+        setIsSubscribed(originalSubscribed); // Revert optimistic update
+        // Check error exists and has a message property before accessing it
+        const errorMessage = error && typeof error === 'object' && 'message' in error ? String(error.message) : 'Unknown error';
+        toast({ title: "Failed to update subscription", description: errorMessage, variant: "destructive" });
+      } else {
+        setIsSubscribed(subscribed); // Confirm state
+        toast({ title: subscribed ? "Subscribed!" : "Unsubscribed", description: `You will ${subscribed ? 'now' : 'no longer'} receive notifications for ${processedData?.title || 'this manga'}.` });
+      }
+    } catch (err: any) { // Explicitly type caught err as any
+      setIsSubscribed(originalSubscribed); // Revert on error
+      toast({ title: "Error updating subscription", variant: "destructive" });
+      console.error("Subscription toggle error:", err);
+    } finally {
+      setIsSubProcessing(false);
+    }
+  };
+
   const handleStatusChange = async (status: MediaStatus) => {
     if (!processedData) return;
     
@@ -734,7 +840,7 @@ export default function MangaPage({ params }: { params: { id: string } }) {
 
       <motion.div 
         ref={scrollRef}
-        className="flex-1 min-h-screen text-white relative overflow-y-auto overflow-x-hidden pl-16 md:pl-20"
+        className="flex-1 min-h-screen text-white relative overflow-y-auto overflow-x-hidden md:pl-20"
         variants={pageVariants}
         initial="initial"
         animate="animate"
@@ -744,7 +850,7 @@ export default function MangaPage({ params }: { params: { id: string } }) {
         <AnimatePresence>
           {!isLoading && (
             <motion.div 
-              className="fixed inset-0 z-0 pl-16 md:pl-20"
+              className="fixed inset-0 z-0 md:pl-20"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.8 }}
@@ -780,7 +886,7 @@ export default function MangaPage({ params }: { params: { id: string } }) {
           {/* Back button */}
           <motion.button 
             onClick={handleBackClick} 
-            className="flex items-center gap-2 text-gray-400 hover:text-white mb-6"
+            className="flex items-center gap-6 text-gray-400 hover:text-white mb-6"
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.2 }}
@@ -855,11 +961,6 @@ export default function MangaPage({ params }: { params: { id: string } }) {
                         alt={processedData.title}
                         className="w-full aspect-[2/3] rounded-xl overflow-hidden shadow-2xl"
                       />
-                      {processedData.rating && (
-                        <div className="absolute -bottom-4 -right-4 bg-gradient-to-br from-purple-500 to-blue-600 rounded-full h-16 w-16 flex items-center justify-center shadow-xl">
-                          <div className="text-lg font-bold">{processedData.rating.toFixed(1)}</div>
-                        </div>
-                      )}
                     </div>
                   </motion.div>
 
@@ -894,8 +995,9 @@ export default function MangaPage({ params }: { params: { id: string } }) {
                       {processedData.georgianTitle || processedData.title}
                     </motion.h1>
 
+                    {/* Update grid columns to potentially fit 4 items on medium screens */}
                     <motion.div 
-                      className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6 text-sm"
+                      className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 text-sm"
                       variants={itemVariants}
                     >
                       <div className="flex items-center gap-2">
@@ -911,10 +1013,14 @@ export default function MangaPage({ params }: { params: { id: string } }) {
                           }
                         </span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Users className="h-4 w-4 text-gray-400" />
-                        <span>{processedData.popularity.toLocaleString()} readers</span>
-                      </div>
+                      {/* Add rating here */}
+                      {processedData.rating && (
+                        <div className="flex items-center gap-1 text-yellow-400">
+                          <Star className="h-4 w-4 fill-current" />
+                          <span className="font-medium text-white">{processedData.rating.toFixed(1)}</span>
+                          <span className="text-xs text-gray-500">/10</span>
+                        </div>
+                      )}
                     </motion.div>
 
                     <motion.p 
@@ -925,118 +1031,134 @@ export default function MangaPage({ params }: { params: { id: string } }) {
                     </motion.p>
 
                     <motion.div 
-                      className="flex gap-4"
-                      variants={itemVariants}
-                    >
-                      {readingProgress ? (
-                        <>
+                      className="mt-8">
+                      <motion.div 
+                        className="flex flex-col md:flex-row gap-3 md:gap-4 w-full md:w-auto"
+                        variants={itemVariants}
+                      >
+                        {readingProgress ? (
                           <motion.button
-                            className="px-6 py-3 bg-purple-600 hover:bg-purple-700 rounded-lg flex items-center gap-2 shadow-lg shadow-purple-900/20 font-medium"
+                            className=" px-6 py-3 flex justify-center bg-purple-600 hover:bg-purple-700 rounded-lg flex items-center gap-2 shadow-lg shadow-purple-900/20 font-medium"
                             onClick={() => handleReadClick(0, true)}
                             whileHover={{ scale: 1.03 }}
                             whileTap={{ scale: 0.97 }}
                           >
                             <BookOpen className="h-5 w-5" />
-                            კითხვის გაგრძელება
+                            გაგრძელება
                             <span className="ml-1 text-xs bg-purple-500 px-2 py-0.5 rounded-full">
                               {readingProgress.chapterNumber}
                             </span>
                           </motion.button>
-                          
+                        ) : (
                           <motion.button
-                            className="px-6 py-3 bg-black/30 hover:bg-black/40 border border-white/10 rounded-lg flex items-center gap-2"
-                            onClick={() => handleReadClick(0, false)}
+                            className="w-full md:w-auto px-6 py-3 bg-purple-600 hover:bg-purple-700 rounded-lg flex items-center justify-center md:justify-start gap-2 shadow-lg shadow-purple-900/20 font-medium"
+                            onClick={() => handleReadClick(0)}
                             whileHover={{ scale: 1.03 }}
                             whileTap={{ scale: 0.97 }}
                           >
                             <BookOpen className="h-5 w-5" />
-                            თავიდან დაწყება
+                            კითხვის დაწყება
                           </motion.button>
-                        </>
-                      ) : (
-                        <motion.button
-                          className="px-6 py-3 bg-purple-600 hover:bg-purple-700 rounded-lg flex items-center gap-2 shadow-lg shadow-purple-900/20 font-medium"
-                          onClick={() => handleReadClick(0)}
-                          whileHover={{ scale: 1.03 }}
-                          whileTap={{ scale: 0.97 }}
-                        >
-                          <BookOpen className="h-5 w-5" />
-                          კითხვის დაწყება
-                        </motion.button>
-                      )}
-                      
-                      {/* Library Status Dropdown */}
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button 
-                            variant="outline" 
-                            style={{height: "52px"}}
-                            className="bg-black/30 border-gray-700 hover:border-gray-500"
-                          >
-                            <span className={statusInfo.color}>{statusInfo.icon}</span>
-                            <span className="ml-2">{statusInfo.label}</span>
-                            <ChevronDown className="ml-2 h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
+                        )}
                         
-                        <DropdownMenuContent className="w-48 bg-gray-900/95 backdrop-blur-md border-white/10">
-                          <DropdownMenuItem 
-                            className={libraryStatus === 'reading' ? "bg-green-900/20 text-green-400" : ""} 
-                            onClick={() => handleStatusChange('reading')}
-                          >
-                            <BookOpen className="mr-2 h-4 w-4" />
-                            <span>ვკითხულობ</span>
-                          </DropdownMenuItem>
+                        {/* Library Status Dropdown */}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button 
+                              variant="outline" 
+                              style={{height: "52px"}}
+                              className="w-full md:w-auto bg-black/30 border-gray-700 hover:border-gray-500 flex justify-center md:justify-start"
+                            >
+                              <span className={statusInfo.color}>{statusInfo.icon}</span>
+                              <span className="ml-2">{statusInfo.label}</span>
+                              <ChevronDown className="ml-2 h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
                           
-                          <DropdownMenuItem 
-                            className={libraryStatus === 'plan_to_read' ? "bg-purple-900/20 text-purple-400" : ""} 
-                            onClick={() => handleStatusChange('plan_to_read')}
-                          >
-                            <Bookmark className="mr-2 h-4 w-4" />
-                            <span>სამომავლოდ</span>
-                          </DropdownMenuItem>
-                          
-                          <DropdownMenuItem 
-                            className={libraryStatus === 'completed' ? "bg-blue-900/20 text-blue-400" : ""} 
-                            onClick={() => handleStatusChange('completed')}
-                          >
-                            <CheckCheck className="mr-2 h-4 w-4" />
-                            <span>დასრულებული</span>
-                          </DropdownMenuItem>
-                          
-                          <DropdownMenuItem 
-                            className={libraryStatus === 'on_hold' ? "bg-yellow-900/20 text-yellow-400" : ""} 
-                            onClick={() => handleStatusChange('on_hold')}
-                          >
-                            <PauseCircle className="mr-2 h-4 w-4" />
-                            <span>შეჩერებული</span>
-                          </DropdownMenuItem>
-                          
-                          <DropdownMenuItem 
-                            className={libraryStatus === 'dropped' ? "bg-red-900/20 text-red-400" : ""} 
-                            onClick={() => handleStatusChange('dropped')}
-                          >
-                            <XCircle className="mr-2 h-4 w-4" />
-                            <span>მიტოვებული</span>
-                          </DropdownMenuItem>
+                          <DropdownMenuContent className="w-48 bg-gray-900/95 backdrop-blur-md border-white/10">
+                            <DropdownMenuItem 
+                              className={libraryStatus === 'reading' ? "bg-green-900/20 text-green-400" : ""} 
+                              onClick={() => handleStatusChange('reading')}
+                            >
+                              <BookOpen className="mr-2 h-4 w-4" />
+                              <span>ვკითხულობ</span>
+                            </DropdownMenuItem>
+                            
+                            <DropdownMenuItem 
+                              className={libraryStatus === 'plan_to_read' ? "bg-purple-900/20 text-purple-400" : ""} 
+                              onClick={() => handleStatusChange('plan_to_read')}
+                            >
+                              <Bookmark className="mr-2 h-4 w-4" />
+                              <span>სამომავლოდ</span>
+                            </DropdownMenuItem>
+                            
+                            <DropdownMenuItem 
+                              className={libraryStatus === 'completed' ? "bg-blue-900/20 text-blue-400" : ""} 
+                              onClick={() => handleStatusChange('completed')}
+                            >
+                              <CheckCheck className="mr-2 h-4 w-4" />
+                              <span>დასრულებული</span>
+                            </DropdownMenuItem>
+                            
+                            <DropdownMenuItem 
+                              className={libraryStatus === 'on_hold' ? "bg-yellow-900/20 text-yellow-400" : ""} 
+                              onClick={() => handleStatusChange('on_hold')}
+                            >
+                              <PauseCircle className="mr-2 h-4 w-4" />
+                              <span>შეჩერებული</span>
+                            </DropdownMenuItem>
+                            
+                            <DropdownMenuItem 
+                              className={libraryStatus === 'dropped' ? "bg-red-900/20 text-red-400" : ""} 
+                              onClick={() => handleStatusChange('dropped')}
+                            >
+                              <XCircle className="mr-2 h-4 w-4" />
+                              <span>მიტოვებული</span>
+                            </DropdownMenuItem>
 
-                          {libraryStatus && (
-                            <>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem 
-                                className="text-gray-400"
-                                onClick={() => {
-                                  setLibraryStatus(null);
-                                  updateItemStatus(mangaId, 'manga', 'plan_to_read', '', '', 0);
-                                }}
-                              >
-                                <X className="mr-2 h-4 w-4" />
-                                <span>ამოშლა ბიბლიოთეკიდან</span>
-                              </DropdownMenuItem>
-                            </>
+                            {libraryStatus && (
+                              <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem 
+                                  className="text-gray-400"
+                                  onClick={() => {
+                                    setLibraryStatus(null);
+                                    updateItemStatus(mangaId, 'manga', 'plan_to_read', '', '', 0);
+                                  }}
+                                >
+                                  <X className="mr-2 h-4 w-4" />
+                                  <span>ამოშლა ბიბლიოთეკიდან</span>
+                                </DropdownMenuItem>
+                              </>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+
+                        {/* Subscribe Button */}
+                        <motion.button
+                          className={cn(
+                            "p-2 border rounded-md transition-colors flex items-center gap-1.5 text-sm h-[52px]", // Match height of library button
+                            "w-full md:w-auto justify-center md:justify-start", // Added w-full md:w-auto, justify-center md:justify-start
+                            isSubscribed 
+                              ? "bg-purple-500/20 border-purple-500/50 text-purple-300 hover:bg-purple-500/30"
+                              : "text-gray-300 hover:text-white border-gray-700 hover:border-gray-500 hover:bg-white/5"
                           )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                          onClick={handleToggleSubscription}
+                          disabled={isSubProcessing}
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          title={isSubscribed ? "Unsubscribe from new chapter notifications" : "Subscribe to new chapter notifications"}
+                        >
+                          {isSubProcessing ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : isSubscribed ? (
+                            <Bell className="h-4 w-4" /> // Or Check? Or BellOff?
+                          ) : (
+                            <Bell className="h-4 w-4" /> // Or BellPlus?
+                          )}
+                          <span>{isSubscribed ? "Subscribed" : "Subscribe"}</span>
+                        </motion.button>
+                      </motion.div>
                     </motion.div>
                   </div>
                 </motion.div>
@@ -1044,64 +1166,170 @@ export default function MangaPage({ params }: { params: { id: string } }) {
                 {/* Main content container with chapters and characters side by side */}
                 <div className="flex flex-col mt-8 mb-12">
                   <div className="flex flex-col lg:flex-row gap-8">
-                    {/* Left side: Chapters list in table format */}
+                    {/* Left side: Chapters list with improved grid layout */}
                     <div className="lg:w-3/5">
-                      <div className="flex justify-between items-center mb-4">
+                      <div className="flex justify-between items-center mb-6">
                         <h2 className="text-xl font-bold">თავები</h2>
-                        {readingProgress && (
-                          <button 
-                            onClick={() => handleReadClick(0, true)}
-                            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-md text-sm flex items-center gap-2"
+                        
+                        {/* Enhanced Chapter selection dropdown */}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <motion.button
+                              className="bg-black/40 border border-white/10 hover:border-purple-500/50 text-white px-4 py-2 rounded-lg flex items-center gap-2"
+                              whileHover={{ scale: 1.02, backgroundColor: "rgba(128, 90, 213, 0.2)" }}
+                              whileTap={{ scale: 0.98 }}
+                            >
+                              <BookOpen className="h-4 w-4 text-purple-400" />
+                              <span>{readingProgress ? 'გაგრძელება' : 'თავის არჩევა'}</span>
+                              <ChevronDown className="h-4 w-4 text-purple-400 ml-1" />
+                            </motion.button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent 
+                            className="bg-gray-900/95 backdrop-blur-md border-white/10 border max-h-[400px] overflow-y-auto w-[300px]"
                           >
-                            კითხვის გაგრძელება
-                          </button>
-                        )}
-                      </div>
-                      
-                      <div className="bg-black/30 backdrop-blur-sm border border-white/10 rounded-lg overflow-hidden">
-                        <table className="w-full">
-                          <thead>
-                            <tr className="border-b border-white/10 text-left text-gray-400 text-sm">
-                              <th className="py-3 px-4 font-medium">სახელი</th>
-                              <th className="py-3 px-4 font-medium text-right">თავი</th>
-                            </tr>
-                          </thead>
-                          <tbody>
+                            <div className="p-3 sticky top-0 bg-gray-900/95 border-b border-gray-700/50 flex items-center justify-between">
+                              <span className="font-semibold text-sm">თავების სია</span>
+                              <span className="text-xs bg-purple-900/30 text-purple-300 px-2 py-0.5 rounded-full">
+                                {processedData?.chapterList?.length} თავი
+                              </span>
+                            </div>
+                            
                             {processedData?.chapterList?.map((chapter: any, index: number) => {
                               const chapterId = chapter.id || `chapter-${chapter.number}`;
                               const readPercentage = getReadPercentage(mangaId, chapterId);
                               const isCurrentlyReading = readingProgress?.chapterId === chapterId;
                               
                               return (
-                                <tr 
-                                  key={`chapter-${index}`}
+                                <DropdownMenuItem
+                                  key={`chapter-dropdown-${index}`}
                                   className={cn(
-                                    "border-b border-white/5 hover:bg-white/5 transition-colors cursor-pointer",
-                                    isCurrentlyReading && "bg-purple-900/20"
+                                    "flex items-start p-3 hover:bg-purple-900/20 border-b border-gray-800/30 cursor-pointer transition-colors",
+                                    isCurrentlyReading && "bg-purple-900/20 text-purple-300"
                                   )}
                                   onClick={() => handleReadClick(index)}
                                 >
-                                  <td className="py-3 px-4">
-                                    <div className="flex flex-col">
-                                      <span className="font-medium">{chapter.title}</span>
-                                      {readPercentage > 0 && (
-                                        <div className="mt-1 w-24">
-                                          <Progress 
-                                            value={readPercentage} 
-                                            className="h-1" 
-                                          />
-                                        </div>
+                                  <div className={cn(
+                                    "h-7 w-7 rounded-full flex items-center justify-center text-xs mr-3 flex-shrink-0",
+                                    isCurrentlyReading 
+                                      ? "bg-purple-700 text-white ring-2 ring-purple-500/50" 
+                                      : readPercentage > 0 
+                                        ? "bg-green-700/70 text-white" 
+                                        : "bg-gray-800"
+                                  )}>
+                                    {chapter.number}
+                                  </div>
+                                  
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span className="font-medium text-sm truncate">{chapter.title}</span>
+                                      {isCurrentlyReading && (
+                                        <BookOpen className="h-4 w-4 flex-shrink-0 text-purple-400 ml-1" />
                                       )}
                                     </div>
-                                  </td>
-                                  <td className="py-3 px-4 text-right">
-                                    <span className="font-medium">{chapter.number}</span>
-                                  </td>
-                                </tr>
+                                    
+                                    <div className="text-xs text-gray-400 mt-1 flex items-center">
+                                      <CalendarDays className="h-3 w-3 mr-1" />
+                                      {chapter.releaseDate}
+                                    </div>
+                                    
+                                    {readPercentage > 0 && (
+                                      <div className="mt-2 w-full">
+                                        <Progress 
+                                          value={readPercentage} 
+                                          className="h-1.5 bg-gray-800/50 w-full" 
+                                          indicatorClassName={isCurrentlyReading ? "bg-purple-500" : "bg-green-500"}
+                                        />
+                                      </div>
+                                    )}
+                                  </div>
+                                </DropdownMenuItem>
                               );
                             })}
-                          </tbody>
-                        </table>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {processedData?.chapterList?.map((chapter: any, index: number) => {
+                          const chapterId = chapter.id || `chapter-${chapter.number}`;
+                          const readPercentage = getReadPercentage(mangaId, chapterId);
+                          const isCurrentlyReading = readingProgress?.chapterId === chapterId;
+                          
+                          return (
+                            <motion.div
+                              key={`chapter-${index}`}
+                              className={cn(
+                                "relative bg-black/40 backdrop-blur-sm border border-white/10 rounded-lg overflow-hidden cursor-pointer group",
+                                "hover:bg-gray-800/40 transition-all duration-200 hover:border-purple-500/30 hover:shadow-lg hover:shadow-purple-900/10",
+                                isCurrentlyReading && "bg-purple-900/20 border-purple-500/30"
+                              )}
+                              onClick={() => handleReadClick(index)}
+                              whileHover={{ scale: 1.02, y: -3 }}
+                              whileTap={{ scale: 0.98 }}
+                            >
+                              {/* Enhanced Chapter number badge */}
+                              <div className={cn(
+                                "absolute top-4 right-4 text-white font-bold rounded-full w-8 h-8 flex items-center justify-center shadow-lg shadow-purple-900/30 group-hover:scale-110 transition-all duration-300 text-md z-10",
+                                isCurrentlyReading 
+                                  ? "bg-gradient-to-br from-purple-600 to-purple-800 ring-2 ring-purple-500/50" 
+                                  : readPercentage > 0 
+                                    ? "bg-gradient-to-br from-green-600 to-green-800" 
+                                    : "bg-gradient-to-br from-gray-700 to-gray-900"
+                              )}>
+                                {chapter.number}
+                              </div>
+                              
+                              <div className="p-5">
+                                <h3 className="font-medium text-lg pr-12 truncate mb-2 group-hover:text-purple-300 transition-colors">
+                                  {chapter.title}
+                                </h3>
+                                
+                                <div className="text-xs text-gray-400 mb-3 flex items-center gap-2">
+                                  <CalendarDays className="h-3 w-3" />
+                                  {chapter.releaseDate}
+                                </div>
+                                
+                                {readPercentage > 0 && (
+                                  <div className="mt-2">
+                                    <div className="text-xs flex items-center gap-1 mb-1">
+                                      {isCurrentlyReading ? (
+                                        <span className="text-purple-400 font-medium flex items-center">
+                                          <BookOpen className="h-3 w-3 mr-1" />
+                                          ახლა იკითხება
+                                        </span>
+                                      ) : (
+                                        <span className="text-green-400 font-medium flex items-center">
+                                          <Check className="h-3 w-3 mr-1" />
+                                          წაკითხულია
+                                        </span>
+                                      )}
+                                      <span className="text-gray-500 ml-1">{readPercentage}%</span>
+                                    </div>
+                                    <Progress 
+                                      value={readPercentage} 
+                                      className="h-1.5 bg-gray-800" 
+                                      indicatorClassName={isCurrentlyReading ? "bg-purple-500" : "bg-green-500"}
+                                    />
+                                  </div>
+                                )}
+                                
+                                <div className="mt-3 flex justify-end">
+                                  <motion.button 
+                                    className="text-xs px-3 py-1.5 bg-gradient-to-r from-purple-600/30 to-purple-800/30 text-purple-300 font-medium rounded-full opacity-80 group-hover:opacity-100 transition-all duration-200 transform translate-y-1 group-hover:translate-y-0 ring-1 ring-purple-500/30 flex items-center gap-1.5"
+                                    whileHover={{ scale: 1.1 }}
+                                    whileTap={{ scale: 0.95 }}
+                                  >
+                                    <BookOpen className="h-3 w-3" />
+                                    კითხვა
+                                  </motion.button>
+                                </div>
+                              </div>
+                              
+                              {/* Overlay gradient for hover effect */}
+                              <div className="absolute inset-0 bg-gradient-to-t from-purple-900/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
+                            </motion.div>
+                          );
+                        })}
                       </div>
                     </div>
                     
@@ -1140,8 +1368,8 @@ export default function MangaPage({ params }: { params: { id: string } }) {
                   </div>
                 </div>
 
-                {/* Add Chapter Manager as a separate section but only if from database */}
-                {isFromDatabase && (
+                {/* Add Chapter Manager as a separate section but only if from database AND user is admin */}
+                {isFromDatabase && isAdminCheckComplete && isAdmin && (
                   <motion.section 
                     className="mb-12"
                     variants={sectionVariants}

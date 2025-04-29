@@ -1,6 +1,5 @@
 import { supabase } from './supabase'
 import { NextAuthOptions } from "next-auth"
-import CredentialsProvider from "next-auth/providers/credentials"
 import { createClient } from '@/lib/supabase/server'
 
 // Refresh auth session
@@ -608,26 +607,7 @@ export async function getUserFavorites(userId: string, contentType?: 'anime' | '
 // In a real app, you would connect this to your actual authentication system
 export const authOptions: NextAuthOptions = {
   providers: [
-    CredentialsProvider({
-      name: "Credentials",
-      credentials: {
-        email: { label: "Email", type: "email" },
-        password: { label: "Password", type: "password" }
-      },
-      async authorize(credentials) {
-        // This is a mock implementation
-        // In a real app, you would verify the credentials against your database
-        if (credentials?.email === "user@example.com" && credentials?.password === "password") {
-          return {
-            id: "user-1",
-            name: "Demo User",
-            email: "user@example.com",
-            image: "https://i.pravatar.cc/150?img=1"
-          }
-        }
-        return null
-      }
-    })
+    // CredentialsProvider removed - Use Supabase Auth for email/password
   ],
   session: {
     strategy: "jwt"

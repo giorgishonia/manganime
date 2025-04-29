@@ -7,6 +7,8 @@ import { motion as m, AnimatePresence } from "framer-motion"
 import { ImageSkeleton } from "@/components/image-skeleton"
 import { getAllContent, getTrendingContent } from "@/lib/content"
 import { CardSkeleton, CarouselSkeleton, CategorySkeleton } from "@/components/ui/skeleton"
+import { cn } from "@/lib/utils"
+import { hasAnimeBeenWatched, getAnimeProgress, getLatestEpisodeWatched, calculateAnimeProgressByEpisode } from "@/lib/watching-history"
 
 // Helper function for drag scrolling
 function setupDragScroll(element: HTMLDivElement | null) {
@@ -18,29 +20,31 @@ function setupDragScroll(element: HTMLDivElement | null) {
   
   const mouseDown = (e: MouseEvent) => {
     isDown = true;
-    element.classList.add("active");
+    element.classList.add("active", "cursor-grabbing");
     startX = e.pageX - element.offsetLeft;
     scrollLeft = element.scrollLeft;
   };
   
   const mouseLeave = () => {
     isDown = false;
-    element.classList.remove("active");
+    element.classList.remove("active", "cursor-grabbing");
   };
   
   const mouseUp = () => {
     isDown = false;
-    element.classList.remove("active");
+    element.classList.remove("active", "cursor-grabbing");
   };
   
   const mouseMove = (e: MouseEvent) => {
     if (!isDown) return;
     e.preventDefault();
     const x = e.pageX - element.offsetLeft;
-    const walk = (x - startX) * 0.8; // Reduced scroll speed multiplier
+    const walk = (x - startX) * 1;
     element.scrollLeft = scrollLeft - walk;
   };
   
+  element.style.cursor = 'grab';
+
   element.addEventListener("mousedown", mouseDown);
   element.addEventListener("mouseleave", mouseLeave);
   element.addEventListener("mouseup", mouseUp);
@@ -51,6 +55,7 @@ function setupDragScroll(element: HTMLDivElement | null) {
     element.removeEventListener("mouseleave", mouseLeave);
     element.removeEventListener("mouseup", mouseUp);
     element.removeEventListener("mousemove", mouseMove);
+    element.style.cursor = 'default';
   };
 }
 
@@ -78,75 +83,200 @@ const containerVariants = {
   visible: { 
     opacity: 1,
     transition: { 
-      staggerChildren: 0.1,
+      staggerChildren: 0.08,
       ease: [0.22, 1, 0.36, 1]
     } 
   }
 };
 
 const itemVariants = {
-  hidden: { opacity: 0, y: 30 },
+  hidden: { opacity: 0, y: 20 },
   visible: { 
     opacity: 1, 
     y: 0,
-    transition: { type: "spring", stiffness: 300, damping: 24 }
+    transition: { duration: 0.4, ease: [0.22, 1, 0.36, 1] }
   }
 };
 
 const cardHoverVariants = {
-  initial: { scale: 1, y: 0, boxShadow: "0px 0px 0px rgba(0, 0, 0, 0)" },
+  initial: { scale: 1, y: 0, boxShadow: "0px 5px 15px rgba(0, 0, 0, 0.1)" },
   hover: { 
-    scale: 1.05,
-    y: -10,
-    boxShadow: "0 20px 30px rgba(0, 0, 0, 0.4)",
-    transition: { 
-      duration: 0.3, 
-      ease: [0.22, 1, 0.36, 1],
-      boxShadow: { delay: 0.05 }
+    scale: 1.03,
+    y: -6,
+    boxShadow: "0px 15px 25px rgba(99, 102, 241, 0.2), 0px 5px 10px rgba(0,0,0, 0.1)",
+    transition: {
+      duration: 0.25,
+      ease: [0.4, 0, 0.2, 1]
     }
   }
 };
 
+interface ContentItem {
+  id: string;
+  title: string;
+  englishTitle?: string | null;
+  description?: string | null;
+  thumbnail: string;
+  banner_image?: string;
+  rating?: number;
+  status?: string;
+  episodes?: string;
+  genres?: string[];
+  type: 'anime';
+}
+
 interface AnimeViewProps {
-  selectedCategory: string
+  selectedCategory?: string
   setSelectedCategory: (category: string) => void
   categories: string[]
-  hoveredCard: number | null
-  setHoveredCard: (id: number | null) => void
-  animeData?: any[]
+  hoveredCard: string | null
+  setHoveredCard: (id: string | null) => void
+  animeData?: ContentItem[]
+}
+
+// Anime Card Component
+function AnimeCard({ anime, index }: { anime: ContentItem; index: number }) {
+  const router = useRouter();
+  const hasBeenWatched = hasAnimeBeenWatched(anime.id);
+  const latestEpisodeWatched = getLatestEpisodeWatched(anime.id);
+  
+  // Extract total episodes from anime data
+  const totalEpisodes = anime.episodes ? 
+    parseInt(anime.episodes.replace(/[^\d]/g, '')) || 0 : 0;
+  
+  // Calculate overall anime progress
+  const progressPercentage = hasBeenWatched ? 
+    calculateAnimeProgressByEpisode(latestEpisodeWatched, totalEpisodes) : 0;
+  
+  return (
+    <m.div
+      variants={itemVariants}
+      layout
+      className="relative group cursor-pointer"
+      onClick={() => router.push(`/anime/${anime.id}`)}
+      transition={{ delay: index * 0.05 }}
+    >
+      <m.div
+        className="overflow-hidden rounded-lg bg-gray-900/60 border border-white/10 transition-colors duration-300 group-hover:border-purple-500/50"
+        variants={cardHoverVariants}
+        initial="initial"
+        whileHover="hover"
+      >
+        <div className="aspect-[2/3] relative">
+          <ImageSkeleton
+            src={anime.thumbnail}
+            alt={anime.title}
+            className="w-full h-full object-cover transition-transform duration-300 ease-in-out group-hover:scale-105"
+          />
+          
+          {/* Gradient overlay for text contrast */}
+          <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/80 via-black/50 to-transparent pointer-events-none"></div>
+          
+          {/* "Watch" icon overlay on hover */}
+          <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+            <Play className="w-10 h-10 text-white/80 drop-shadow-lg" />
+          </div>
+          
+          {/* Rating Badge */}
+          {anime.rating && anime.rating > 0 ? (
+            <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-sm px-2 py-0.5 rounded-md flex items-center gap-1 text-xs text-yellow-400 border border-white/10">
+              <Star className="w-3 h-3 fill-current" />
+              <span>{anime.rating.toFixed(1)}</span>
+            </div>
+          ) : null}
+          
+          {/* Episode Count Badge */}
+          {anime.episodes && anime.episodes !== "?" && (
+            <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-sm px-2 py-0.5 rounded-md text-xs text-white/90 border border-white/10">
+              {anime.episodes}
+            </div>
+          )}
+          
+          {/* Watching progress indicator if anime has been watched */}
+          {hasBeenWatched && (
+            <>
+              <div className="absolute bottom-0 left-0 right-0 h-1 bg-gray-900">
+                <div 
+                  className="h-full bg-gradient-to-r from-purple-500 to-indigo-600" 
+                  style={{ width: `${progressPercentage}%` }}
+                />
+              </div>
+              <div className="absolute bottom-12 left-2 bg-black/70 backdrop-blur-sm text-white px-2 py-1 rounded-md text-xs font-medium flex items-center gap-1 border border-purple-500/30">
+                <span className="text-purple-400">{progressPercentage}%</span>
+              </div>
+            </>
+          )}
+          
+          {/* Genre pills - show the first genre */}
+          {anime.genres && anime.genres.length > 0 && (
+            <div className="absolute bottom-2 right-2 flex flex-wrap gap-1 max-w-[calc(100%-1rem)]">
+              <div className="text-xs px-2 py-0.5 bg-black/70 backdrop-blur-sm rounded-full truncate max-w-full">
+                {anime.genres[0]}
+              </div>
+            </div>
+          )}
+        </div>
+        
+        <div className="p-3 space-y-1">
+          <h3 className="text-sm font-semibold text-white truncate" title={anime.title}>
+            {anime.title}
+          </h3>
+          {/* Show English title only if it exists and differs */}
+          {anime.englishTitle && anime.englishTitle !== anime.title && (
+            <p className="text-xs text-gray-400 truncate" title={anime.englishTitle}>
+              {anime.englishTitle}
+            </p>
+          )}
+          
+          {/* Status info */}
+          {anime.status && (
+            <div className="flex items-center gap-2 mt-1 text-xs text-gray-400">
+              <div className="flex items-center gap-1">
+                <Clock className="w-3 h-3" />
+                <span>{anime.status}</span>
+              </div>
+            </div>
+          )}
+        </div>
+      </m.div>
+    </m.div>
+  );
 }
 
 export function AnimeView({
-  selectedCategory,
+  selectedCategory = "ყველა",
   setSelectedCategory,
   categories,
   hoveredCard,
   setHoveredCard,
-  animeData = []
-}: AnimeViewProps) {
+  animeData = [],
+  items = [] // For backward compatibility
+}: AnimeViewProps & { items?: ContentItem[] }) { // Add items prop for backward compatibility
   const router = useRouter()
   const categoriesRef = useRef<HTMLDivElement>(null)
-  const [localLoading, setLocalLoading] = useState(animeData.length === 0)
-  const [localAnimeData, setLocalAnimeData] = useState<any[]>(animeData)
+  // Use either animeData or items (for backward compatibility)
+  const dataToUse = animeData.length > 0 ? animeData : items
+  const [localLoading, setLocalLoading] = useState(dataToUse.length === 0)
+  const [localAnimeData, setLocalAnimeData] = useState<ContentItem[]>(dataToUse)
+  
+  // Ensure "ყველა" is set as the default category on initial render
+  useEffect(() => {
+    // Force "ყველა" to be the default selected category on first render
+    if (selectedCategory !== "ყველა") {
+      setSelectedCategory("ყველა");
+    }
+  }, []);
   
   // Filter anime based on selected category
-  const filteredAnime = selectedCategory === "All" 
+  const filteredAnime = selectedCategory === "ყველა" 
     ? localAnimeData 
     : localAnimeData.filter(anime => anime.genres?.includes(selectedCategory))
-
-  // Handle card click - navigate to anime detail page
-  const handleCardClick = (id: number) => {
-    setHoveredCard(id)
-    setTimeout(() => {
-      router.push(`/anime/${id}`)
-    }, 300) // Short delay to allow hover preview to show briefly
-  }
 
   // Handle categories scroll
   const scrollCategories = (direction: 'left' | 'right') => {
     if (categoriesRef.current) {
       const container = categoriesRef.current;
-      const scrollAmount = 200; // Adjust as needed
+      const scrollAmount = 250;
       if (direction === 'left') {
         container.scrollBy({ left: -scrollAmount, behavior: 'smooth' });
       } else {
@@ -163,15 +293,16 @@ export function AnimeView({
     }
   }, []);
 
-  // If animeData is not provided, fetch it
+  // If neither animeData nor items is provided, fetch it
   useEffect(() => {
-    if (animeData.length > 0) {
-      setLocalAnimeData(animeData);
+    if (dataToUse.length > 0) {
+      setLocalAnimeData(dataToUse);
       setLocalLoading(false);
       return;
     }
     
     async function fetchData() {
+      setLocalLoading(true);
       try {
         // Get anime from our database
         const response = await getAllContent('anime', 50);
@@ -179,34 +310,46 @@ export function AnimeView({
         if (response.success && response.content) {
           const transformedData = response.content.map((content: any) => ({
             id: content.id,
-            title: content.title,
-            description: content.description?.substring(0, 160) + "..." || "აღწერა არ არის ხელმისაწვდომი",
-            image: content.banner_image || content.thumbnail,
+            title: content.georgian_title || content.title,
+            englishTitle: content.georgian_title ? content.title : null,
+            description: content.description || "აღწერა არ არის ხელმისაწვდომი",
             thumbnail: content.thumbnail,
+            banner_image: content.banner_image,
             rating: content.rating || 0,
             status: content.status,
-            releaseYear: content.release_year,
-            genres: content.genres
+            episodes: content.episodes_count ? `${content.episodes_count} ეპიზოდი` : "?",
+            genres: content.genres,
+            type: 'anime'
           }));
           
           setLocalAnimeData(transformedData);
+        } else {
+          console.error("Failed to fetch anime or no content:", response.error || "No content");
+          setLocalAnimeData([]);
         }
       } catch (error) {
         console.error("Error fetching anime:", error);
+        setLocalAnimeData([]);
       } finally {
-        setLocalLoading(false);
+        setTimeout(() => setLocalLoading(false), 300);
       }
     }
     
     fetchData();
-  }, [animeData]);
+  }, [dataToUse.length]);
 
   if (localLoading) {
-    return <CategorySkeleton />;
+    return (
+      <div className="space-y-12">
+        <CategorySkeleton count={8} />
+        <CarouselSkeleton count={6} />
+      </div>
+    );
   }
 
   return (
     <m.div
+      key={selectedCategory}
       variants={containerVariants}
       initial="hidden"
       animate="visible"
@@ -214,39 +357,56 @@ export function AnimeView({
     >
       {/* Categories filter */}
       <div className="relative">
-        <div className="flex items-center mb-2">
-          <h2 className="text-xl font-bold">კატეგორიები</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-2xl font-bold text-white tracking-tight">ანიმეები</h2>
         </div>
         <div className="relative group">
           <div
             ref={categoriesRef}
-            className="flex space-x-2 overflow-x-auto pb-2 scrollbar-hide"
+            className="flex space-x-2 overflow-x-auto pb-3 scrollbar-hide"
           >
-            <button
-              onClick={() => setSelectedCategory("All")}
-              className={`px-4 py-1.5 rounded-full whitespace-nowrap transition-colors ${
-                selectedCategory === "All"
-                  ? "bg-primary text-white"
-                  : "bg-white/10 hover:bg-white/20"
-              }`}
-            >
-              ყველა
-            </button>
+            {["ყველა", ...categories].map((category) => (
+              <m.button
+                key={category}
+                onClick={() => setSelectedCategory(category)}
+                className={cn(
+                  "relative px-4 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors duration-200",
+                  selectedCategory !== category && "text-gray-400 hover:text-white hover:bg-white/10",
+                  selectedCategory === category && "text-white"
+                )}
+                whileTap={{ scale: 0.97 }}
+                initial={{ opacity: 0.8 }}
+                animate={{ opacity: 1 }}
+              >
+                {selectedCategory === category && (
+                  <m.div
+                    layoutId={`activeCategoryIndicator-anime`}
+                    className="absolute inset-0 bg-gradient-to-r from-purple-600/50 to-indigo-600/50 border border-purple-500/40 rounded-lg z-0 shadow-inner shadow-purple-900/20"
+                    initial={false}
+                    animate={{ opacity: 1 }}
+                    transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                  />
+                )}
+                <span className="relative z-10">{category}</span>
+              </m.button>
+            ))}
           </div>
           
           {/* Navigation buttons */}
           <button
-            className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-6 bg-black/30 rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/50"
+            aria-label="Scroll left"
+            className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-5 bg-black/40 backdrop-blur-sm rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-all duration-300 hover:bg-black/60 hover:scale-110 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-[#070707] z-10"
             onClick={() => scrollCategories('left')}
           >
-            <ChevronRight className="w-4 h-4 rotate-180" />
+            <ChevronRight className="w-4 h-4 rotate-180 text-white/80" />
           </button>
           
           <button
-            className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-6 bg-black/30 rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/50"
+            aria-label="Scroll right"
+            className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-5 bg-black/40 backdrop-blur-sm rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-all duration-300 hover:bg-black/60 hover:scale-110 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-[#070707] z-10"
             onClick={() => scrollCategories('right')}
           >
-            <ChevronRight className="w-4 h-4" />
+            <ChevronRight className="w-4 h-4 text-white/80" />
           </button>
         </div>
       </div>
@@ -257,53 +417,24 @@ export function AnimeView({
           <h2 className="text-2xl font-bold">ხელმისაწვდომი ანიმე</h2>
         </div>
         
-        {filteredAnime.length === 0 ? (
-          <div className="text-center py-20 bg-white/5 rounded-xl">
-            <p className="text-white/60">ამ კატეგორიაში ანიმე ვერ მოიძებნა</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-            {filteredAnime.map((anime) => (
-              <m.div
-                key={anime.id}
-                variants={itemVariants}
-                onClick={() => handleCardClick(anime.id)}
-                className="cursor-pointer relative group"
-              >
-                <m.div
-                  initial="initial"
-                  whileHover="hover"
-                  variants={cardHoverVariants}
-                  className="relative overflow-hidden rounded-lg aspect-[2/3] bg-white/5"
-                >
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent z-10" />
-                  <ImageSkeleton
-                    src={anime.thumbnail}
-                    alt={anime.title}
-                    className="object-cover w-full h-full transition-transform"
-                  />
-                  
-                  <div className="absolute bottom-0 left-0 right-0 p-3 z-20">
-                    <div className="flex justify-between items-end">
-                      <div>
-                        <h3 className="text-sm font-medium line-clamp-2">{anime.title}</h3>
-                        <div className="flex items-center mt-1 text-xs text-white/60">
-                          {anime.releaseYear && <span className="mr-2">{anime.releaseYear}</span>}
-                          <span className="capitalize">{anime.status}</span>
-                        </div>
-                      </div>
-                      
-                      {anime.rating > 0 && (
-                        <div className="flex items-center bg-black/40 rounded px-1.5 py-0.5">
-                          <Star className="w-3 h-3 text-yellow-400 mr-1" />
-                          <span className="text-xs">{anime.rating.toFixed(1)}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </m.div>
-              </m.div>
+        {filteredAnime.length > 0 ? (
+          <m.div
+            variants={containerVariants}
+            initial="hidden"
+            animate="visible"
+            className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-6"
+          >
+            {filteredAnime.map((anime, index) => (
+              <AnimeCard 
+                key={anime.id} 
+                anime={anime} 
+                index={index}
+              />
             ))}
+          </m.div>
+        ) : (
+          <div className="text-center py-10 text-gray-500">
+            <p>ამ კატეგორიაში შედეგები არ მოიძებნა.</p>
           </div>
         )}
       </div>
