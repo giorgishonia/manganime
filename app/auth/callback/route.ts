@@ -25,8 +25,8 @@ export async function GET(request: Request) {
         const userProfile = await getProfileForUser(session.user.id);
         console.log("Profile fetched in callback:", userProfile);
         
-        // Check if onboarding is NOT complete
-        if (!userProfile || !userProfile.has_completed_onboarding) {
+        // Check if onboarding is NOT complete (treat null/undefined as not complete)
+        if (!userProfile || userProfile.has_completed_onboarding !== true) {
           console.log("User needs onboarding, redirecting to /onboarding");
           redirectTo = '/onboarding'; // Change redirect path
         } else {

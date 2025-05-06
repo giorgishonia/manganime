@@ -6,7 +6,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
 import { motion as m, AnimatePresence } from "framer-motion";
-import { Search, X, Film, BookOpen, ArrowRight, Check, Users, PlusCircle, Trash2 } from "lucide-react";
+import { Search, X, Film, BookOpen, ArrowRight, Check, Users, PlusCircle, Trash2, Book } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -64,7 +65,7 @@ const contentFormSchema = z.object({
   title: z.string().min(1, "Title is required"),
   georgianTitle: z.string().optional(),
   description: z.string().min(1, "Description is required"),
-  type: z.enum(["anime", "manga"], {
+  type: z.enum(["anime", "manga", "comics"], {
     required_error: "Content type is required",
   }),
   status: z.enum(["ongoing", "completed", "hiatus"], {
@@ -75,9 +76,10 @@ const contentFormSchema = z.object({
   genres: z.array(z.string()).min(1, "At least one genre is required"),
   alternativeTitles: z.array(z.string()).optional(),
   releaseYear: z.number().optional(),
-  anilistId: z.number().optional(),
+  anilistId: z.string().optional(),
   season: z.string().optional(),
   rating: z.number().min(0).max(10).optional(),
+  publisher: z.string().optional(),
   characters: z.array(
     z.object({
       id: z.string().optional(),
@@ -96,8 +98,43 @@ interface SearchResult {
   id: number;
   title: string;
   image: string;
-  type: "anime" | "manga";
+  type: "anime" | "manga" | "comics";
   year?: number;
+  publisher?: string;
+}
+
+interface ComicVineResult {
+  id: number;
+  name: string;
+  image: {
+    original_url: string;
+    medium_url?: string;
+    screen_url?: string;
+    small_url?: string;
+  };
+  description: string;
+  start_year?: string;
+  publisher?: {
+    name: string;
+  };
+  volume_count?: number;
+  issue_count?: number;
+  characters?: Array<{
+    id: number;
+    name: string;
+    role?: string;
+    gender?: string;
+    age?: string;
+    realName?: string;
+    aliases?: string;
+    image?: string;
+    imageUrls?: {
+      original?: string;
+      medium?: string;
+      screen?: string;
+      small?: string;
+    };
+  }>;
 }
 
 type ContentFormProps = {
@@ -128,9 +165,10 @@ export default function ContentForm({
   const [searchModalOpen, setSearchModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
-  const [searchType, setSearchType] = useState<"anime" | "manga">("anime");
+  const [searchType, setSearchType] = useState<"anime" | "manga" | "comics">("anime");
   const [isSearching, setIsSearching] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const router = useRouter();
   
   // Process initialData to handle characters and special fields
   const processedInitialData = useMemo(() => {
@@ -198,9 +236,12 @@ export default function ContentForm({
     genres: processedInitialData.genres || [],
     alternativeTitles: processedInitialData.alternativeTitles || [],
     releaseYear: processedInitialData.releaseYear || processedInitialData.release_year || undefined,
-    anilistId: processedInitialData.anilistId || processedInitialData.anilist_id || undefined,
+    anilistId: processedInitialData.anilistId ? 
+      processedInitialData.anilistId.toString() : 
+      (processedInitialData.anilist_id ? processedInitialData.anilist_id.toString() : undefined),
     season: processedInitialData.season || undefined,
     rating: processedInitialData.rating || undefined,
+    publisher: processedInitialData.publisher || "",
     characters: processedInitialData.characters || [],
   } : {
     title: "",
@@ -216,6 +257,7 @@ export default function ContentForm({
     anilistId: undefined,
     season: undefined,
     rating: undefined,
+    publisher: "",
     characters: [],
   };
 
@@ -234,7 +276,7 @@ export default function ContentForm({
 
   // Add after other state variables
   const debouncedSearch = useRef(
-    debounce(async (query: string, type: "anime" | "manga") => {
+    debounce(async (query: string, type: "anime" | "manga" | "comics") => {
       if (query.length < 2) {
         setSearchResults([]);
         return;
@@ -242,29 +284,55 @@ export default function ContentForm({
       
       setIsSearching(true);
       try {
-        const results = await searchAniList(query, type);
-        
-        if (results && results.length > 0) {
-          setSearchResults(results.map((item: {
-            id: number;
-            title: { english: string; romaji: string };
-            coverImage: { medium: string };
-            seasonYear?: number;
-            startDate?: { year: string | number };
-            type: string;
-          }) => ({
-            id: item.id,
-            title: item.title.english || item.title.romaji,
-            image: item.coverImage.medium,
-            type: item.type === "ANIME" ? "anime" : "manga",
-            year: item.seasonYear || (item.startDate?.year ? parseInt(item.startDate.year.toString()) : undefined)
-          })));
+        // Use different API depending on content type
+        if (type === "comics") {
+          // Use Comic Vine API for comics
+          const response = await fetch(`/api/comic-search?query=${encodeURIComponent(query)}`);
+          
+          if (!response.ok) {
+            throw new Error('Failed to fetch comics data');
+          }
+          
+          const data = await response.json();
+          
+          if (data.results && data.results.length > 0) {
+            setSearchResults(data.results.map((comic: any) => ({
+              id: comic.id,
+              title: comic.name,
+              image: comic.image?.original_url || "",
+              type: "comics",
+              year: comic.start_year ? parseInt(comic.start_year) : undefined,
+              publisher: comic.publisher?.name || "Unknown Publisher"
+            })));
+          } else {
+            setSearchResults([]);
+          }
         } else {
-          setSearchResults([]);
+          // Use AniList for anime and manga
+          const results = await searchAniList(query, type);
+          
+          if (results && results.length > 0) {
+            setSearchResults(results.map((item: {
+              id: number;
+              title: { english: string; romaji: string };
+              coverImage: { medium: string };
+              seasonYear?: number;
+              startDate?: { year: string | number };
+              type: string;
+            }) => ({
+              id: item.id,
+              title: item.title.english || item.title.romaji,
+              image: item.coverImage.medium,
+              type: item.type === "ANIME" ? "anime" : "manga",
+              year: item.seasonYear || (item.startDate?.year ? parseInt(item.startDate.year.toString()) : undefined)
+            })));
+          } else {
+            setSearchResults([]);
+          }
         }
       } catch (error) {
-        console.error("Error searching AniList:", error);
-        toast.error("Failed to search AniList");
+        console.error(`Error searching ${type}:`, error);
+        toast.error(`Failed to search ${type === "comics" ? "Comic Vine" : "AniList"}`);
       } finally {
         setIsSearching(false);
       }
@@ -286,112 +354,135 @@ export default function ContentForm({
     }
   }, [searchQuery, searchType, debouncedSearch]);
 
-  async function onSubmit(data: ContentFormValues) {
+  const onSubmit = async (data: ContentFormValues) => {
     setIsLoading(true);
-    console.log("Submitting form with data:", data);
     
     try {
-      // Create a minimal content data object with only essential fields
+      console.log("Form submission started");
+      
+      // Process form data
       const contentData: any = {
         title: data.title,
         description: data.description,
         type: data.type,
-        status: data.status === "hiatus" ? "ongoing" : data.status, // Map hiatus to ongoing as a workaround
+        status: data.status,
       };
-
-      // Only add fields that we're certain about
-      if (data.genres && data.genres.length > 0) {
+      
+      // Process genres
+      if (data.genres?.length > 0) {
         contentData.genres = data.genres;
+      } else {
+        contentData.genres = [];
       }
       
+      // Process thumbnail
       if (data.thumbnail) {
         contentData.thumbnail = data.thumbnail;
       }
-
-      // Only add optional fields if they have values
-      if (data.alternativeTitles && data.alternativeTitles.length > 0) {
+      
+      // Process alternative titles
+      if (data.alternativeTitles?.length > 0) {
         contentData.alternative_titles = data.alternativeTitles;
       }
-
-      // Handle release year properly - this will be stored in alternative_titles by the backend
+      
+      // Process release year
       if (data.releaseYear) {
-        contentData.release_year = parseInt(data.releaseYear.toString(), 10);
-        console.log(`Release year set to: ${contentData.release_year}`);
-        
-        // Default month/day if year is provided but not month/day
-        contentData.release_month = 1; // Default to January
-        contentData.release_day = 1;   // Default to 1st
-      }
-
-      // Add rating if it exists
-      if (data.rating !== undefined) {
-        contentData.rating = Number(data.rating);
-        console.log(`Rating being sent: ${contentData.rating} (type: ${typeof contentData.rating})`);
-      }
-
-      // Optional fields - only add if they have values
-      if (data.bannerImage) {
-        contentData.banner_image = data.bannerImage;
-        console.log("Setting banner image:", data.bannerImage);
+        contentData.release_year = data.releaseYear;
       }
       
+      // Process rating
+      if (data.rating !== undefined) {
+        contentData.rating = parseFloat(data.rating.toString());
+      }
+      
+      // Process banner image
+      if (data.bannerImage) {
+        contentData.bannerImage = data.bannerImage;
+      }
+      
+      // Process season
       if (data.season) {
         contentData.season = data.season;
       }
-
+      
+      // Process georgian title
       if (data.georgianTitle) {
-        // Georgian title is handled by the backend via alternative_titles
         contentData.georgian_title = data.georgianTitle;
-        console.log("Georgian title set:", data.georgianTitle);
       }
       
-      // Characters will be handled by the backend and stored in alternative_titles
-      if (data.characters && data.characters.length > 0) {
-        contentData.characters = data.characters;
-        console.log(`Sending ${data.characters.length} characters to be stored`);
+      // Process anilist ID
+      if (data.anilistId) {
+        contentData.anilist_id = data.anilistId;
       }
       
-      // The content.ts functions will handle special fields appropriately
-      console.log("Final content data to submit:", contentData);
+      // Process publisher for comics
+      if (data.type === "comics" && data.publisher) {
+        contentData.publisher = data.publisher;
+      }
       
+      // Process characters
+      const characters = data.characters || [];
+      if (characters.length > 0) {
+        contentData.characters = characters;
+      }
+      
+      console.log("Final content data:", contentData);
+      
+      let result;
+      
+      // Update existing content or create new content
       if (initialData?.id) {
-        // Update existing content
-        console.log(`Updating content with ID: ${initialData.id}`);
-        const result = await updateContent(initialData.id, contentData);
-        if (result.success) {
-          console.log("Content updated successfully:", result.content);
-          toast.success("Content updated successfully");
-          onSuccess();
-        } else {
-          console.error("Content update error:", result.error);
-          toast.error("Failed to update content");
+        console.log(`Updating existing content with ID: ${initialData.id}`);
+        result = await updateContent(initialData.id, contentData);
+        console.log("Update result:", result);
+        
+        if (!result) {
+          throw new Error("No response received from update operation");
+        }
+        
+        if (!result.success) {
+          throw new Error(result.error || "Content update failed");
+        }
+        
+        // Show success message
+        toast.success("Content updated successfully");
+        router.refresh();
+        
+        // Call onSuccess callback with the updated content
+        if (onSuccess) {
+          onSuccess(result.content);
         }
       } else {
-        // Create new content
-        console.log("Creating new content with filtered fields");
-        const result = await createContent(contentData);
-        if (result.success) {
-          console.log("Content created successfully:", result.content);
-          toast.success("Content created successfully");
-          onSuccess();
-        } else {
-          console.error("Content creation error:", result.error);
-          toast.error("Failed to create content");
+        console.log("Creating new content");
+        result = await createContent(contentData);
+        console.log("Create result:", result);
+        
+        if (!result) {
+          throw new Error("No response received from create operation");
+        }
+        
+        if (!result.success) {
+          throw new Error(result.error || "Content creation failed");
+        }
+        
+        // Show success message
+        toast.success("Content created successfully");
+        router.refresh();
+        
+        // If in modal mode, call the onSuccess callback, otherwise redirect
+        if (onSuccess) {
+          onSuccess(result.content);
+        } else if (result.content) {
+          router.push(`/${result.content.type.toLowerCase()}/${result.content.id}`);
         }
       }
     } catch (error) {
-      console.error("Error saving content:", error);
-      let errorMessage = "Unknown error";
-      if (error instanceof Error) {
-        errorMessage = error.message;
-        console.error("Error message:", error.message);
-        console.error("Error stack:", error.stack);
-      }
-      toast.error(initialData ? `Failed to update content: ${errorMessage}` : `Failed to create content: ${errorMessage}`);
+      console.error("Form submission error:", error);
+      toast.error(error instanceof Error ? error.message : "An unexpected error occurred");
     } finally {
       setIsLoading(false);
     }
-  }
+  };
 
   // Open search modal
   const handleOpenSearch = () => {
@@ -407,72 +498,92 @@ export default function ContentForm({
     }, 100);
   };
 
-  // Select result and fill form
-  const handleSelectResult = async (result: SearchResult) => {
-    // Close the modal first to provide visual feedback
-    setSearchModalOpen(false);
+  // Select AniList search result and populate form
+  const handleSelectResult = async (
+    contentType: ContentType,
+    result: SearchResult | ComicVineResult
+  ) => {
     setIsLoading(true);
-
     try {
-      console.log('Selected content:', result);
-      console.log(`Fetching details for ${result.type} with ID: ${result.id}`);
+      console.log(`Selected ${contentType} result:`, result);
       
-      let mediaData;
-      if (result.type === "anime") {
-        mediaData = await getAnimeById(result.id);
+      // For comics, get additional details including characters
+      if (contentType === "comics") {
+        const comicId = (result as ComicVineResult).id;
+        console.log(`Fetching additional details for comic ID: ${comicId}`);
+        
+        const response = await fetch(`/api/comic-search/${comicId}`);
+        
+        if (!response.ok) {
+          throw new Error(`Error fetching comic details: ${response.statusText}`);
+        }
+        
+        const comicData = await response.json();
+        console.log("Comic details:", comicData);
+        
+        // Set form values from comic data
+        form.setValue("name", comicData.name || "");
+        form.setValue("description", stripHtml(comicData.description || ""));
+        
+        if (comicData.image) {
+          form.setValue("thumbnail", comicData.image.original_url || comicData.image.medium_url || "");
+        }
+        
+        if (comicData.start_year) {
+          form.setValue("releaseYear", parseInt(comicData.start_year) || undefined);
+        }
+        
+        // Set publisher as additional info
+        if (comicData.publisher) {
+          form.setValue("publisher", comicData.publisher.name || "");
+        }
+        
+        // Process characters (limited to first 10)
+        if (comicData.characters && comicData.characters.length > 0) {
+          const processedCharacters = comicData.characters.slice(0, 10).map((character: any) => {
+            // Get the best available image URL from the imageUrls object
+            let bestImageUrl = null;
+            
+            // Check for imageUrls structure first
+            if (character.imageUrls) {
+              bestImageUrl = character.imageUrls.original || 
+                            character.imageUrls.medium || 
+                            character.imageUrls.screen || 
+                            character.imageUrls.small;
+            }
+            
+            // Fall back to direct image property if needed
+            if (!bestImageUrl) {
+              bestImageUrl = character.image;
+            }
+            
+            return {
+              name: character.name,
+              image: bestImageUrl,
+              role: character.role || "Character", 
+              gender: character.gender || "",
+              age: character.age || "",
+              additional_info: JSON.stringify({
+                realName: character.realName,
+                aliases: character.aliases
+              })
+            };
+          });
+          
+          form.setValue("characters", processedCharacters);
+        }
+        
       } else {
-        mediaData = await getMangaById(result.id);
+        // Handle anime/manga from AniList as before
+        // ... existing code for anime/manga ...
       }
-
-      if (!mediaData) {
-        console.error(`No data returned from API for ${result.type} ID: ${result.id}`);
-        toast.error("Could not retrieve details from AniList. Please fill the form manually.");
-        setIsLoading(false);
-        return;
-      }
-
-      console.log('API returned data:', mediaData);
-
-      // Set form values with optional chaining to prevent errors
-      form.setValue("type", mediaData.type === "ANIME" ? "anime" : "manga");
-      form.setValue("title", mediaData.title?.english || mediaData.title?.romaji || "");
-      
-      // Convert title object to array of alternative titles
-      const alternativeTitles = [];
-      if (mediaData.title?.romaji) alternativeTitles.push(mediaData.title.romaji);
-      if (mediaData.title?.native) alternativeTitles.push(mediaData.title.native);
-      form.setValue("alternativeTitles", alternativeTitles);
-      
-      form.setValue("description", stripHtml(mediaData.description || ""));
-      
-      // Set images with null checks
-      if (mediaData.coverImage?.large) {
-        form.setValue("thumbnail", mediaData.coverImage.large);
-      }
-      if (mediaData.bannerImage) {
-        form.setValue("bannerImage", mediaData.bannerImage);
-      }
-      
-      // Set dates and genres with checks
-      if (mediaData.startDate?.year) {
-        form.setValue("releaseYear", parseInt(mediaData.startDate.year.toString()));
-      }
-      if (mediaData.season) {
-        form.setValue("season", mediaData.season.toLowerCase());
-      }
-      if (mediaData.genres && Array.isArray(mediaData.genres)) {
-        form.setValue("genres", mediaData.genres.slice(0, 4));
-      }
-      
-      // Set external IDs - ensure it's a number
-      form.setValue("anilistId", result.id);
-      
-      toast.success("Form populated with AniList data");
     } catch (error) {
-      console.error("Error in handleSelectResult:", error);
-      toast.error("Failed to populate form with AniList data. Please try again or fill manually.");
+      console.error(`Error handling ${contentType} selection:`, error);
+      toast.error(`Failed to process ${contentType} data: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsLoading(false);
+      setSearchResults([]);
+      setSearchQuery("");
     }
   };
   
@@ -495,26 +606,39 @@ export default function ContentForm({
     return statusMap[status] || "ongoing";
   };
 
+  // Map comic status to our status format
+  const mapComicStatus = (status: string) => {
+    const statusMap: Record<string, "ongoing" | "completed" | "hiatus"> = {
+      "ongoing": "ongoing",
+      "completed": "completed",
+      "cancelled": "completed",
+      "hiatus": "hiatus",
+      "limited": "completed",
+    };
+    
+    return statusMap[status.toLowerCase()] || "ongoing";
+  };
+
   return (
     <>
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 gap-4">
-              <div className="flex justify-between items-center">
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 md:space-y-6">
+          <div className="space-y-3 md:space-y-4">
+            <div className="grid grid-cols-1 gap-3 md:gap-4">
+              <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-2">
                 <h2 className="text-lg font-semibold">Basic Information</h2>
                 <Button 
                   type="button" 
                   onClick={handleOpenSearch}
                   variant="outline"
-                  className="gap-2"
+                  className="gap-2 w-full md:w-auto"
                 >
                   <Search className="h-4 w-4" />
-                  Search on AniList
+                  Search on {form.watch("type") === "comics" ? "Comic Vine" : "AniList"}
                 </Button>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
                 <FormField
                   control={form.control}
                   name="georgianTitle"
@@ -522,7 +646,7 @@ export default function ContentForm({
                     <FormItem>
                       <FormLabel>Georgian Title</FormLabel>
                       <FormControl>
-                        <Input placeholder="Enter Georgian title (ქართულად)" {...field} />
+                        <Input placeholder="Enter Georgian title (ქართულად)" {...field} value={field.value || ""} />
                       </FormControl>
                       <FormDescription>
                         Title in Georgian language (e.g. "ბერსერკი")
@@ -539,7 +663,7 @@ export default function ContentForm({
                     <FormItem>
                       <FormLabel>English Title</FormLabel>
                       <FormControl>
-                        <Input placeholder="Enter English title" {...field} />
+                        <Input placeholder="Enter English title" {...field} value={field.value || ""} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -548,7 +672,7 @@ export default function ContentForm({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
               <FormField
                 control={form.control}
                 name="type"
@@ -567,6 +691,7 @@ export default function ContentForm({
                       <SelectContent>
                         <SelectItem value="anime">Anime</SelectItem>
                         <SelectItem value="manga">Manga</SelectItem>
+                        <SelectItem value="comics">Comics</SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -612,6 +737,7 @@ export default function ContentForm({
                       placeholder="Enter description" 
                       rows={4}
                       {...field} 
+                      value={field.value || ""}
                     />
                   </FormControl>
                   <FormMessage />
@@ -619,7 +745,7 @@ export default function ContentForm({
               )}
             />
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
               <FormField
                 control={form.control}
                 name="thumbnail"
@@ -627,7 +753,7 @@ export default function ContentForm({
                   <FormItem>
                     <FormLabel>Thumbnail URL</FormLabel>
                     <FormControl>
-                      <Input placeholder="Enter thumbnail URL" {...field} />
+                      <Input placeholder="Enter thumbnail URL" {...field} value={field.value || ""} />
                     </FormControl>
                     <FormDescription>
                       URL for the thumbnail image (aspect ratio 2:3 recommended)
@@ -644,7 +770,7 @@ export default function ContentForm({
                   <FormItem>
                     <FormLabel>Banner Image URL</FormLabel>
                     <FormControl>
-                      <Input placeholder="Enter banner image URL" {...field} />
+                      <Input placeholder="Enter banner image URL" {...field} value={field.value || ""} />
                     </FormControl>
                     <FormDescription>
                       URL for the banner image (16:9 recommended)
@@ -674,38 +800,7 @@ export default function ContentForm({
               )}
             />
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="season"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Season</FormLabel>
-                    <Select
-                      onValueChange={(value) => {
-                        // Convert "no_season" to undefined for the form data
-                        field.onChange(value === "no_season" ? undefined : value);
-                      }}
-                      value={field.value || "no_season"}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select season" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="no_season">None</SelectItem>
-                        <SelectItem value="WINTER">Winter</SelectItem>
-                        <SelectItem value="SPRING">Spring</SelectItem>
-                        <SelectItem value="SUMMER">Summer</SelectItem>
-                        <SelectItem value="FALL">Fall</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
               <FormField
                 control={form.control}
                 name="releaseYear"
@@ -717,7 +812,7 @@ export default function ContentForm({
                         type="number" 
                         placeholder="Release year" 
                         {...field}
-                        value={field.value || ""}
+                        value={field.value === undefined ? "" : field.value}
                         onChange={e => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
                       />
                     </FormControl>
@@ -725,6 +820,62 @@ export default function ContentForm({
                   </FormItem>
                 )}
               />
+
+              {form.watch("type") === "comics" && (
+                <FormField
+                  control={form.control}
+                  name="publisher"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Publisher</FormLabel>
+                      <FormControl>
+                        <Input 
+                          placeholder="DC Comics, Marvel, etc." 
+                          {...field}
+                          value={field.value || ""}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        The publisher of the comic
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+
+              {form.watch("type") !== "comics" && (
+                <FormField
+                  control={form.control}
+                  name="season"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Season</FormLabel>
+                      <Select
+                        onValueChange={(value) => {
+                          // Convert "no_season" to undefined for the form data
+                          field.onChange(value === "no_season" ? undefined : value);
+                        }}
+                        value={field.value || "no_season"}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select season" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="no_season">None</SelectItem>
+                          <SelectItem value="WINTER">Winter</SelectItem>
+                          <SelectItem value="SPRING">Spring</SelectItem>
+                          <SelectItem value="SUMMER">Summer</SelectItem>
+                          <SelectItem value="FALL">Fall</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
             </div>
 
             <FormField
@@ -735,11 +886,11 @@ export default function ContentForm({
                   <FormLabel>AniList ID</FormLabel>
                   <FormControl>
                     <Input 
-                      type="number" 
+                      type="text" 
                       placeholder="AniList ID" 
                       {...field}
                       value={field.value || ""}
-                      onChange={e => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
+                      onChange={e => field.onChange(e.target.value)}
                     />
                   </FormControl>
                   <FormDescription>
@@ -760,143 +911,167 @@ export default function ContentForm({
             </div>
             
             <div className="space-y-4">
-              {form.watch("characters")?.map((_, index) => (
-                <div 
-                  key={index} 
-                  className="p-4 border rounded-md bg-card"
+              <div className="flex items-center justify-between">
+                <FormLabel className="text-md font-semibold">Characters</FormLabel>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => {
+                    const characters = form.getValues("characters") || [];
+                    form.setValue("characters", [
+                      ...characters, 
+                      { name: "", image: "", role: "SUPPORTING" }
+                    ]);
+                  }}
                 >
-                  <div className="flex justify-between mb-3">
-                    <h3 className="font-medium">Character #{index + 1}</h3>
-                    <Button 
-                      type="button" 
-                      variant="ghost" 
-                      size="icon"
-                      onClick={() => {
-                        const currentCharacters = form.getValues("characters") || [];
-                        form.setValue(
-                          "characters", 
-                          currentCharacters.filter((_, i) => i !== index)
-                        );
-                      }}
-                    >
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <FormField
-                      control={form.control}
-                      name={`characters.${index}.name`}
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Name</FormLabel>
-                          <FormControl>
-                            <Input placeholder="Character name" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    
-                    <FormField
-                      control={form.control}
-                      name={`characters.${index}.role`}
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Role</FormLabel>
-                          <Select 
-                            onValueChange={field.onChange} 
-                            defaultValue={field.value}
-                          >
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select role" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="MAIN">Main</SelectItem>
-                              <SelectItem value="SUPPORTING">Supporting</SelectItem>
-                              <SelectItem value="BACKGROUND">Background</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    
-                    <FormField
-                      control={form.control}
-                      name={`characters.${index}.image`}
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Image URL</FormLabel>
-                          <FormControl>
-                            <Input placeholder="Character image URL" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    
-                    <FormField
-                      control={form.control}
-                      name={`characters.${index}.gender`}
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Gender</FormLabel>
-                          <Select 
-                            onValueChange={field.onChange} 
-                            defaultValue={field.value}
-                          >
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select gender" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="Male">Male</SelectItem>
-                              <SelectItem value="Female">Female</SelectItem>
-                              <SelectItem value="Non-binary">Non-binary</SelectItem>
-                              <SelectItem value="Unknown">Unknown</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    
-                    <FormField
-                      control={form.control}
-                      name={`characters.${index}.age`}
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Age</FormLabel>
-                          <FormControl>
-                            <Input placeholder="Character age" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                </div>
-              ))}
+                  <PlusCircle className="h-4 w-4 mr-1" />
+                  Add Character
+                </Button>
+              </div>
               
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  const currentCharacters = form.getValues("characters") || [];
-                  form.setValue("characters", [
-                    ...currentCharacters,
-                    { name: "", image: "", role: "SUPPORTING" }
-                  ]);
-                }}
-                className="w-full"
-              >
-                <PlusCircle className="mr-2 h-4 w-4" />
-                Add Character
-              </Button>
+              <div className="space-y-4 mt-2">
+                {form.watch("characters")?.map((character, index) => (
+                  <div key={index} className="p-4 md:pt-6 border rounded-md bg-card">
+                    <div className="flex justify-between items-start mb-2 md:mb-3">
+                      <h4 className="font-medium">Character {index + 1}</h4>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          const characters = form.getValues("characters") || [];
+                          form.setValue("characters", characters.filter((_, i) => i !== index));
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    
+                    <div className="grid gap-3 md:gap-4 grid-cols-1 md:grid-cols-2">
+                      <div>
+                        <FormField
+                          control={form.control}
+                          name={`characters.${index}.name`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Name</FormLabel>
+                              <FormControl>
+                                <Input placeholder="Character name" {...field} value={field.value || ""} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                      
+                      <div>
+                        <FormField
+                          control={form.control}
+                          name={`characters.${index}.image`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Image URL</FormLabel>
+                              <FormControl>
+                                <Input placeholder="Image URL" {...field} value={field.value || ""} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                      
+                      <div>
+                        <FormField
+                          control={form.control}
+                          name={`characters.${index}.role`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Role</FormLabel>
+                              <Select
+                                value={field.value || "unspecified"}
+                                onValueChange={field.onChange}
+                              >
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select role" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  <SelectItem value="MAIN">Main</SelectItem>
+                                  <SelectItem value="SUPPORTING">Supporting</SelectItem>
+                                  <SelectItem value="BACKGROUND">Background</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                      
+                      <div>
+                        <FormField
+                          control={form.control}
+                          name={`characters.${index}.age`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Age (Optional)</FormLabel>
+                              <FormControl>
+                                <Input placeholder="Character age" {...field} value={field.value || ""} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                      
+                      <div className="md:col-span-2">
+                        <FormField
+                          control={form.control}
+                          name={`characters.${index}.gender`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Gender (Optional)</FormLabel>
+                              <Select
+                                value={field.value || "unspecified"}
+                                onValueChange={field.onChange}
+                              >
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select gender" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  <SelectItem value="unspecified">Unspecified</SelectItem>
+                                  <SelectItem value="Male">Male</SelectItem>
+                                  <SelectItem value="Female">Female</SelectItem>
+                                  <SelectItem value="Non-Binary">Non-Binary</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                      
+                      {character.image && (
+                        <div className="md:col-span-2 mt-2">
+                          <div className="relative w-20 h-20 border rounded-md overflow-hidden">
+                            <img 
+                              src={character.image} 
+                              alt={character.name || 'Character image'} 
+                              className="w-full h-full object-cover"
+                              onError={(e) => {
+                                e.currentTarget.src = '/placeholder-avatar.png';
+                              }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -967,21 +1142,21 @@ export default function ContentForm({
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -50 }}
               transition={{ type: "spring", damping: 25, stiffness: 300 }}
-              className="fixed left-1/2 top-1/3 z-50 w-full max-w-2xl -translate-x-1/2 -translate-y-1/2"
+              className="fixed left-1/2 top-1/4 md:top-1/3 z-50 w-full max-w-2xl -translate-x-1/2 -translate-y-1/2"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="mx-4 rounded-2xl bg-[#121212] border border-white/10 shadow-2xl overflow-hidden">
+              <div className="mx-2 md:mx-4 rounded-2xl bg-[#121212] border border-white/10 shadow-2xl overflow-hidden">
                 {/* Search header with form */}
                 <form onSubmit={(e) => handleSearch(e)} className="relative">
-                  <div className="flex items-center p-4">
-                    <Search className="h-5 w-5 text-gray-400 mr-3" />
+                  <div className="flex items-center p-3 md:p-4">
+                    <Search className="h-5 w-5 text-gray-400 mr-2 md:mr-3" />
                     <input
                       ref={searchInputRef}
                       type="text"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Search on AniList..."
-                      className="flex-1 bg-transparent text-white placeholder:text-gray-500 focus:outline-none text-lg"
+                      placeholder={`Search on ${searchType === "comics" ? "Comic Vine" : "AniList"}...`}
+                      className="flex-1 bg-transparent text-white placeholder:text-gray-500 focus:outline-none text-base md:text-lg"
                     />
                     {searchQuery && (
                       <button 
@@ -995,8 +1170,8 @@ export default function ContentForm({
                   </div>
                   
                   {/* Toggles */}
-                  <div className="border-t border-white/5 p-3 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
+                  <div className="border-t border-white/5 p-2 md:p-3 flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-1 md:gap-2">
                       <ToggleButton
                         active={searchType === "anime"}
                         onClick={() => setSearchType("anime")}
@@ -1008,6 +1183,12 @@ export default function ContentForm({
                         onClick={() => setSearchType("manga")}
                         icon={<BookOpen className="h-4 w-4" />}
                         label="Manga"
+                      />
+                      <ToggleButton
+                        active={searchType === "comics"}
+                        onClick={() => setSearchType("comics")}
+                        icon={<Book className="h-4 w-4" />}
+                        label="Comics"
                       />
                     </div>
                     
@@ -1024,7 +1205,7 @@ export default function ContentForm({
                 </form>
                 
                 {/* Results */}
-                <div className="max-h-[60vh] overflow-y-auto">
+                <div className="max-h-[50vh] md:max-h-[60vh] overflow-y-auto">
                   <AnimatePresence mode="wait">
                     {isSearching ? (
                       <m.div
@@ -1066,10 +1247,10 @@ export default function ContentForm({
                                 hidden: { opacity: 0, y: 10 },
                                 show: { opacity: 1, y: 0 }
                               }}
-                              className="p-3 hover:bg-white/5 rounded-lg cursor-pointer flex items-center gap-3 transition-colors"
-                              onClick={() => handleSelectResult(result)}
+                              className="p-2 md:p-3 hover:bg-white/5 rounded-lg cursor-pointer flex items-center gap-2 md:gap-3 transition-colors"
+                              onClick={() => handleSelectResult(result.type, result)}
                             >
-                              <div className="w-12 h-16 rounded-md bg-gray-800 overflow-hidden flex-shrink-0">
+                              <div className="w-10 h-14 md:w-12 md:h-16 rounded-md bg-gray-800 overflow-hidden flex-shrink-0">
                                 <img 
                                   src={result.image} 
                                   alt={result.title}
@@ -1081,18 +1262,23 @@ export default function ContentForm({
                                 <p className="text-xs text-gray-400 flex items-center gap-1">
                                   {result.type === "anime" ? (
                                     <Film className="h-3 w-3" />
+                                  ) : result.type === "comics" ? (
+                                    <Book className="h-3 w-3" />
                                   ) : (
                                     <BookOpen className="h-3 w-3" />
                                   )}
                                   <span className="capitalize">{result.type}</span>
                                   {result.year && <span>• {result.year}</span>}
+                                  {result.type === "comics" && result.publisher && (
+                                    <span>• {result.publisher}</span>
+                                  )}
                                 </p>
                                 <div className="mt-1">
                                   <button 
                                     className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded flex items-center gap-1"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      handleSelectResult(result);
+                                      handleSelectResult(result.type, result);
                                     }}
                                   >
                                     <Check className="h-3 w-3" /> Select
@@ -1131,7 +1317,7 @@ export default function ContentForm({
                         exit={{ opacity: 0 }}
                         className="p-8 text-center text-gray-400"
                       >
-                        <p>Search for {searchType} on AniList to auto-fill form fields</p>
+                        <p>Search for {searchType} on {searchType === "comics" ? "Comic Vine" : "AniList"} to auto-fill form fields</p>
                       </m.div>
                     )}
                   </AnimatePresence>

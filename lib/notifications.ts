@@ -26,6 +26,8 @@ function constructNotificationMessage(type: string, data: NotificationData): str
   switch (type) {
     case 'comment_like':
       return `${sender} liked your comment${data.comment_snippet ? ': "' + data.comment_snippet + '"' : '.'}`;
+    case 'comment_reply':
+      return `${sender} replied to your comment${data.comment_snippet ? ': "' + data.comment_snippet + '"' : '.'}`;
     case 'new_episode':
       return `Episode ${data.episode_number || 'New'} of ${data.content_title || 'a show'} you subscribed to is out!`;
     case 'new_chapter':

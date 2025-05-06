@@ -13,7 +13,7 @@ export interface UserProfile {
   birth_date: string | null; // Store as ISO string or yyyy-mm-dd
   created_at: string;
   updated_at?: string;
-  has_completed_onboarding?: boolean;
+  has_completed_onboarding: boolean;
   is_public?: boolean;
 }
 

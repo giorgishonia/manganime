@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, useRef } from "react"
-import { Star, ChevronRight, BookOpen, Plus, Clock, Info, Calendar } from "lucide-react"
+import { Star, ChevronRight, BookOpen, Plus, Clock, Info, Calendar, Heart, CalendarDays } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { motion as m, AnimatePresence } from "framer-motion"
 import { ImageSkeleton } from "@/components/image-skeleton"
@@ -106,6 +106,7 @@ interface ContentItem {
   chapters?: string;
   genres?: string[];
   type: 'manga';
+  release_year?: number;
 }
 
 interface MangaViewProps {
@@ -117,11 +118,59 @@ interface MangaViewProps {
   mangaData?: ContentItem[]
 }
 
+// Helper function to check if a manga is favorited
+function isMangaFavorited(mangaId: string): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const favorites = JSON.parse(localStorage.getItem('favorites') || '{}');
+    return !!favorites[`manga-${mangaId}`];
+  } catch (error) {
+    console.error("Error checking favorite status:", error);
+    return false;
+  }
+}
+
+// Helper function to toggle favorite status
+function toggleMangaFavorite(manga: ContentItem): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const favorites = JSON.parse(localStorage.getItem('favorites') || '{}');
+    const mangaKey = `manga-${manga.id}`;
+    
+    if (favorites[mangaKey]) {
+      // Remove from favorites
+      delete favorites[mangaKey];
+      localStorage.setItem('favorites', JSON.stringify(favorites));
+      return false;
+    } else {
+      // Add to favorites
+      favorites[mangaKey] = {
+        id: manga.id,
+        type: 'manga',
+        title: manga.title,
+        image: manga.thumbnail,
+        addedAt: new Date().toISOString()
+      };
+      localStorage.setItem('favorites', JSON.stringify(favorites));
+      return true;
+    }
+  } catch (error) {
+    console.error("Error toggling favorite status:", error);
+    return false;
+  }
+}
+
 // Manga Card Component 
 function MangaCard({ manga, index }: { manga: ContentItem; index: number }) {
   const router = useRouter();
   const hasBeenRead = hasMangaBeenRead(manga.id);
   const latestChapterRead = getLatestChapterRead(manga.id);
+  const [isFavorite, setIsFavorite] = useState(false);
+  
+  // Check favorite status on mount
+  useEffect(() => {
+    setIsFavorite(isMangaFavorited(manga.id));
+  }, [manga.id]);
   
   // Extract total chapters from manga data
   const totalChapters = manga.chapters ? 
@@ -130,6 +179,13 @@ function MangaCard({ manga, index }: { manga: ContentItem; index: number }) {
   // Calculate overall manga progress
   const progressPercentage = hasBeenRead ? 
     calculateMangaProgressByChapter(latestChapterRead, totalChapters) : 0;
+    
+  // Handle favorite click
+  const handleFavoriteClick = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent card click
+    const newStatus = toggleMangaFavorite(manga);
+    setIsFavorite(newStatus);
+  };
   
   return (
     <m.div
@@ -160,6 +216,25 @@ function MangaCard({ manga, index }: { manga: ContentItem; index: number }) {
             <BookOpen className="w-10 h-10 text-white/80 drop-shadow-lg" />
           </div>
           
+          {/* Favorite button */}
+          <button 
+            onClick={handleFavoriteClick}
+            className={`absolute top-2 left-14 z-10 bg-black/60 backdrop-blur-sm p-1.5 rounded-full 
+              transition-all duration-300 border 
+              ${isFavorite 
+                ? 'opacity-100 border-red-500/50 bg-red-500/20' 
+                : 'opacity-0 group-hover:opacity-100 border-white/10 hover:border-red-500/50'}`}
+          >
+            <m.div
+              initial={{ scale: 1 }}
+              animate={{ scale: isFavorite ? 1.2 : 1 }}
+              whileTap={{ scale: 0.8 }}
+              transition={{ type: "spring", stiffness: 500, damping: 15 }}
+            >
+              <Heart className={`w-4 h-4 ${isFavorite ? 'text-red-500 fill-red-500' : 'text-white/90'}`} />
+            </m.div>
+          </button>
+          
           {/* Rating Badge */}
           {manga.rating && manga.rating > 0 ? (
             <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-sm px-2 py-0.5 rounded-md flex items-center gap-1 text-xs text-yellow-400 border border-white/10">
@@ -169,11 +244,9 @@ function MangaCard({ manga, index }: { manga: ContentItem; index: number }) {
           ) : null}
           
           {/* Chapter Count Badge */}
-          {manga.chapters && manga.chapters !== "?" && (
-            <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-sm px-2 py-0.5 rounded-md text-xs text-white/90 border border-white/10">
-              {manga.chapters}
-            </div>
-          )}
+          <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-sm px-2 py-0.5 rounded-md text-xs text-white/90 border border-white/10">
+            {manga.chapters || "0 თავი"}
+          </div>
           
           {/* Reading progress indicator if manga has been read */}
           {hasBeenRead && (
@@ -212,14 +285,24 @@ function MangaCard({ manga, index }: { manga: ContentItem; index: number }) {
           )}
           
           {/* Status info */}
-          {manga.status && (
-            <div className="flex items-center gap-2 mt-1 text-xs text-gray-400">
+          <div className="flex items-center gap-2 mt-1 text-xs text-gray-400">
+            {manga.status && (
               <div className="flex items-center gap-1">
                 <Clock className="w-3 h-3" />
                 <span>{manga.status}</span>
               </div>
+            )}
+            <div className="flex items-center gap-1">
+              <BookOpen className="w-3 h-3" />
+              <span>{manga.chapters || "0 თავი"}</span>
             </div>
-          )}
+            {manga.release_year && (
+              <div className="flex items-center gap-1">
+                <CalendarDays className="w-3 h-3" />
+                <span>{manga.release_year}</span>
+              </div>
+            )}
+          </div>
         </div>
       </m.div>
     </m.div>
@@ -292,9 +375,10 @@ export function MangaView({
             banner_image: content.banner_image,
             rating: content.rating || 0,
             status: content.status,
-            chapters: content.chapters_count ? `${content.chapters_count} თავი` : "?",
+            chapters: content.chapters_count ? `${content.chapters_count} თავი` : "0 თავი",
             genres: content.genres,
-            type: 'manga'
+            type: 'manga',
+            release_year: content.release_year
           }));
           
           setLocalMangaData(transformedData);

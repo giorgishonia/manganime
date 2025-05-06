@@ -75,7 +75,7 @@ export type Content = {
   description: string
   thumbnail: string
   banner_image: string
-  type: 'anime' | 'manga'
+  type: 'anime' | 'manga' | 'comics'
   status: 'ongoing' | 'completed' | 'upcoming'
   release_year: number
   genres: string[]

@@ -3,7 +3,7 @@ export interface Content {
   title: string;
   alternative_titles?: string[];
   description: string;
-  type: 'anime' | 'manga';
+  type: 'anime' | 'manga' | 'comics';
   status: 'ongoing' | 'completed' | 'hiatus';
   thumbnail: string;
   banner_image?: string;

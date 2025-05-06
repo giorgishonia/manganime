@@ -2,8 +2,12 @@
 import { supabase } from './supabase';
 import { toast } from '@/components/ui/use-toast';
 
-export type MediaStatus = 'reading' | 'completed' | 'on_hold' | 'dropped' | 'plan_to_read';
-export type MediaType = 'manga' | 'anime';
+// Define the type for media status
+export type MediaStatus = 'reading' | 'completed' | 'on_hold' | 'dropped' | 'plan_to_read' |
+                         'watching' | 'plan_to_watch' | null;
+
+// Define the type for media type - ADD 'comics'
+export type MediaType = 'anime' | 'manga' | 'comics';
 
 export interface LibraryItem {
   id: string;
@@ -112,11 +116,11 @@ function getLocalLibrary(): LibraryItem[] {
 // Helper function to map status from server format to client format
 function mapStatusFromServer(serverStatus: string): MediaStatus {
   const statusMap: Record<string, MediaStatus> = {
-    'watching': 'reading',
+    'watching': 'watching',
     'completed': 'completed',
     'on_hold': 'on_hold',
     'dropped': 'dropped',
-    'plan_to_watch': 'plan_to_read',
+    'plan_to_watch': 'plan_to_watch',
     'reading': 'reading',
     'plan_to_read': 'plan_to_read'
   };

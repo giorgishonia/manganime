@@ -20,7 +20,8 @@ import {
   Bell,
   X,
   Loader2,
-  RefreshCw
+  RefreshCw,
+  Heart
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { motion as m, AnimatePresence } from "framer-motion"
@@ -425,12 +426,25 @@ export function AppSidebar() {
             <SidebarItem
               icon={<BookOpen className="stroke-[1.5px]" />}
               label="კითხვა"
-              href="/read"
-              isActive={pathname === "/read"}
+              href="/manga"
+              isActive={pathname === "/manga"}
+            />
+            <SidebarItem
+              icon={<Book className="stroke-[1.5px]" />}
+              label="კომიქსები"
+              href="/comics"
+              isActive={pathname === "/comics"}
+            />
+            
+            <SidebarItem
+              icon={<Heart className="stroke-[1.5px]" />}
+              label="რჩეულები"
+              href="/favorites"
+              isActive={pathname === "/favorites"}
             />
           </div>
           
-          <div className="space-y-2 px-2 mb-6">
+          <div className="space-y-2 px-2">
             <SidebarItem
               icon={<History className="stroke-[1.5px]" />}
               label="ისტორია"
@@ -458,7 +472,7 @@ export function AppSidebar() {
             </div>
           </div>
           
-          <div className="space-y-2 px-2 mb-6">
+          <div className="space-y-2 px-2">
             <SidebarItem
               icon={<Lightbulb className="stroke-[1.5px]" />}
               label="შემოთავაზებები"
@@ -749,6 +763,34 @@ function MobileSidebarContent({
               <Play className={cn("h-5 w-5 mr-3 stroke-[1.5px]", pathname === "/watch" && "text-[hsl(var(--primary))]")} />
               <span>ყურება</span>
             </Link>
+            <Link 
+              href="/manga" 
+              className={cn(
+                "flex items-center px-3 py-3 rounded-xl transition-colors",
+                pathname === "/manga" 
+                  ? "bg-white/10 text-white relative" 
+                  : "text-white/70 hover:text-white hover:bg-white/5"
+              )}
+              onClick={onClose}
+            >
+              {pathname === "/manga" && <div className="absolute left-0 top-0 bottom-0 w-1 bg-[hsl(var(--primary))] rounded-r-full" />}
+              <BookOpen className={cn("h-5 w-5 mr-3 stroke-[1.5px]", pathname === "/manga" && "text-[hsl(var(--primary))]")} />
+              <span>კითხვა</span>
+            </Link>
+            <Link 
+              href="/comics" 
+              className={cn(
+                "flex items-center px-3 py-3 rounded-xl transition-colors",
+                pathname === "/comics" 
+                  ? "bg-white/10 text-white relative" 
+                  : "text-white/70 hover:text-white hover:bg-white/5"
+              )}
+              onClick={onClose}
+            >
+              {pathname === "/comics" && <div className="absolute left-0 top-0 bottom-0 w-1 bg-[hsl(var(--primary))] rounded-r-full" />}
+              <Book className={cn("h-5 w-5 mr-3 stroke-[1.5px]", pathname === "/comics" && "text-[hsl(var(--primary))]")} />
+              <span>კომიქსები</span>
+            </Link>
           </div>
         </div>
         
@@ -768,6 +810,21 @@ function MobileSidebarContent({
               {pathname === "/history" && <div className="absolute left-0 top-0 bottom-0 w-1 bg-[hsl(var(--primary))] rounded-r-full" />}
               <History className={cn("h-5 w-5 mr-3 stroke-[1.5px]", pathname === "/history" && "text-[hsl(var(--primary))]")} />
               <span>ისტორია</span>
+            </Link>
+            
+            <Link 
+              href="/favorites" 
+              className={cn(
+                "flex items-center px-3 py-3 rounded-xl transition-colors",
+                pathname === "/favorites" 
+                  ? "bg-white/10 text-white relative" 
+                  : "text-white/70 hover:text-white hover:bg-white/5"
+              )}
+              onClick={onClose}
+            >
+              {pathname === "/favorites" && <div className="absolute left-0 top-0 bottom-0 w-1 bg-[hsl(var(--primary))] rounded-r-full" />}
+              <Heart className={cn("h-5 w-5 mr-3 stroke-[1.5px]", pathname === "/favorites" && "text-red-500")} />
+              <span>რჩეულები</span>
             </Link>
           </div>
         </div>

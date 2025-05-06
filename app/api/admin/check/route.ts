@@ -14,7 +14,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ isAdmin: true }, { status: 200 });
     }
     
-    const supabase = createRouteHandlerClient({ cookies });
+    // Explicitly get the cookie store
+    const cookieStore = cookies(); 
+    const supabase = createRouteHandlerClient({ cookies: () => cookieStore }); // Pass the store
 
     // Get user session
     const { data: { session } } = await supabase.auth.getSession();

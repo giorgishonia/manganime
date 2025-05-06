@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, useRef } from "react"
-import { Star, ChevronRight, Play, Plus, Clock, Info, Calendar } from "lucide-react"
+import { Star, ChevronRight, Play, Plus, Clock, Info, Calendar, Heart, CalendarDays } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { motion as m, AnimatePresence } from "framer-motion"
 import { ImageSkeleton } from "@/components/image-skeleton"
@@ -44,7 +44,7 @@ function setupDragScroll(element: HTMLDivElement | null) {
   };
   
   element.style.cursor = 'grab';
-
+  
   element.addEventListener("mousedown", mouseDown);
   element.addEventListener("mouseleave", mouseLeave);
   element.addEventListener("mouseup", mouseUp);
@@ -104,7 +104,7 @@ const cardHoverVariants = {
     scale: 1.03,
     y: -6,
     boxShadow: "0px 15px 25px rgba(99, 102, 241, 0.2), 0px 5px 10px rgba(0,0,0, 0.1)",
-    transition: {
+    transition: { 
       duration: 0.25,
       ease: [0.4, 0, 0.2, 1]
     }
@@ -123,6 +123,7 @@ interface ContentItem {
   episodes?: string;
   genres?: string[];
   type: 'anime';
+  release_year?: number;
 }
 
 interface AnimeViewProps {
@@ -134,11 +135,59 @@ interface AnimeViewProps {
   animeData?: ContentItem[]
 }
 
+// Helper function to check if an anime is favorited
+function isAnimeFavorited(animeId: string): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const favorites = JSON.parse(localStorage.getItem('favorites') || '{}');
+    return !!favorites[`anime-${animeId}`];
+  } catch (error) {
+    console.error("Error checking favorite status:", error);
+    return false;
+  }
+}
+
+// Helper function to toggle favorite status
+function toggleAnimeFavorite(anime: ContentItem): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const favorites = JSON.parse(localStorage.getItem('favorites') || '{}');
+    const animeKey = `anime-${anime.id}`;
+    
+    if (favorites[animeKey]) {
+      // Remove from favorites
+      delete favorites[animeKey];
+      localStorage.setItem('favorites', JSON.stringify(favorites));
+      return false;
+    } else {
+      // Add to favorites
+      favorites[animeKey] = {
+        id: anime.id,
+        type: 'anime',
+        title: anime.title,
+        image: anime.thumbnail,
+        addedAt: new Date().toISOString()
+      };
+      localStorage.setItem('favorites', JSON.stringify(favorites));
+      return true;
+    }
+  } catch (error) {
+    console.error("Error toggling favorite status:", error);
+    return false;
+  }
+}
+
 // Anime Card Component
 function AnimeCard({ anime, index }: { anime: ContentItem; index: number }) {
   const router = useRouter();
   const hasBeenWatched = hasAnimeBeenWatched(anime.id);
   const latestEpisodeWatched = getLatestEpisodeWatched(anime.id);
+  const [isFavorite, setIsFavorite] = useState(false);
+  
+  // Check favorite status on mount
+  useEffect(() => {
+    setIsFavorite(isAnimeFavorited(anime.id));
+  }, [anime.id]);
   
   // Extract total episodes from anime data
   const totalEpisodes = anime.episodes ? 
@@ -147,6 +196,13 @@ function AnimeCard({ anime, index }: { anime: ContentItem; index: number }) {
   // Calculate overall anime progress
   const progressPercentage = hasBeenWatched ? 
     calculateAnimeProgressByEpisode(latestEpisodeWatched, totalEpisodes) : 0;
+  
+  // Handle favorite click
+  const handleFavoriteClick = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent card click
+    const newStatus = toggleAnimeFavorite(anime);
+    setIsFavorite(newStatus);
+  };
   
   return (
     <m.div
@@ -177,6 +233,25 @@ function AnimeCard({ anime, index }: { anime: ContentItem; index: number }) {
             <Play className="w-10 h-10 text-white/80 drop-shadow-lg" />
           </div>
           
+          {/* Favorite button */}
+          <button 
+            onClick={handleFavoriteClick}
+            className={`absolute top-2 left-14 z-10 bg-black/60 backdrop-blur-sm p-1.5 rounded-full 
+              transition-all duration-300 border 
+              ${isFavorite 
+                ? 'opacity-100 border-red-500/50 bg-red-500/20' 
+                : 'opacity-0 group-hover:opacity-100 border-white/10 hover:border-red-500/50'}`}
+          >
+            <m.div
+              initial={{ scale: 1 }}
+              animate={{ scale: isFavorite ? 1.2 : 1 }}
+              whileTap={{ scale: 0.8 }}
+              transition={{ type: "spring", stiffness: 500, damping: 15 }}
+            >
+              <Heart className={`w-4 h-4 ${isFavorite ? 'text-red-500 fill-red-500' : 'text-white/90'}`} />
+            </m.div>
+          </button>
+          
           {/* Rating Badge */}
           {anime.rating && anime.rating > 0 ? (
             <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-sm px-2 py-0.5 rounded-md flex items-center gap-1 text-xs text-yellow-400 border border-white/10">
@@ -186,11 +261,9 @@ function AnimeCard({ anime, index }: { anime: ContentItem; index: number }) {
           ) : null}
           
           {/* Episode Count Badge */}
-          {anime.episodes && anime.episodes !== "?" && (
-            <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-sm px-2 py-0.5 rounded-md text-xs text-white/90 border border-white/10">
-              {anime.episodes}
-            </div>
-          )}
+          <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-sm px-2 py-0.5 rounded-md text-xs text-white/90 border border-white/10">
+            {anime.episodes || "0 ეპიზოდი"}
+          </div>
           
           {/* Watching progress indicator if anime has been watched */}
           {hasBeenWatched && (
@@ -229,14 +302,24 @@ function AnimeCard({ anime, index }: { anime: ContentItem; index: number }) {
           )}
           
           {/* Status info */}
-          {anime.status && (
-            <div className="flex items-center gap-2 mt-1 text-xs text-gray-400">
+          <div className="flex items-center gap-2 mt-1 text-xs text-gray-400">
+            {anime.status && (
               <div className="flex items-center gap-1">
                 <Clock className="w-3 h-3" />
                 <span>{anime.status}</span>
               </div>
+            )}
+            <div className="flex items-center gap-1">
+              <Play className="w-3 h-3" />
+              <span>{anime.episodes || "0 ეპიზოდი"}</span>
             </div>
-          )}
+            {anime.release_year && (
+              <div className="flex items-center gap-1">
+                <CalendarDays className="w-3 h-3" />
+                <span>{anime.release_year}</span>
+              </div>
+            )}
+          </div>
         </div>
       </m.div>
     </m.div>
@@ -317,9 +400,10 @@ export function AnimeView({
             banner_image: content.banner_image,
             rating: content.rating || 0,
             status: content.status,
-            episodes: content.episodes_count ? `${content.episodes_count} ეპიზოდი` : "?",
+            episodes: content.episodes_count ? `${content.episodes_count} ეპიზოდი` : "0 ეპიზოდი",
             genres: content.genres,
-            type: 'anime'
+            type: 'anime',
+            release_year: content.release_year
           }));
           
           setLocalAnimeData(transformedData);
@@ -418,7 +502,7 @@ export function AnimeView({
         </div>
         
         {filteredAnime.length > 0 ? (
-          <m.div
+              <m.div
             variants={containerVariants}
             initial="hidden"
             animate="visible"
@@ -426,7 +510,7 @@ export function AnimeView({
           >
             {filteredAnime.map((anime, index) => (
               <AnimeCard 
-                key={anime.id} 
+                key={anime.id}
                 anime={anime} 
                 index={index}
               />

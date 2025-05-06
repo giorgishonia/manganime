@@ -7,7 +7,7 @@ import { z } from "zod";
 const contentSchema = z.object({
   title: z.string().min(1, "Title is required"),
   alternativeTitles: z.array(z.string()).optional(),
-  type: z.enum(["anime", "manga"], "Type must be either 'anime' or 'manga'"),
+  type: z.enum(["anime", "manga", "comics"], "Type must be either 'anime', 'manga', or 'comics'"),
   genres: z.array(z.string()).optional(),
   status: z.enum(["airing", "completed", "upcoming", "canceled"]),
   description: z.string().optional(),

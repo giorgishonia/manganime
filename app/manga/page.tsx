@@ -82,11 +82,59 @@ const filterVariants = {
   animate: { opacity: 1, y: 0, transition: { duration: 0.3, ease: [0.22, 1, 0.36, 1] } }
 };
 
+// Helper function to check if content is favorited
+function isMangaFavorited(id: string): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const favorites = JSON.parse(localStorage.getItem('favorites') || '{}');
+    return !!favorites[`manga-${id}`];
+  } catch (error) {
+    console.error("Error checking favorite status:", error);
+    return false;
+  }
+}
+
+// Helper function to toggle favorite status
+function toggleMangaFavorite(manga: MangaData): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const favorites = JSON.parse(localStorage.getItem('favorites') || '{}');
+    const mangaKey = `manga-${manga.id}`;
+    
+    if (favorites[mangaKey]) {
+      // Remove from favorites
+      delete favorites[mangaKey];
+      localStorage.setItem('favorites', JSON.stringify(favorites));
+      return false;
+    } else {
+      // Add to favorites
+      favorites[mangaKey] = {
+        id: manga.id,
+        type: 'manga',
+        title: manga.title,
+        image: manga.thumbnail,
+        addedAt: new Date().toISOString()
+      };
+      localStorage.setItem('favorites', JSON.stringify(favorites));
+      return true;
+    }
+  } catch (error) {
+    console.error("Error toggling favorite status:", error);
+    return false;
+  }
+}
+
 // Manga grid card component
 const MangaCard = ({ manga, index }: { manga: MangaData, index: number }) => {
   const router = useRouter()
   const hasBeenRead = hasMangaBeenRead(manga.id)
   const progress = getMangaProgress(manga.id)
+  const [isFavorite, setIsFavorite] = useState(false)
+  
+  // Check favorite status on mount
+  useEffect(() => {
+    setIsFavorite(isMangaFavorited(manga.id));
+  }, [manga.id]);
   
   // Get the latest chapter read
   const latestChapterRead = getLatestChapterRead(manga.id)
@@ -97,6 +145,13 @@ const MangaCard = ({ manga, index }: { manga: MangaData, index: number }) => {
   
   // Calculate overall manga progress based on chapters
   const progressPercentage = calculateMangaProgressByChapter(latestChapterRead, totalChapters)
+  
+  // Handle favorite button click
+  const handleFavoriteClick = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent card click
+    const newStatus = toggleMangaFavorite(manga);
+    setIsFavorite(newStatus);
+  };
   
   return (
     <m.div
@@ -125,6 +180,25 @@ const MangaCard = ({ manga, index }: { manga: MangaData, index: number }) => {
           </m.div>
           
           <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/80"></div>
+          
+          {/* Favorite button */}
+          <button 
+            onClick={handleFavoriteClick}
+            className={`absolute top-2 right  -2 z-10 bg-black/60 backdrop-blur-sm p-1.5 rounded-full 
+              transition-all duration-300 border 
+              ${isFavorite 
+                ? 'opacity-100 border-red-500/50 bg-red-500/20' 
+                : 'opacity-0 group-hover:opacity-100 border-white/10 hover:border-red-500/50'}`}
+          >
+            <m.div
+              initial={{ scale: 1 }}
+              animate={{ scale: isFavorite ? 1.2 : 1 }}
+              whileTap={{ scale: 0.8 }}
+              transition={{ type: "spring", stiffness: 500, damping: 15 }}
+            >
+              <Heart className={`w-4 h-4 ${isFavorite ? 'text-red-500 fill-red-500' : 'text-white/90'}`} />
+            </m.div>
+          </button>
           
           {/* Reading progress indicator */}
           {hasBeenRead && (
@@ -167,7 +241,7 @@ const MangaCard = ({ manga, index }: { manga: MangaData, index: number }) => {
           <h3 className="font-semibold text-sm line-clamp-1 group-hover:text-purple-400 transition-colors">
             {manga.title}
           </h3>
-          {manga.englishTitle && (
+          {manga.englishTitle && manga.englishTitle !== manga.title && (
             <p className="text-xs text-gray-400 line-clamp-1 mt-0.5">{manga.englishTitle}</p>
           )}
           <div className="flex items-center gap-2 mt-2 text-xs text-gray-400">
@@ -177,8 +251,14 @@ const MangaCard = ({ manga, index }: { manga: MangaData, index: number }) => {
             </div>
             <div className="flex items-center gap-1">
               <BookOpen className="w-3 h-3" />
-              <span>{manga.chapters}</span>
+              <span>{manga.chapters || "0 თავი"}</span>
             </div>
+            {manga.release_year && (
+              <div className="flex items-center gap-1">
+                <CalendarDays className="w-3 h-3" />
+                <span>{manga.release_year}</span>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -200,6 +280,7 @@ export default function ReadPage() {
   const [availableGenres, setAvailableGenres] = useState<string[]>([])
   const [searchQuery, setSearchQuery] = useState("")
   const [filterOpen, setFilterOpen] = useState(false)
+  const [isFeaturedFavorite, setIsFeaturedFavorite] = useState(false)
   
   const scrollRef = useRef<HTMLDivElement>(null)
   const router = useRouter()
@@ -221,13 +302,13 @@ export default function ReadPage() {
             title: content.georgian_title || content.title,
             englishTitle: content.georgian_title ? content.title : null,
             description: content.description || "No description available",
-            image: content.banner_image || content.thumbnail,
+            image: (content.bannerImage && content.bannerImage.trim() !== '') ? content.bannerImage : content.thumbnail,
             thumbnail: content.thumbnail,
             rating: content.rating || 0,
             status: content.status,
-            chapters: content.chapters ? `${content.chapters} chapters` : "Ongoing",
+            chapters: content.chapters ? `${content.chapters} chapters` : "0 chapters",
             totalChapters: typeof content.chapters === 'number' ? content.chapters : 
-              (typeof content.chapters === 'string' ? parseInt(content.chapters, 10) : 10),
+              (typeof content.chapters === 'string' ? parseInt(content.chapters, 10) : 0),
             genres: content.genres || [],
             release_year: content.release_year
           })).filter((content: {image?: string}) => content.image);
@@ -319,7 +400,7 @@ export default function ReadPage() {
     thumbnail: "/placeholder.svg",
     rating: 0,
     status: "Loading",
-    chapters: "Loading",
+    chapters: "0 chapters",
     genres: []
   };
 
@@ -347,6 +428,21 @@ export default function ReadPage() {
     }
   }, []);
 
+  // Update featured favorite status when it changes
+  useEffect(() => {
+    if (featured?.id) {
+      setIsFeaturedFavorite(isMangaFavorited(featured.id));
+    }
+  }, [featured?.id]);
+  
+  // Handle toggling favorite for featured manga
+  const handleFeaturedFavoriteToggle = () => {
+    if (!featured) return;
+    
+    const newStatus = toggleMangaFavorite(featured);
+    setIsFeaturedFavorite(newStatus);
+  };
+
   return (
     <div className="flex min-h-screen bg-[#070707] text-white antialiased">
       <AppSidebar />
@@ -354,6 +450,8 @@ export default function ReadPage() {
       <main className="flex-1 overflow-x-hidden">
         {/* Featured Banner */}
         <section className="relative w-full h-[500px] overflow-hidden">
+          {/* --- DEBUG LOG --- */}
+          {(() => { console.log("[app/manga/page.tsx] Rendering Banner. featured.image:", featured?.image); return null; })()}
           <AnimatePresence mode="wait">
             {isFetching ? (
               <m.div
@@ -382,10 +480,17 @@ export default function ReadPage() {
                   }}
                 />
                 
-                {/* Gradient overlay */}
-                <div className="absolute inset-0 bg-gradient-to-t from-[#070707] via-[#070707]/50 to-transparent" />
-                <div className="absolute inset-0 bg-gradient-to-r from-[#070707] via-transparent" />
-                <div className="absolute inset-0 bg-[#070707]/30" />
+                {/* Enhanced gradient overlays for a perfect transition */}
+                {/* Main vertical gradient - much stronger at bottom */}
+                <div className="absolute inset-0 bg-gradient-to-t from-[#070707] via-[#070707]/80 to-transparent opacity-90" />
+                {/* Side gradient for text contrast */}
+                <div className="absolute inset-0 bg-gradient-to-r from-[#070707] via-transparent to-transparent opacity-50" />
+                {/* Stronger bottom gradient for completely seamless transition */}
+                <div className="absolute inset-x-0 bottom-0 h-52 bg-gradient-to-t from-[#070707] to-transparent" />
+                {/* Extra intense gradient at the very bottom for perfect blending */}
+                <div className="absolute inset-x-0 bottom-0 h-24 bg-[#070707]" style={{ maskImage: 'linear-gradient(to top, #070707, transparent)', WebkitMaskImage: 'linear-gradient(to top, #070707, transparent)' }} />
+                {/* Subtle texture overlay */}
+                <div className="absolute inset-0 bg-[#070707]/20" />
 
                 {/* Background particles/accents */}
                 <div className="absolute inset-0 bg-[url('/grid-pattern.svg')] opacity-10"></div>
@@ -393,7 +498,7 @@ export default function ReadPage() {
             )}
           </AnimatePresence>
 
-          <div className="absolute bottom-12 left-8 pl-32 z-10 max-w-2xl">
+          <div className="absolute bottom-0 left-0 right-0 md:bottom-12 md:left-8 z-10 md:pl-24 lg:pl-32">
             <AnimatePresence mode="wait">
               {isFetching ? (
                 <div className="space-y-4 w-full">
@@ -406,103 +511,157 @@ export default function ReadPage() {
                   initial="initial"
                   animate="animate"
                   exit="exit"
-                  className="flex flex-col items-start gap-6 relative overflow-hidden"
+                  className="w-full"
                 >
-                  <div className="flex-1 w-full relative z-10 rounded-xl p-6 shadow-xl">
-                    <div className="flex items-center gap-2 mb-3">
-                      <span className="bg-gradient-to-r from-purple-500 to-indigo-500 text-xs font-semibold px-2.5 py-0.5 rounded-full text-white shadow-glow-purple">რჩეული მანგა</span>
-                      <TrendingUp className="h-4 w-4 text-purple-400" />
+                  <div className="relative w-full md:max-w-5xl rounded-t-xl md:rounded-xl overflow-hidden">
+                    {/* Top pill badge for trending */}
+                    <div className="absolute top-0 right-0 left-0 flex justify-center">
+                      <m.div 
+                        className="text-white px-6 py-1.5 rounded-b-xl transform -translate-y-px"
+                        initial={{ y: -20 }}
+                        animate={{ y: 0 }}
+                        transition={{ delay: 0.1, type: "spring", stiffness: 300, damping: 20 }}
+                      >
+                        <div className="flex items-center gap-2">
+                          <TrendingUp className="h-4 w-4 text-purple-300" />
+                          <span className="font-medium text-sm tracking-wide">ტრენდულია</span>
+                        </div>
+                      </m.div>
                     </div>
                     
-                    <div className="flex items-start gap-6 mb-4">
-                      {featured.thumbnail && (
-                        <div className="h-50 w-40 rounded-lg overflow-hidden border-2 border-white/20 shadow-lg flex-shrink-0 transform hover:scale-105 transition-transform duration-300">
-                          <img
-                            src={featured.thumbnail || "/placeholder.svg"}
-                            alt={featured.title}
-                            className="w-full h-full object-cover"
-                          />
-                        </div>
-                      )}
-                      <div className="flex flex-col justify-start">
-                        <m.h1
-                          className="text-3xl font-bold text-glow text-white mb-1"
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                          transition={{ duration: 0.5 }}
-                        >
-                          <TypewriterText text={featured.title} />
-                        </m.h1>
-                        
-                        {featured.englishTitle && (
-                          <m.h2
-                            className="text-xl text-gray-400 mb-2"
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            transition={{ duration: 0.5, delay: 0.1 }}
+                    {/* Main content with glass effect */}
+                    <div className="flex flex-col md:flex-row items-start gap-8 p-6 md:p-8 pt-10 relative z-10">
+                      {/* Left side - Image */}
+                      <m.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.5 }}
+                        className="w-full md:w-auto flex justify-center md:block"
+                      >
+                        <Link href={`/manga/${featured.id}`} className="block relative group/thumbnail">
+                          <div 
+                            className="w-40 h-56 md:w-48 md:h-72 rounded-xl overflow-hidden border-2 border-white/10 shadow-white/20 shadow-[0_0_25px_rgba(139,92,246,0.3)] group/thumbnail cursor-pointer relative"
                           >
-                            {featured.englishTitle}
-                          </m.h2>
-                        )}
-                        
-                        <div className="flex items-center gap-3 mb-3">
-                          <div className="pill-button text-sm flex items-center gap-1.5 bg-white/5 backdrop-blur-md border border-white/10 px-3 py-1 rounded-full">
-                            <Clock className="h-3.5 w-3.5" />
-                            <span>{featured.status}</span>
+                            {/* Favorite button positioned at top right */}
+                            <m.button
+                              className={`absolute top-2 right-2 z-30 p-1.5 rounded-full backdrop-blur-sm shadow-lg transition-all duration-300 ${
+                                isFeaturedFavorite 
+                                  ? "bg-red-500/20 border border-red-500/50 text-red-400" 
+                                  : "bg-black/50 border border-white/10 text-white opacity-0 group-hover/thumbnail:opacity-100"
+                              }`}
+                              whileTap={{ scale: 0.95 }}
+                              whileHover={{ scale: 1.1 }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleFeaturedFavoriteToggle();
+                              }}
+                            >
+                              <Heart className={`h-4 w-4 ${isFeaturedFavorite ? "fill-red-500 text-red-400" : ""}`} />
+                            </m.button>
+                            
+                            <m.div
+                              whileHover={{ scale: 1.05 }}
+                              transition={{ duration: 0.3 }}
+                              className="w-full h-full relative"
+                            >
+                              <img
+                                src={featured.thumbnail || "/placeholder.svg"}
+                                alt={featured.title}
+                                className="w-full h-full object-cover transition-all duration-300 group-hover/thumbnail:scale-110"
+                              />
+                              <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent opacity-0 group-hover/thumbnail:opacity-100 transition-opacity duration-300"></div>
+                            </m.div>
                           </div>
-                          <div className="pill-button text-sm flex items-center gap-1.5 bg-white/5 backdrop-blur-md border border-white/10 px-3 py-1 rounded-full">
-                            <BookOpen className="h-3.5 w-3.5" />
-                            <span>{featured.chapters}</span>
-                          </div>
-                          <div className="pill-button text-sm flex items-center gap-1.5 bg-purple-900/20 backdrop-blur-md border border-purple-500/20 px-3 py-1 rounded-full">
-                            <Star className="h-3.5 w-3.5 text-yellow-400 fill-yellow-400" />
-                            <span className="font-medium">{featured.rating.toFixed(1)}</span>
-                          </div>
-                        </div>
-                        
+                        </Link>
+                      </m.div>
+                      
+                      {/* Right side - Content */}
+                      <div className="flex-1 min-w-0">
+                        {/* Title animation with gradient text */}
                         <m.div
-                          className="scrollable-content mb-4 max-h-[100px] overflow-y-auto pr-2 custom-scrollbar"
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: 0.4, delay: 0.2 }}
+                          className="group/title"
+                        >
+                          <Link href={`/manga/${featured.id}`} className="block">
+                            <h1 className="text-2xl md:text-4xl lg:text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-white/80 leading-tight group-hover/title:text-purple-400 transition-colors">
+                              <TypewriterText text={featured.title} />
+                            </h1>
+                            
+                            {/* Show English title if it exists */}
+                            {featured.englishTitle && (
+                              <h2 className="text-lg md:text-xl font-medium text-gray-400 mt-1 group-hover/title:text-purple-400 transition-colors">
+                                {featured.englishTitle}
+                              </h2>
+                            )}
+                          </Link>
+                        </m.div>
+                        
+                        {/* Content meta info with enhanced style */}
+                        <m.div 
+                          className="flex flex-wrap items-center gap-3 my-4"
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: 0.3, delay: 0.4 }}
+                        >
+
+                            {featured.rating > 0 && (
+                            <div className="flex items-center gap-2 bg-gradient-to-r from-yellow-800/30 to-amber-800/30 backdrop-blur-md px-4 py-1.5 rounded-full border border-yellow-500/20 shadow-sm">
+                              <Star className="h-4 w-4 text-yellow-300 fill-yellow-300" />
+                              <span className="text-sm font-medium text-white">{featured.rating.toFixed(1)}</span>
+                            </div>
+                          )}
+                          <div className="flex items-center gap-2 px-4 py-1.5 rounded-full border border-white/10">
+                            <BookOpen className="h-4 w-4 text-purple-400" />
+                            <span className="text-sm font-medium text-white">{featured.chapters || "0 თავი"}</span>
+                          </div>
+                          
+                          {featured.release_year && (
+                            <div className="flex items-center gap-2 px-4 py-1.5 rounded-full border border-white/10">
+                              <CalendarDays className="h-4 w-4 text-purple-400" />
+                              <span className="text-sm font-medium text-white">{featured.release_year}</span>
+                            </div>
+                          )}
+                          
+                          {featured.genres && featured.genres.slice(0, 3).map((genre, i) => (
+                            <div key={i} className="hidden sm:flex items-center gap-2 px-4 py-1.5 rounded-full border border-white/10 shadow-sm">
+                              <span className="text-sm font-medium text-white/80">{genre}</span>
+                            </div>
+                          ))}
+                        </m.div>
+                        
+                        {/* Description with text fade mask effect */}
+                        <m.div
+                          className="relative mt-3 mb-6"
                           initial={{ opacity: 0 }}
                           animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                          transition={{ duration: 0.3, delay: 0.2 }}
+                          transition={{ duration: 0.5, delay: 0.5 }}
                         >
-                          <p className="text-md mb-4 leading-relaxed max-w-md text-gray-300">
-                            {featured.description}
-                          </p>
+                          <div className="max-h-[80px] md:max-h-[100px] overflow-y-auto no-scrollbar"
+                            style={{
+                              maskImage: 'linear-gradient(to bottom, black 50%, transparent 100%)',
+                              WebkitMaskImage: 'linear-gradient(to bottom, black 50%, transparent 100%)'
+                            }}
+                          >
+                            <p className="text-sm md:text-base leading-relaxed text-gray-300">{featured.description}</p>
+                          </div>
+                        </m.div>
+                        
+                        {/* Action buttons with enhanced style - Removed favorite button */}
+                        <m.div
+                          className="flex flex-wrap gap-4 mt-6"
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: 0.4, delay: 0.6 }}
+                        >
+                          {/* Buttons can be added here if needed */}
                         </m.div>
                       </div>
                     </div>
                     
-                    <m.div 
-                      className="flex gap-3"
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.4 }}
-                    >
-                      <m.button 
-                        className="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-medium rounded-full flex items-center gap-2 shadow-lg shadow-purple-600/20 transform hover:translate-y-[-2px] transition-all duration-300"
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => router.push(`/manga/${featured.id}`)}
-                        transition={{ type: "spring", stiffness: 400, damping: 17 }}
-                      >
-                        <BookOpen className="h-4 w-4" />
-                        წაიკითხეთ ახლავე
-                      </m.button>
-                      
-                      <m.button 
-                        className="px-5 py-2.5 bg-white/10 backdrop-blur-sm text-white font-medium rounded-full flex items-center gap-2 border border-white/10 hover:bg-white/15 transition-colors duration-300"
-                        whileHover={{ scale: 1.05, backgroundColor: "rgba(255,255,255,0.15)" }}
-                        whileTap={{ scale: 0.95 }}
-                        transition={{ type: "spring", stiffness: 400, damping: 17 }}
-                      >
-                        <BookMarked className="h-4 w-4" />
-                        სანიშნე
-                      </m.button>
-                    </m.div>
+                    {/* Background effects */}
+                    
                   </div>
                 </m.div>
               )}
@@ -548,12 +707,14 @@ export default function ReadPage() {
             transition={{ duration: 0.5 }}
             className="flex flex-col"
           >
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-2xl font-bold">მანგის ბიბლიოთეკა</h2>
+            {/* Controls: Search, Sort, Filter - Stack on mobile */}
+            <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-6">
+              <h2 className="text-2xl font-bold self-start md:self-center">მანგის ბიბლიოთეკა</h2>
               
-              <div className="flex items-center gap-4">
-                {/* Search input */}
-                <div className="relative">
+              {/* Wrap controls for better stacking */}
+              <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
+                {/* Search input - Make full width on mobile */}
+                <div className="relative w-full sm:w-64">
                   <input
                     type="text"
                     placeholder="მანგის ძიება..."
@@ -567,7 +728,7 @@ export default function ReadPage() {
                 {/* Sort dropdown */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm" className="bg-black/30 border-white/10 rounded-full h-9 flex items-center gap-2">
+                    <Button variant="outline" size="sm" className="w-full sm:w-auto bg-black/30 border-white/10 rounded-full h-9 flex items-center justify-center sm:justify-start gap-2">
                       <SortDesc className="h-4 w-4" />
                       <span>დალაგება</span>
                     </Button>
@@ -608,7 +769,7 @@ export default function ReadPage() {
                   size="sm"
                   onClick={() => setFilterOpen(!filterOpen)}
                   className={cn(
-                    "bg-black/30 border-white/10 rounded-full h-9",
+                    "w-full sm:w-auto bg-black/30 border-white/10 rounded-full h-9",
                     filterOpen && "bg-purple-900/20 border-purple-500/30 text-purple-400"
                   )}
                 >
@@ -617,7 +778,7 @@ export default function ReadPage() {
                 </Button>
                 
                 {/* View toggle */}
-                <div className="flex rounded-full overflow-hidden border border-white/10 bg-black/30">
+                <div className="flex rounded-full overflow-hidden border border-white/10 bg-black/30 w-full sm:w-auto justify-center">
                   <Button
                     variant="ghost"
                     size="sm"
@@ -723,7 +884,7 @@ export default function ReadPage() {
               </div>
             </div>
             
-            {/* Manga grid/list */}
+            {/* Manga grid/list - Adjust grid columns */}
             <AnimatePresence mode="wait">
               {isLoading ? (
                 <CategorySkeleton count={12} />
@@ -736,7 +897,7 @@ export default function ReadPage() {
                   exit="exit"
                   className={cn(
                     viewMode === "grid" 
-                      ? "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4"
+                      ? "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 md:gap-4" // Responsive columns
                       : "flex flex-col gap-3"
                   )}
                 >
@@ -775,7 +936,7 @@ export default function ReadPage() {
                             <h3 className="font-medium text-sm line-clamp-1 group-hover:text-purple-400 transition-colors">
                               {manga.title}
                             </h3>
-                            {manga.englishTitle && (
+                            {manga.englishTitle && manga.englishTitle !== manga.title && (
                               <p className="text-xs text-gray-400 line-clamp-1 mt-0.5">{manga.englishTitle}</p>
                             )}
                             
@@ -786,7 +947,7 @@ export default function ReadPage() {
                               </div>
                               <div className="flex items-center gap-1">
                                 <BookOpen className="w-3 h-3" />
-                                <span>{manga.chapters}</span>
+                                <span>{manga.chapters || "0 chapters"}</span>
                               </div>
                               <div className="flex items-center gap-1">
                                 <Star className="w-3 h-3 text-yellow-400" />
@@ -839,7 +1000,7 @@ export default function ReadPage() {
 
                 {/* Continue Reading Section (if user has reading history) */}
                 {recentlyRead.length > 0 && (
-          <section className="pt-8 px-8 pl-[100px]">
+          <section className="pt-8 px-8 pl-[77px] md:pl-[100px]"> {/* Adjusted padding */}
             <m.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -860,7 +1021,8 @@ export default function ReadPage() {
                 </Button>
               </div>
               
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+              {/* Responsive grid for continue reading */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                 {recentlyRead.map((item, index) => (
                   <m.div
                     key={`recent-${item.id}-${index}`}

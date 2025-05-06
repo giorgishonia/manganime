@@ -1,8 +1,8 @@
 import { supabase } from './supabase'
 import { Content, Episode, Chapter } from './supabase'
 
-// Get all content (anime or manga)
-export async function getAllContent(type: 'anime' | 'manga', limit = 20, page = 0) {
+// Get all content (anime, manga or comics)
+export async function getAllContent(type: 'anime' | 'manga' | 'comics', limit = 20, page = 0) {
   try {
     const { data, error, count } = await supabase
       .from('content')
@@ -14,6 +14,10 @@ export async function getAllContent(type: 'anime' | 'manga', limit = 20, page = 
     if (error) {
       throw error
     }
+
+    // --- DEBUG: Log raw data from Supabase in getAllContent ---
+    console.log(`[getAllContent - ${type}] Raw Supabase data sample:`, data?.slice(0, 2).map((d: any) => ({ id: d.id, title: d.title, bannerImage: d.bannerImage, thumbnail: d.thumbnail })) || 'No data');
+    // -------------------------------------------------------
 
     return { 
       success: true, 
@@ -119,9 +123,23 @@ export async function getContentById(id: string) {
       if (georgianTitleEntry) {
         data.georgian_title = georgianTitleEntry.substring(9); // 'georgian:'.length = 9
       }
+      
+      // Extract publisher if present
+      const publisherEntry = data.alternative_titles.find((title: string) => 
+        typeof title === 'string' && title.startsWith('publisher:')
+      );
+      
+      if (publisherEntry) {
+        data.publisher = publisherEntry.substring(10); // 'publisher:'.length = 10
+        console.log(`Extracted publisher: ${data.publisher}`);
+      }
     } else {
       data.characters = []; // Set empty array if no alternative_titles
     }
+
+    // --- DEBUG: Log raw data from Supabase in getContentById ---
+    console.log(`[getContentById - ${id}] Raw Supabase data:`, data ? { id: data.id, title: data.title, bannerImage: data.bannerImage, thumbnail: data.thumbnail } : 'No data');
+    // -------------------------------------------------------
 
     return { success: true, content: data }
   } catch (error) {
@@ -131,7 +149,7 @@ export async function getContentById(id: string) {
 }
 
 // Get content by genre
-export async function getContentByGenre(genre: string, type?: 'anime' | 'manga', limit = 20) {
+export async function getContentByGenre(genre: string, type?: 'anime' | 'manga' | 'comics', limit = 20) {
   try {
     let query = supabase
       .from('content')
@@ -158,7 +176,7 @@ export async function getContentByGenre(genre: string, type?: 'anime' | 'manga',
 }
 
 // Get trending content
-export async function getTrendingContent(type?: 'anime' | 'manga', limit = 10) {
+export async function getTrendingContent(type?: 'anime' | 'manga' | 'comics', limit = 10) {
   try {
     let query = supabase
       .from('content')
@@ -199,14 +217,19 @@ export async function createContent(contentData: any) {
       console.log("Georgian title added to alternative_titles");
     }
     
+    // Add publisher to alternative_titles if provided (for comics)
+    if (contentData.publisher) {
+      alternative_titles.push(`publisher:${contentData.publisher}`);
+      console.log("Publisher added to alternative_titles");
+    }
+    
     // Process characters and add them to alternative_titles
-    if (contentData.characters && Array.isArray(contentData.characters) && contentData.characters.length > 0) {
+    if (contentData.characters && Array.isArray(contentData.characters)) {
       console.log(`Processing ${contentData.characters.length} characters for storage`);
-      
-      contentData.characters.forEach((character: any, index: number) => {
-        // Ensure character has all required fields
+
+      contentData.characters.forEach((character: any) => {
         if (!character.name || !character.image) {
-          console.warn(`Skipping character at index ${index} due to missing required fields`);
+          console.warn(`Skipping character due to missing required fields:`, character);
           return;
         }
         
@@ -215,8 +238,8 @@ export async function createContent(contentData: any) {
           name: character.name,
           image: character.image,
           role: character.role || 'SUPPORTING',
-          age: character.age,
-          gender: character.gender
+          age: character.age || '',
+          gender: character.gender || ''
         });
         
         alternative_titles.push(`character:${characterData}`);
@@ -261,6 +284,7 @@ export async function createContent(contentData: any) {
       type: contentData.type || 'anime',
       status: contentData.status || 'ongoing',
       thumbnail: contentData.thumbnail,
+      bannerImage: contentData.bannerImage || null,
       genres: contentData.genres || [],
       alternative_titles: alternative_titles,
       rating: contentData.rating,
@@ -297,20 +321,29 @@ export async function createContent(contentData: any) {
 
 // Update content (admin only)
 export async function updateContent(id: string, contentData: any) {
-  console.log(`Updating content ${id} with data:`, contentData);
+  console.log(`[updateContent] Starting - ID: ${id}`);
+  console.log(`[updateContent] Input data:`, JSON.stringify(contentData, null, 2));
   
   try {
     // First, get the existing content to handle alternative_titles properly
+    console.log(`[updateContent] Fetching existing content with ID: ${id}`);
     const { data: existingContent, error: fetchError } = await supabase
       .from('content')
-      .select('alternative_titles')
+      .select('*')
       .eq('id', id)
       .single();
       
     if (fetchError) {
-      console.error("Error fetching existing content:", fetchError);
+      console.error("[updateContent] Error fetching existing content:", fetchError);
       return { success: false, error: fetchError.message };
     }
+    
+    if (!existingContent) {
+      console.error("[updateContent] No existing content found with ID:", id);
+      return { success: false, error: "Content not found" };
+    }
+    
+    console.log("[updateContent] Existing content found:", existingContent.id);
     
     // Process alternative_titles to separate characters, release date, and other special entries
     const existingAltTitles = existingContent?.alternative_titles || [];
@@ -319,7 +352,8 @@ export async function updateContent(id: string, contentData: any) {
       !title.startsWith('georgian:') && 
       !title.startsWith('release_year:') &&
       !title.startsWith('release_month:') &&
-      !title.startsWith('release_day:')
+      !title.startsWith('release_day:') &&
+      !title.startsWith('publisher:')
     );
     
     // Start with basic alternative_titles
@@ -328,7 +362,7 @@ export async function updateContent(id: string, contentData: any) {
     // Add georgian title if provided
     if (contentData.georgian_title) {
       updatedAltTitles.push(`georgian:${contentData.georgian_title}`);
-      console.log("Updated georgian title in alternative_titles");
+      console.log("[updateContent] Added georgian title:", contentData.georgian_title);
     } else {
       // Try to preserve existing georgian title if any
       const existingGeorgianTitle = existingAltTitles.find((title: string) => 
@@ -336,6 +370,24 @@ export async function updateContent(id: string, contentData: any) {
       );
       if (existingGeorgianTitle) {
         updatedAltTitles.push(existingGeorgianTitle);
+        console.log("[updateContent] Preserved existing georgian title");
+      }
+    }
+    
+    // Handle publisher field for comics
+    if (contentData.publisher !== undefined) {
+      if (contentData.publisher) {
+        updatedAltTitles.push(`publisher:${contentData.publisher}`);
+        console.log("[updateContent] Added publisher:", contentData.publisher);
+      }
+    } else {
+      // Preserve existing publisher
+      const existingPublisher = existingAltTitles.find((title: string) => 
+        title.startsWith('publisher:')
+      );
+      if (existingPublisher) {
+        updatedAltTitles.push(existingPublisher);
+        console.log("[updateContent] Preserved existing publisher");
       }
     }
     
@@ -345,7 +397,7 @@ export async function updateContent(id: string, contentData: any) {
         const year = parseInt(contentData.release_year.toString(), 10);
         if (!isNaN(year)) {
           updatedAltTitles.push(`release_year:${year}`);
-          console.log(`Updated release year to ${year}`);
+          console.log(`[updateContent] Updated release year to ${year}`);
         }
       }
     } else {
@@ -355,6 +407,7 @@ export async function updateContent(id: string, contentData: any) {
       );
       if (existingReleaseYear) {
         updatedAltTitles.push(existingReleaseYear);
+        console.log("[updateContent] Preserved existing release year");
       }
     }
     
@@ -364,6 +417,7 @@ export async function updateContent(id: string, contentData: any) {
         const month = parseInt(contentData.release_month.toString(), 10);
         if (!isNaN(month) && month >= 1 && month <= 12) {
           updatedAltTitles.push(`release_month:${month}`);
+          console.log(`[updateContent] Updated release month to ${month}`);
         }
       }
     } else {
@@ -373,6 +427,7 @@ export async function updateContent(id: string, contentData: any) {
       );
       if (existingReleaseMonth) {
         updatedAltTitles.push(existingReleaseMonth);
+        console.log("[updateContent] Preserved existing release month");
       }
     }
     
@@ -382,6 +437,7 @@ export async function updateContent(id: string, contentData: any) {
         const day = parseInt(contentData.release_day.toString(), 10);
         if (!isNaN(day) && day >= 1 && day <= 31) {
           updatedAltTitles.push(`release_day:${day}`);
+          console.log(`[updateContent] Updated release day to ${day}`);
         }
       }
     } else {
@@ -391,43 +447,50 @@ export async function updateContent(id: string, contentData: any) {
       );
       if (existingReleaseDay) {
         updatedAltTitles.push(existingReleaseDay);
+        console.log("[updateContent] Preserved existing release day");
       }
     }
     
     // Process characters and add them to alternative_titles
     if (contentData.characters && Array.isArray(contentData.characters)) {
-      console.log(`Processing ${contentData.characters.length} characters for update`);
+      console.log(`[updateContent] Processing ${contentData.characters.length} characters for update`);
       
       contentData.characters.forEach((character: any, index: number) => {
         // Ensure character has all required fields
         if (!character.name || !character.image) {
-          console.warn(`Skipping character at index ${index} due to missing required fields`);
+          console.warn(`[updateContent] Skipping character at index ${index} due to missing required fields`);
           return;
         }
         
-        const characterData = JSON.stringify({
-          id: character.id || `char-${Math.random().toString(36).substring(2, 9)}`,
-          name: character.name,
-          image: character.image,
-          role: character.role || 'SUPPORTING',
-          age: character.age,
-          gender: character.gender
-        });
-        
-        updatedAltTitles.push(`character:${characterData}`);
+        try {
+          const characterData = JSON.stringify({
+            id: character.id || `char-${Math.random().toString(36).substring(2, 9)}`,
+            name: character.name,
+            image: character.image,
+            role: character.role || 'SUPPORTING',
+            age: character.age,
+            gender: character.gender
+          });
+          
+          updatedAltTitles.push(`character:${characterData}`);
+          console.log(`[updateContent] Added character: ${character.name}`);
+        } catch (error) {
+          console.error(`[updateContent] Error processing character at index ${index}:`, error);
+          // Continue processing other characters
+        }
       });
       
-      console.log(`Successfully added ${contentData.characters.length} characters to alternative_titles`);
+      console.log(`[updateContent] Successfully added ${contentData.characters.length} characters to alternative_titles`);
     } else if (contentData.characters === undefined) {
       // If characters not provided in update, preserve existing character entries
       const existingCharacters = existingAltTitles.filter((title: string) => 
         title.startsWith('character:')
       );
       updatedAltTitles.push(...existingCharacters);
-      console.log(`Preserved ${existingCharacters.length} existing characters`);
+      console.log(`[updateContent] Preserved ${existingCharacters.length} existing characters`);
     } else {
       // If explicitly set to empty array, clear all characters
-      console.log("Clearing all characters as empty array was provided");
+      console.log("[updateContent] Clearing all characters as empty array was provided");
     }
     
     // Prepare database update object, only include fields that are provided
@@ -441,6 +504,7 @@ export async function updateContent(id: string, contentData: any) {
     if (contentData.type !== undefined) dbContent.type = contentData.type;
     if (contentData.status !== undefined) dbContent.status = contentData.status;
     if (contentData.thumbnail !== undefined) dbContent.thumbnail = contentData.thumbnail;
+    if (contentData.bannerImage !== undefined) dbContent.bannerImage = contentData.bannerImage || null;
     if (contentData.genres !== undefined) dbContent.genres = contentData.genres;
     if (contentData.rating !== undefined) dbContent.rating = contentData.rating;
     if (contentData.season !== undefined) dbContent.season = contentData.season;
@@ -451,26 +515,40 @@ export async function updateContent(id: string, contentData: any) {
     dbContent.alternative_titles = updatedAltTitles;
     
     // Log the prepared data
-    console.log("Prepared update data:", dbContent);
+    console.log("[updateContent] Prepared update data keys:", Object.keys(dbContent));
     
     // Update in database
-    const { data, error } = await supabase
-      .from('content')
-      .update(dbContent)
-      .eq('id', id)
-      .select()
-      .single();
+    console.log(`[updateContent] Sending update request to Supabase for ID: ${id}`);
+    try {
+      const { data, error } = await supabase
+        .from('content')
+        .update(dbContent)
+        .eq('id', id)
+        .select()
+        .single();
 
-    if (error) {
-      console.error("Error updating content:", error);
-      return { success: false, error: error.message };
+      if (error) {
+        console.error("[updateContent] Error updating content:", JSON.stringify(error, null, 2));
+        return { success: false, error: error.message || "Update failed" };
+      }
+
+      if (!data) {
+        console.error("[updateContent] No data returned after update");
+        return { success: false, error: "No data returned from database" };
+      }
+
+      console.log("[updateContent] Content updated successfully:", data.id);
+      return { success: true, content: data };
+    } catch (supabaseError) {
+      console.error("[updateContent] Supabase update error:", JSON.stringify(supabaseError, null, 2));
+      return { 
+        success: false, 
+        error: supabaseError instanceof Error ? supabaseError.message : "Unknown Supabase update error"
+      };
     }
-
-    console.log("Content updated successfully:", data);
-    return { success: true, content: data };
   } catch (error) {
-    console.error("Unexpected error updating content:", error);
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    console.error("[updateContent] Unexpected error:", JSON.stringify(error, null, 2));
+    const errorMessage = error instanceof Error ? error.message : "Unknown error during update process";
     return { success: false, error: errorMessage };
   }
 }
@@ -587,7 +665,12 @@ export async function getChapters(contentId: string) {
 
     return { success: true, chapters: data || [] }
   } catch (error) {
-    console.error('Get chapters error:', error)
+    // Enhanced error logging
+    console.error('Get chapters error details:', JSON.stringify(error, null, 2));
+    if (error instanceof Error) {
+        console.error('Error message:', error.message);
+        console.error('Error stack:', error.stack);
+    }
     return { success: false, error }
   }
 }
@@ -636,7 +719,7 @@ export async function addChapter(chapterData: Omit<Chapter, 'id' | 'created_at'>
 }
 
 // Search content
-export async function searchContent(query: string, type?: 'anime' | 'manga', limit = 20) {
+export async function searchContent(query: string, type?: 'anime' | 'manga' | 'comics', limit = 20) {
   try {
     let supabaseQuery = supabase
       .from('content')

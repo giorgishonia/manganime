@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
-import { ContentForm } from "@/components/content-form";
+import ContentForm from '@/components/content-form';
 import { useAuth } from "@/components/supabase-auth-provider";
 import { toast } from "sonner";
 import { FiArrowLeft } from "react-icons/fi";

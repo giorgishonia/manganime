@@ -69,16 +69,18 @@ interface ContentItem {
 // Wrapper function to get all content for admin use
 async function getAllContentForAdmin() {
   try {
-    // Get both anime and manga content and combine them
+    // Get anime, manga, and comics content and combine them
     const animeResult = await getAllContent('anime', 100, 0);
     const mangaResult = await getAllContent('manga', 100, 0);
+    const comicsResult = await getAllContent('comics', 100, 0);
     
     // Extract content arrays or use empty arrays
     const animeContent = animeResult?.success ? animeResult.content || [] : [];
     const mangaContent = mangaResult?.success ? mangaResult.content || [] : [];
+    const comicsContent = comicsResult?.success ? comicsResult.content || [] : [];
     
-    // Combine anime and manga content
-    return [...animeContent, ...mangaContent];
+    // Combine all content types
+    return [...animeContent, ...mangaContent, ...comicsContent];
   } catch (error) {
     console.error("Failed to fetch all content:", error);
     return [];

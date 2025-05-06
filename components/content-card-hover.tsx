@@ -21,7 +21,7 @@ function getContentDetails(id: string, type: string) {
     image: `/placeholder.svg?seed=${numericId}`,
     rating: (Math.random() * 2 + 8).toFixed(1),
     type,
-    year: "2023"
+    year: "2025"
   }
 }
 

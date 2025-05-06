@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react"
 import { motion as m, AnimatePresence } from "framer-motion"
-import { Search, X, Film, BookOpen, ArrowRight } from "lucide-react"
+import { Search, X, Film, BookOpen, Book, ArrowRight } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
@@ -21,12 +21,12 @@ interface SearchResult {
   id: string
   title: string
   image: string
-  type: "anime" | "manga"
+  type: "anime" | "manga" | "comics"
   year: string
 }
 
 // Function to fetch search results from our database
-async function fetchSearchResults(query: string, type: "anime" | "manga"): Promise<SearchResult[]> {
+async function fetchSearchResults(query: string, type: "anime" | "manga" | "comics"): Promise<SearchResult[]> {
   if (query.length < 2) return [];
   
   try {
@@ -51,7 +51,7 @@ async function fetchSearchResults(query: string, type: "anime" | "manga"): Promi
 
 export function SearchModal({ isOpen, onClose }: SearchModalProps) {
   const [query, setQuery] = useState("")
-  const [searchType, setSearchType] = useState<"anime" | "manga">("anime")
+  const [searchType, setSearchType] = useState<"anime" | "manga" | "comics">("anime")
   const [results, setResults] = useState<SearchResult[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -186,6 +186,12 @@ export function SearchModal({ isOpen, onClose }: SearchModalProps) {
                       onClick={() => setSearchType("manga")}
                       icon={<BookOpen className="h-4 w-4" />}
                       label="მანგა"
+                    />
+                    <ToggleButton
+                      active={searchType === "comics"}
+                      onClick={() => setSearchType("comics")}
+                      icon={<Book className="h-4 w-4" />}
+                      label="კომიქსები"
                     />
                   </div>
                   

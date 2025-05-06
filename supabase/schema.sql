@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   bio TEXT,
   location TEXT,
   is_admin BOOLEAN DEFAULT false,
+  has_completed_onboarding BOOLEAN DEFAULT false,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -231,4 +232,79 @@ CREATE POLICY "Users can remove from their watchlist."
   USING (auth.uid() = user_id);
 
 -- Add is_admin column to profiles
-ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT false; 
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT false;
+
+-- Create comments table if it doesn't exist
+CREATE TABLE IF NOT EXISTS public.comments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    content_id TEXT NOT NULL,
+    content_type TEXT NOT NULL CHECK (content_type IN ('anime', 'manga')),
+    text TEXT NOT NULL,
+    media_url TEXT,
+    parent_comment_id UUID REFERENCES public.comments(id) ON DELETE CASCADE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Create index for faster queries by parent_comment_id
+CREATE INDEX IF NOT EXISTS idx_comments_parent_comment_id ON public.comments(parent_comment_id);
+
+-- Enable Row Level Security
+ALTER TABLE public.comments ENABLE ROW LEVEL SECURITY;
+
+-- Create policies for comments
+DROP POLICY IF EXISTS "Users can create their own comments" ON public.comments;
+CREATE POLICY "Users can create their own comments"
+    ON public.comments 
+    FOR INSERT 
+    WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can view all comments" ON public.comments;
+CREATE POLICY "Users can view all comments"
+    ON public.comments 
+    FOR SELECT 
+    USING (true);
+
+DROP POLICY IF EXISTS "Users can update their own comments" ON public.comments;
+CREATE POLICY "Users can update their own comments"
+    ON public.comments 
+    FOR UPDATE 
+    USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can delete their own comments" ON public.comments;
+CREATE POLICY "Users can delete their own comments"
+    ON public.comments 
+    FOR DELETE 
+    USING (auth.uid() = user_id);
+
+-- Create comment_likes table for tracking comment likes
+CREATE TABLE IF NOT EXISTS public.comment_likes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    comment_id UUID NOT NULL REFERENCES public.comments(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(comment_id, user_id)
+);
+
+-- Enable Row Level Security
+ALTER TABLE public.comment_likes ENABLE ROW LEVEL SECURITY;
+
+-- Create policies for comment_likes
+DROP POLICY IF EXISTS "Users can like comments" ON public.comment_likes;
+CREATE POLICY "Users can like comments"
+    ON public.comment_likes 
+    FOR INSERT 
+    WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can unlike comments" ON public.comment_likes;
+CREATE POLICY "Users can unlike comments"
+    ON public.comment_likes 
+    FOR DELETE 
+    USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can view all comment likes" ON public.comment_likes;
+CREATE POLICY "Users can view all comment likes"
+    ON public.comment_likes 
+    FOR SELECT 
+    USING (true); 

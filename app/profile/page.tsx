@@ -26,6 +26,8 @@ import {
   User2,
   MapPin as MapPinIcon,
   Cake as CakeIcon,
+  Upload as UploadIcon,
+  Crown as CrownIcon,
 } from "lucide-react"
 import { AppSidebar } from "@/components/app-sidebar"
 import { Button } from "@/components/ui/button"
@@ -61,6 +63,9 @@ import { format, differenceInYears, parseISO } from "date-fns"
 import { AvatarUploader } from "./components/avatar-uploader"
 import { getLibraryItems } from '@/lib/user-library'
 import { ProfileForm } from '@/components/settings/profile-form'
+import { BannerUploader } from "@/components/profile/banner-uploader"
+import { VIPBadge } from "@/components/ui/vip-badge"
+import { AdBanner } from "@/components/ads/ad-banner"
 
 // Interface for content item
 interface ContentItem {
@@ -135,6 +140,11 @@ export default function ProfilePage() {
   const [isSaving, setIsSaving] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [showRefreshButton, setShowRefreshButton] = useState(false)
+  const [showBannerUpload, setShowBannerUpload] = useState(false)
+  const [profileBanner, setProfileBanner] = useState<string | null>(null)
+  
+  // Define isOwnProfile variable - determines if the user is viewing their own profile
+  const isOwnProfile = !!user && !!profile // Currently only showing the logged-in user's profile
 
   useEffect(() => {
     // Determine loading state based on auth and profile loading
@@ -212,6 +222,41 @@ export default function ProfilePage() {
 
   }, [user, profile, authLoading, isProfileLoading, router]) // Dependencies
 
+  useEffect(() => {
+    // Fetch profile banner if user is VIP
+    async function fetchProfileBanner() {
+      if (!user || !profile || !profile.vip_status) return;
+      
+      try {
+        const { data, error } = await supabase
+          .from('user_banners')
+          .select('banner_url')
+          .eq('user_id', user.id)
+          .single();
+        
+        if (error) {
+          console.error("Error fetching banner:", error);
+          return;
+        }
+        
+        if (data) {
+          setProfileBanner(data.banner_url);
+        }
+      } catch (err) {
+        console.error("Failed to fetch profile banner:", err);
+      }
+    }
+    
+    if (user && profile) {
+      fetchProfileBanner();
+    }
+  }, [user, profile]);
+  
+  // Handle banner update
+  const handleBannerUpdate = (url: string) => {
+    setProfileBanner(url);
+  };
+
   // Helper function to format date
   function getTimeAgo(date: Date): string {
     const now = new Date()
@@ -286,17 +331,52 @@ export default function ProfilePage() {
       <main className="flex-1 overflow-x-hidden pl-[77px]">
         {/* Profile header */}
         <div className="relative">
-          {/* Cover image - use static gradient */}
-          <div className="h-48 bg-gradient-to-r from-purple-900 to-blue-900">
-            <div className="absolute inset-0 bg-black/30" />
+          {/* Custom VIP banner area */}
+          <div className="h-48 overflow-hidden relative">
+            {profile?.vip_status && profileBanner ? (
+              <Image 
+                src={profileBanner}
+                alt="Profile Banner"
+                fill
+                className="object-cover"
+              />
+            ) : (
+              <div className="h-48 bg-gradient-to-r from-purple-900 to-blue-900">
+                <div className="absolute inset-0 bg-black/30" />
+              </div>
+            )}
+            
+            {/* VIP badge */}
+            {profile?.vip_status && (
+              <div className="absolute top-4 right-4">
+                <VIPBadge 
+                  tier={profile.vip_tier || 'basic'} 
+                  size="md"
+                />
+              </div>
+            )}
+            
+            {/* Banner upload button (only shown for profile owner) */}
+            {isOwnProfile && profile?.vip_status && (
+              <Button 
+                variant="outline" 
+                size="sm"
+                className="absolute bottom-4 right-4 bg-black/50 hover:bg-black/70 text-white"
+                onClick={() => setShowBannerUpload(true)}
+              >
+                <UploadIcon className="h-4 w-4 mr-2" />
+                {profileBanner ? 'Change Banner' : 'Add Banner'}
+              </Button>
+            )}
           </div>
 
           {/* Profile info */}
           <div className="container mx-auto px-4">
-            <div className="relative -mt-16 flex flex-col md:flex-row items-start md:items-end gap-6 pb-6">
+            <div className="relative -mt-16 flex flex-col md:flex-row items-center md:items-end gap-4 md:gap-6 pb-6">
               {/* Avatar */}
-              <div className="relative">
-                <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-black">
+              <div className="relative flex-shrink-0">
+                {/* Responsive avatar size */}
+                <div className="w-24 h-24 md:w-32 md:h-32 rounded-full overflow-hidden border-4 border-black">
                   <ImageSkeleton
                     src={profile.avatar_url || "/placeholder.svg"}
                     alt={profile.username || "მომხმარებელი"}
@@ -306,9 +386,10 @@ export default function ProfilePage() {
               </div>
 
               {/* User info */}
-              <div className="flex-1">
-                <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4">
-                  <h1 className="text-3xl font-bold">
+              <div className="flex-1 text-center md:text-left">
+                <div className="flex flex-col md:flex-row md:items-center justify-center md:justify-start gap-2 md:gap-4">
+                   {/* Responsive heading size */}
+                  <h1 className="text-2xl md:text-3xl font-bold">
                      {profile.first_name || profile.last_name 
                         ? `${profile.first_name || ''} ${profile.last_name || ''}`.trim()
                         : profile.username || "მომხმარებელი"}
@@ -337,12 +418,13 @@ export default function ProfilePage() {
               </div>
 
               {/* Actions */}
-              <div className="flex gap-2 mt-4 md:mt-0">
+              {/* Stack buttons vertically on small screens */}
+              <div className="flex flex-col sm:flex-row gap-2 mt-4 md:mt-0 w-full md:w-auto">
                 <Dialog open={isEditProfileOpen} onOpenChange={setIsEditProfileOpen}>
                   <DialogTrigger asChild>
                     <Button 
                       variant="outline" 
-                      className="bg-gray-800 border-gray-700 hover:bg-gray-700"
+                      className="bg-gray-800 border-gray-700 hover:bg-gray-700 w-full sm:w-auto"
                     >
                       <Settings className="h-4 w-4 mr-2" />
                       პარამეტრები
@@ -439,11 +521,12 @@ export default function ProfilePage() {
 
         {/* Stats overview */}
         <div className="container mx-auto px-4 py-6">
+          {/* Make stats grid single column on mobile, 2 on md+ */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Anime stats */}
-            <div className="bg-gray-900/50 backdrop-blur-sm rounded-lg p-6">
+            <div className="bg-gray-900/50 backdrop-blur-sm rounded-lg p-4 md:p-6">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold flex items-center">
+                <h2 className="text-lg md:text-xl font-bold flex items-center">
                   <Film className="h-5 w-5 mr-2 text-blue-400" />
                   ანიმეს სტატისტიკა
                 </h2>
@@ -452,7 +535,7 @@ export default function ProfilePage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-6">
+              <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 md:gap-4 mb-6">
                 <StatCard
                   label="ვუყურებ"
                   value={stats.anime.watching}
@@ -497,9 +580,9 @@ export default function ProfilePage() {
             </div>
 
             {/* Manga stats */}
-            <div className="bg-gray-900/50 backdrop-blur-sm rounded-lg p-6">
+            <div className="bg-gray-900/50 backdrop-blur-sm rounded-lg p-4 md:p-6">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold flex items-center">
+                <h2 className="text-lg md:text-xl font-bold flex items-center">
                   <BookOpen className="h-5 w-5 mr-2 text-purple-400" />
                   მანგის სტატისტიკა
                 </h2>
@@ -508,7 +591,7 @@ export default function ProfilePage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-6">
+              <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 md:gap-4 mb-6">
                 <StatCard
                   label="ვკითხულობ"
                   value={stats.manga.reading}
@@ -557,16 +640,17 @@ export default function ProfilePage() {
         {/* Content tabs */}
         <div className="container mx-auto px-4 py-6">
           <Tabs defaultValue="anime" value={activeMainTab} onValueChange={setActiveMainTab} className="w-full">
-            <TabsList className="mb-6">
-              <TabsTrigger value="anime" className="flex items-center gap-2">
+            {/* Make TabsList scrollable on small screens */} 
+            <TabsList className="mb-6 overflow-x-auto justify-start">
+              <TabsTrigger value="anime" className="flex items-center gap-2 flex-shrink-0">
                 <Film className="h-4 w-4" />
                 ანიმე
               </TabsTrigger>
-              <TabsTrigger value="manga" className="flex items-center gap-2">
+              <TabsTrigger value="manga" className="flex items-center gap-2 flex-shrink-0">
                 <BookOpen className="h-4 w-4" />
                 მანგა
               </TabsTrigger>
-              <TabsTrigger value="activity" className="flex items-center gap-2">
+              <TabsTrigger value="activity" className="flex items-center gap-2 flex-shrink-0">
                 <TrendingUp className="h-4 w-4" />
                 აქტივობა
               </TabsTrigger>
@@ -574,26 +658,30 @@ export default function ProfilePage() {
 
             <TabsContent value="anime">
               <div className="mb-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
+                {/* Make tab controls scrollable & buttons smaller */} 
+                <div className="flex items-center justify-between mb-4 overflow-x-auto pb-2">
+                  <div className="flex items-center gap-1 flex-shrink-0">
                     <Button
                       variant="ghost"
-                      className={cn("text-sm", activeAnimeTab === "watching" ? "bg-gray-800" : "hover:bg-gray-800/50")}
+                      size="sm" // Smaller buttons
+                      className={cn("text-xs md:text-sm", activeAnimeTab === "watching" ? "bg-gray-800" : "hover:bg-gray-800/50")}
                       onClick={() => setActiveAnimeTab("watching")}
                     >
                       ვუყურებ ({stats.anime.watching})
                     </Button>
                     <Button
                       variant="ghost"
-                      className={cn("text-sm", activeAnimeTab === "completed" ? "bg-gray-800" : "hover:bg-gray-800/50")}
+                      size="sm" // Smaller buttons
+                      className={cn("text-xs md:text-sm", activeAnimeTab === "completed" ? "bg-gray-800" : "hover:bg-gray-800/50")}
                       onClick={() => setActiveAnimeTab("completed")}
                     >
                       დასრულებული ({stats.anime.completed})
                     </Button>
                     <Button
                       variant="ghost"
+                      size="sm" // Smaller buttons
                       className={cn(
-                        "text-sm",
+                        "text-xs md:text-sm",
                         activeAnimeTab === "planToWatch" ? "bg-gray-800" : "hover:bg-gray-800/50",
                       )}
                       onClick={() => setActiveAnimeTab("planToWatch")}
@@ -602,7 +690,7 @@ export default function ProfilePage() {
                     </Button>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" className="text-sm hover:bg-gray-800/50">
+                        <Button variant="ghost" size="sm" className="text-xs md:text-sm hover:bg-gray-800/50">
                           მეტი <ChevronDown className="h-4 w-4 ml-1" />
                         </Button>
                       </DropdownMenuTrigger>
@@ -616,13 +704,15 @@ export default function ProfilePage() {
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
-                  <Button variant="outline" className="bg-gray-800 border-gray-700 hover:bg-gray-700">
-                    <Plus className="h-4 w-4 mr-2" />
+                   {/* Make Add button text smaller */} 
+                  <Button variant="outline" size="sm" className="bg-gray-800 border-gray-700 hover:bg-gray-700 flex-shrink-0 ml-2 text-xs md:text-sm">
+                    <Plus className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" />
                     ანიმეს დამატება
                   </Button>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {/* Responsive grid columns for anime list */}
+                <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
                   {activeAnimeTab === "watching" &&
                     (animeWatching.length > 0 ? 
                       animeWatching.map((anime) => <AnimeListItem key={anime.id} item={anime} />) :
@@ -649,26 +739,30 @@ export default function ProfilePage() {
 
             <TabsContent value="manga">
               <div className="mb-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
+                {/* Make tab controls scrollable & buttons smaller */}
+                <div className="flex items-center justify-between mb-4 overflow-x-auto pb-2">
+                  <div className="flex items-center gap-1 flex-shrink-0">
                     <Button
                       variant="ghost"
-                      className={cn("text-sm", activeMangaTab === "reading" ? "bg-gray-800" : "hover:bg-gray-800/50")}
+                      size="sm" // Smaller buttons
+                      className={cn("text-xs md:text-sm", activeMangaTab === "reading" ? "bg-gray-800" : "hover:bg-gray-800/50")}
                       onClick={() => setActiveMangaTab("reading")}
                     >
                       ვკითხულობ ({stats.manga.reading})
                     </Button>
                     <Button
                       variant="ghost"
-                      className={cn("text-sm", activeMangaTab === "completed" ? "bg-gray-800" : "hover:bg-gray-800/50")}
+                      size="sm" // Smaller buttons
+                      className={cn("text-xs md:text-sm", activeMangaTab === "completed" ? "bg-gray-800" : "hover:bg-gray-800/50")}
                       onClick={() => setActiveMangaTab("completed")}
                     >
                       დასრულებული ({stats.manga.completed})
                     </Button>
                     <Button
                       variant="ghost"
+                      size="sm" // Smaller buttons
                       className={cn(
-                        "text-sm",
+                        "text-xs md:text-sm",
                         activeMangaTab === "planToRead" ? "bg-gray-800" : "hover:bg-gray-800/50",
                       )}
                       onClick={() => setActiveMangaTab("planToRead")}
@@ -677,7 +771,7 @@ export default function ProfilePage() {
                     </Button>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" className="text-sm hover:bg-gray-800/50">
+                        <Button variant="ghost" size="sm" className="text-xs md:text-sm hover:bg-gray-800/50">
                           მეტი <ChevronDown className="h-4 w-4 ml-1" />
                         </Button>
                       </DropdownMenuTrigger>
@@ -691,13 +785,15 @@ export default function ProfilePage() {
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
-                  <Button variant="outline" className="bg-gray-800 border-gray-700 hover:bg-gray-700">
-                    <Plus className="h-4 w-4 mr-2" />
+                   {/* Make Add button text smaller */}
+                  <Button variant="outline" size="sm" className="bg-gray-800 border-gray-700 hover:bg-gray-700 flex-shrink-0 ml-2 text-xs md:text-sm">
+                    <Plus className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" />
                     მანგის დამატება
                   </Button>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {/* Responsive grid columns for manga list */}
+                <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
                   {activeMangaTab === "reading" &&
                     (mangaReading.length > 0 ? 
                       mangaReading.map((manga) => <MangaListItem key={manga.id} item={manga} />) :
@@ -749,6 +845,24 @@ export default function ProfilePage() {
           </Tabs>
         </div>
       </main>
+
+      {/* Banner uploader dialog */}
+      {user && (
+        <BannerUploader
+          userId={user.id}
+          currentBannerUrl={profileBanner}
+          onBannerUpdate={handleBannerUpdate}
+          isOpen={showBannerUpload}
+          onClose={() => setShowBannerUpload(false)}
+        />
+      )}
+      
+      {/* Ad banner - only shown for non-VIP users */}
+      {!profile?.vip_status && (
+        <div className="mx-auto my-4">
+          <AdBanner placement="profile" />
+        </div>
+      )}
     </div>
   )
 }

@@ -54,6 +54,7 @@ type ChapterFormValues = z.infer<typeof chapterSchema>;
 type ChapterFormProps = {
   initialData?: any;
   contentId: string;
+  contentType?: 'manga' | 'comics';
   onSuccess: () => void;
   onCancel: () => void;
 };
@@ -61,6 +62,7 @@ type ChapterFormProps = {
 export default function ChapterForm({
   initialData,
   contentId,
+  contentType,
   onSuccess,
   onCancel,
 }: ChapterFormProps) {
@@ -244,11 +246,10 @@ export default function ChapterForm({
       const chapterData = {
         contentId: contentId,
         number: data.number,
-        title: data.title,
-        description: data.description || '',
-        thumbnail: thumbnail,
+        title: data.title || `Chapter ${data.number}`, // Provide default title if empty
         pages: processedPages,
-        releaseDate: data.releaseDate,
+        release_date: data.releaseDate || null,
+        thumbnail: thumbnail,
       };
       
       console.log("Submitting chapter data:", chapterData);

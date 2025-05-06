@@ -98,8 +98,9 @@ export default function AnimePage({ params }: { params: { id: string } }) {
   const [libraryStatus, setLibraryStatus] = useState<MediaStatus | null>(null)
   const [isSubscribed, setIsSubscribed] = useState(false)
   const [isSubProcessing, setIsSubProcessing] = useState(false)
-  const { user, isLoading: authLoading, isAuthenticated } = useAuth()
+  const { user, isLoading: authLoading } = useAuth()
   const userId = user?.id
+  const isAuthenticated = !!user;
 
   // Handle scroll effect for background
   useEffect(() => {
@@ -238,17 +239,7 @@ export default function AnimePage({ params }: { params: { id: string } }) {
         genres: rec.mediaRecommendation.genres || [],
       })) || [],
     // Fix the characters mapping to handle edge cases better
-    characters: animeData.characters?.nodes?.filter((node: any) => node?.id && node?.name)
-      .map((character: any, index: number) => {
-        // Find the edge matching this character to get its role
-        const edge = animeData.characters?.edges?.find((e: any) => e.node?.id === character.id);
-        return {
-          id: character.id,
-          name: character.name?.full || "Unknown",
-          image: character.image?.large || "/placeholder-character.jpg",
-          role: edge?.role || "SUPPORTING"
-        };
-      }) || [],
+    characters: mapCharacters(animeData),
   } : null;
   
   // Check library status when anime data is loaded
@@ -294,38 +285,133 @@ export default function AnimePage({ params }: { params: { id: string } }) {
     checkSub();
   }, [animeId, userId]);
 
-  // Add this function to extract characters from alternative_titles
-  function extractCharactersFromAlternativeTitles(content: any) {
-    if (!content.alternative_titles || !Array.isArray(content.alternative_titles)) {
+  // Update character mapping function in anime page to match manga page
+  function mapCharacters(data: any) {
+    if (!data) {
+      console.log('No data provided for character mapping');
       return [];
     }
-    
-    const characterEntries = content.alternative_titles.filter((entry: string) => 
-      typeof entry === 'string' && entry.startsWith('character:')
-    );
-    
-    if (characterEntries.length === 0) {
-      return [];
-    }
-    
-    console.log(`Found ${characterEntries.length} characters in alternative_titles`);
     
     try {
-      const extractedCharacters = characterEntries.map((entry: string) => {
-        // Extract the JSON part after "character:"
-        const jsonStr = entry.substring(10); // 'character:'.length = 10
-        const charData = JSON.parse(jsonStr);
-        return {
-          id: charData.id,
-          name: charData.name,
-          image: charData.image,
-          role: charData.role || 'SUPPORTING'
-        };
+      // Check if characters data exists in any expected format
+      if (!data.characters) {
+        console.log('No characters property in data');
+        
+        // WORKAROUND: Try to extract character data from alternative_titles
+        if (data.alternative_titles && Array.isArray(data.alternative_titles)) {
+          const characterEntries = data.alternative_titles.filter((entry: string) => 
+            typeof entry === 'string' && entry.startsWith('character:')
+          );
+          
+          if (characterEntries.length > 0) {
+            console.log(`Found ${characterEntries.length} characters in alternative_titles`);
+            const extractedCharacters = characterEntries.map((entry: string) => {
+              // Extract the JSON part after "character:"
+              const jsonStr = entry.substring(10); // 'character:'.length = 10
+              const charData = JSON.parse(jsonStr);
+              console.log('Extracted character:', charData);
+              return {
+                id: charData.id || `char-${Math.random().toString(36).substring(2, 9)}`,
+                name: charData.name || 'Unknown',
+                image: charData.image || '/placeholder-character.jpg',
+                role: charData.role || 'SUPPORTING',
+                age: charData.age || null,
+                gender: charData.gender || null,
+                voiceActor: null
+              };
+            });
+            console.log(`Successfully extracted ${extractedCharacters.length} characters`);
+            return extractedCharacters;
+          }
+        }
+        
+        return [];
+      }
+      
+      console.log('Character data structure:', {
+        hasCharacters: !!data.characters,
+        hasEdges: !!data.characters.edges,
+        edgeCount: data.characters.edges?.length || 0,
+        hasNodes: !!data.characters.nodes,
+        nodeCount: data.characters.nodes?.length || 0
       });
-      console.log(`Successfully extracted ${extractedCharacters.length} characters`);
-      return extractedCharacters;
+
+      // Map nodes with roles from edges
+      if (data.characters.nodes && data.characters.nodes.length > 0) {
+        console.log('Mapping characters from nodes with roles from edges');
+        
+        const mappedChars = data.characters.nodes
+          .filter((node: any) => node?.id && node?.name)
+          .map((char: any) => {
+            // Try to find the role from edges
+            const role = data.characters?.edges?.find((edge: any) => 
+              edge?.node?.id === char.id
+            )?.role || char.role || 'SUPPORTING';
+            
+            return {
+              id: char.id || `char-${Math.random().toString(36).substring(2, 9)}`,
+              name: char.name?.full || 'Unknown',
+              image: char.image?.large || char.image?.medium || '/placeholder-character.jpg',
+              role: role,
+              age: char.age || null,
+              gender: char.gender || null,
+              voiceActor: null
+            };
+          });
+        
+        console.log(`Mapped ${mappedChars.length} characters from nodes with roles`);
+        return mappedChars;
+      }
+      
+      // Fallback to edges if nodes aren't available
+      if (data.characters.edges && data.characters.edges.length > 0) {
+        console.log('Mapping characters from edges data');
+        
+        const mappedChars = data.characters.edges
+          .filter((char: any) => char && char.node)
+          .map((char: any) => {
+            const nodeData = char.node;
+            return {
+              id: nodeData.id || `char-${Math.random().toString(36).substring(2, 9)}`,
+              name: nodeData.name?.full || 'Unknown',
+              image: nodeData.image?.large || nodeData.image?.medium || '/placeholder-character.jpg',
+              role: char.role || 'SUPPORTING',
+              age: nodeData.age || null,
+              gender: nodeData.gender || null,
+              voiceActor: null
+            };
+          });
+        
+        console.log(`Mapped ${mappedChars.length} characters from edges`);
+        return mappedChars;
+      }
+      
+      // Last resort - handle array of character objects (database format)
+      if (Array.isArray(data.characters)) {
+        console.log('Mapping characters from array data (database format)');
+        
+        const mappedChars = data.characters
+          .filter((char: any) => char)
+          .map((char: any) => {
+            return {
+              id: char.id || `char-${Math.random().toString(36).substring(2, 9)}`,
+              name: char.name || 'Unknown',
+              image: char.image || '/placeholder-character.jpg',
+              role: char.role || 'SUPPORTING',
+              age: char.age || null,
+              gender: char.gender || null,
+              voiceActor: null
+            };
+          });
+        
+        console.log(`Mapped ${mappedChars.length} characters from array`);
+        return mappedChars;
+      }
+      
+      console.log('No usable character data found in any expected format');
+      return [];
     } catch (err) {
-      console.error('Error extracting characters from alternative_titles:', err);
+      console.error('Error mapping characters:', err);
       return [];
     }
   }
@@ -377,8 +463,14 @@ export default function AnimePage({ params }: { params: { id: string } }) {
   const formatDatabaseContent = (content: any) => {
     console.log("Formatting database content for anime:", content);
     
+    // --- DEBUG: Log raw image values ---
+    console.log(`[anime formatDB] Raw Banner: ${content.bannerImage}, Raw Thumb: ${content.thumbnail}`);
+    const bannerToUse = (content.bannerImage && content.bannerImage.trim() !== '') ? content.bannerImage : content.thumbnail;
+    console.log(`[anime formatDB] Banner to use: ${bannerToUse}`);
+    // ---------------------------------
+    
     // Extract characters from alternative_titles if they exist
-    const extractedCharacters = extractCharactersFromAlternativeTitles(content);
+    const extractedCharacters = mapCharacters(content);
     
     // Extract release date details for logging
     const releaseYear = content.release_year || null;
@@ -404,7 +496,7 @@ export default function AnimePage({ params }: { params: { id: string } }) {
         large: content.thumbnail,
         extraLarge: content.thumbnail,
       },
-      bannerImage: content.thumbnail, // Use thumbnail as banner as a fallback
+      bannerImage: bannerToUse,
       status: content.status.toUpperCase(),
       averageScore: typeof content.rating === 'number' ? content.rating * 10 : 70, // Convert 0-10 to 0-100
       popularity: content.popularity || 0,
@@ -598,18 +690,22 @@ export default function AnimePage({ params }: { params: { id: string } }) {
       // const { success, subscribed, error } = await toggleSubscription(userId, animeId);
       const success = true; // Placeholder
       const subscribed = !originalSubscribed; // Placeholder
-      const error = null; // Placeholder
+      const error: any = null; // Placeholder - explicitly type as any
 
       if (!success) {
         setIsSubscribed(originalSubscribed); // Revert optimistic update
-        toast({ title: "Failed to update subscription", description: error?.message, variant: "destructive" });
+        // Check error exists and has a message property before accessing it
+        const errorMessage = error && typeof error === 'object' && error !== null && 'message' in error ? String(error.message) : 'Unknown error';
+        toast({ title: "Failed to update subscription", description: errorMessage, variant: "destructive" });
       } else {
         setIsSubscribed(subscribed); // Confirm state
         toast({ title: subscribed ? "Subscribed!" : "Unsubscribed", description: `You will ${subscribed ? 'now' : 'no longer'} receive notifications for ${processedData.title}.` });
       }
-    } catch (err) {
+    } catch (err: any) { // Explicitly type caught err as any
       setIsSubscribed(originalSubscribed); // Revert on error
-      toast({ title: "Error updating subscription", variant: "destructive" });
+      // Add check for error message here too
+      const errorMessage = err && typeof err === 'object' && err !== null && 'message' in err ? String(err.message) : 'Unknown error';
+      toast({ title: "Error updating subscription", description: errorMessage, variant: "destructive" });
       console.error("Subscription toggle error:", err);
     } finally {
       setIsSubProcessing(false);
@@ -687,10 +783,13 @@ export default function AnimePage({ params }: { params: { id: string } }) {
             >
               {/* Hero section with banner image and overlay */}
               <div className="relative w-full h-[500px] lg:h-[600px]">
+                {/* --- DEBUG LOG --- */}
+                {(() => { console.log("[app/anime/[id]] Rendering Banner. processedData?.bannerImage:", processedData?.bannerImage); return null; })()}
                 <div
                   className="absolute inset-0 bg-cover bg-center brightness-[0.6]"
                   style={{
-                    backgroundImage: `url(${processedData?.bannerImage})`,
+                    // Explicitly prioritize bannerImage, fallback to coverImage
+                    backgroundImage: `url(${processedData?.bannerImage || processedData?.coverImage || '/placeholder.svg'})`,
                     backgroundPosition: `center ${Math.min(scrollPosition * 0.2, 100)}px`,
                   }}
                 />
@@ -771,7 +870,7 @@ export default function AnimePage({ params }: { params: { id: string } }) {
                         variants={itemVariants}
                         className="flex flex-wrap gap-2 mb-5"
                       >
-                        {processedData?.genres.map((genre) => (
+                        {processedData?.genres.map((genre: string) => (
                           <span
                             key={genre}
                             className="bg-white/10 hover:bg-white/20 px-3 py-1 rounded-full text-xs font-medium transition-colors"
@@ -798,7 +897,7 @@ export default function AnimePage({ params }: { params: { id: string } }) {
                         {/* Library Status Dropdown */}
                         <LibraryStatusButton 
                           id={animeId}
-                          type={MediaType.ANIME}
+                          type={'anime'}
                           currentStatus={libraryStatus}
                           onStatusChange={handleStatusChange}
                         />
@@ -824,7 +923,7 @@ export default function AnimePage({ params }: { params: { id: string } }) {
                           ) : (
                             <Bell className="h-4 w-4" />
                           )}
-                          <span>{isSubscribed ? "Subscribed" : "Subscribe"}</span>
+                          <span>{isSubscribed ? "გამოწერილია" : "გამოწერა"}</span>
                         </motion.button>
                         
                         <motion.button
@@ -848,19 +947,20 @@ export default function AnimePage({ params }: { params: { id: string } }) {
                 </motion.div>
               </div>
 
-              {/* Main content */}
+              {/* Main content - Adjust grid for mobile */}
               <div className="px-6 md:px-12 max-w-6xl mx-auto">
                 <motion.div
                   variants={sectionVariants}
                   initial="initial"
                   animate="animate"
-                  className="grid grid-cols-1 md:grid-cols-[1fr_280px] gap-8 mt-8"
+                  // Change grid to stack on mobile
+                  className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-8 mt-8"
                 >
                   {/* Left column */}
-                  <div className="space-y-10">
+                  <div className="space-y-10 order-2 lg:order-1"> {/* Ensure main content comes first on mobile */}
                     {/* Synopsis section */}
                     <motion.section variants={itemVariants}>
-                      <h2 className="text-2xl font-bold mb-4 flex items-center">
+                      <h2 className="text-xl md:text-2xl font-bold mb-4 flex items-center">
                         <ChevronRight className="mr-2 h-5 w-5 text-primary/80" />
                         Synopsis
                       </h2>
@@ -876,7 +976,7 @@ export default function AnimePage({ params }: { params: { id: string } }) {
                       variants={itemVariants}
                       className="mb-8"
                     >
-                      <h2 className="text-2xl font-bold mb-4 flex items-center">
+                      <h2 className="text-xl md:text-2xl font-bold mb-4 flex items-center">
                         <ChevronRight className="mr-2 h-5 w-5 text-primary/80" />
                         Episodes
                         <span className="ml-2 text-sm font-normal text-white/60">
@@ -951,11 +1051,55 @@ export default function AnimePage({ params }: { params: { id: string } }) {
                         variants={itemVariants}
                         className="mb-8"
                       >
-                        <h2 className="text-2xl font-bold mb-4 flex items-center">
+                        <h2 className="text-xl md:text-2xl font-bold mb-4 flex items-center">
                           <ChevronRight className="mr-2 h-5 w-5 text-primary/80" />
                           Characters
                         </h2>
-                        <CharacterSection characters={processedData.characters} />
+                        <div className="mt-12">
+                          <h2 className="text-2xl font-bold mb-6">Characters</h2>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                            {processedData.characters.map((character: any) => (
+                              <div 
+                                key={character.id} 
+                                className="bg-card rounded-lg overflow-hidden border border-border hover:border-primary/50 transition-colors"
+                              >
+                                <div className="aspect-[3/4] relative overflow-hidden">
+                                  <img 
+                                    src={character.image} 
+                                    alt={character.name}
+                                    className="object-cover w-full h-full"
+                                    onError={(e) => {
+                                      e.currentTarget.src = '/placeholder-character.jpg';
+                                    }}
+                                  />
+                                  <div className="absolute bottom-0 w-full bg-gradient-to-t from-black/80 to-transparent p-2 pt-8">
+                                    <div className="text-xs px-2 py-1 rounded-full bg-primary/80 inline-block">
+                                      {character.role === 'MAIN' ? 'Main' : 
+                                       character.role === 'SUPPORTING' ? 'Supporting' : 'Background'}
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="p-3">
+                                  <h3 className="font-semibold text-sm truncate" title={character.name}>
+                                    {character.name}
+                                  </h3>
+                                  <div className="flex flex-wrap gap-2 mt-1">
+                                    {character.gender && (
+                                      <span className="text-xs text-muted-foreground">
+                                        {character.gender}
+                                      </span>
+                                    )}
+                                    {character.age && (
+                                      <span className="text-xs text-muted-foreground">
+                                        {character.age} years
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       </motion.section>
                     )}
 
@@ -964,7 +1108,7 @@ export default function AnimePage({ params }: { params: { id: string } }) {
                       variants={itemVariants}
                       className="mb-8"
                     >
-                      <h2 className="text-2xl font-bold mb-4 flex items-center">
+                      <h2 className="text-xl md:text-2xl font-bold mb-4 flex items-center">
                         <ChevronRight className="mr-2 h-5 w-5 text-primary/80" />
                         Comments
                       </h2>
@@ -972,15 +1116,15 @@ export default function AnimePage({ params }: { params: { id: string } }) {
                     </motion.section>
                   </div>
 
-                  {/* Right sidebar */}
-                  <div>
+                  {/* Right sidebar - stacks below on mobile due to grid change */}
+                  <div className="order-1 lg:order-2"> {/* Ensure sidebar comes second on mobile */}
                     {/* Related content section */}
                     {processedData?.relations && processedData.relations.length > 0 && (
                       <motion.section
                         variants={itemVariants}
                         className="mb-8"
                       >
-                        <h2 className="text-xl font-bold mb-4 flex items-center">
+                        <h2 className="text-lg md:text-xl font-bold mb-4 flex items-center">
                           <ChevronRight className="mr-2 h-5 w-5 text-primary/80" />
                           Related
                         </h2>
@@ -996,7 +1140,7 @@ export default function AnimePage({ params }: { params: { id: string } }) {
                         variants={itemVariants}
                         className="mb-8"
                       >
-                        <h2 className="text-xl font-bold mb-4 flex items-center">
+                        <h2 className="text-lg md:text-xl font-bold mb-4 flex items-center">
                           <ChevronRight className="mr-2 h-5 w-5 text-primary/80" />
                           Recommended
                         </h2>

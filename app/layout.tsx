@@ -4,6 +4,7 @@ import { Inter, Space_Grotesk } from 'next/font/google'
 import { NextAuthProvider } from '@/providers/auth-provider'
 import { SupabaseAuthProvider } from '@/components/supabase-auth-provider'
 import { UnifiedAuthProvider } from '@/components/unified-auth-provider'
+import { MaintenanceRunner } from '@/components/maintenance-runner'
 import { Toaster } from 'sonner'
 
 const inter = Inter({ subsets: ['latin'] })
@@ -53,6 +54,7 @@ export default function RootLayout({
         <NextAuthProvider>
           <SupabaseAuthProvider>
             <UnifiedAuthProvider>
+              <MaintenanceRunner />
               {children}
               <Toaster richColors position="top-right" theme="dark" />
             </UnifiedAuthProvider>

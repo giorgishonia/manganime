@@ -66,16 +66,18 @@ type ContentItem = {
 // Wrapper function to get all content for admin use
 async function getAllContentForAdmin() {
   try {
-    // Get both anime and manga content and combine them
+    // Get anime, manga, and comics content and combine them
     const animeResult = await getAllContent('anime', 100, 0);
     const mangaResult = await getAllContent('manga', 100, 0);
+    const comicsResult = await getAllContent('comics', 100, 0); // Fetch comics
     
     // Extract content arrays or use empty arrays
     const animeContent = animeResult?.success ? animeResult.content || [] : [];
     const mangaContent = mangaResult?.success ? mangaResult.content || [] : [];
+    const comicsContent = comicsResult?.success ? comicsResult.content || [] : []; // Extract comics
     
-    // Combine anime and manga content
-    return [...animeContent, ...mangaContent];
+    // Combine all content types
+    return [...animeContent, ...mangaContent, ...comicsContent];
   } catch (error) {
     console.error("Failed to fetch all content:", error);
     return [];
@@ -386,6 +388,7 @@ export default function AdminEpisodesPage() {
                 <SelectItem value="all-types">All Types</SelectItem>
                 <SelectItem value="anime">Anime</SelectItem>
                 <SelectItem value="manga">Manga</SelectItem>
+                <SelectItem value="comics">Comics</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -587,7 +590,7 @@ export default function AdminEpisodesPage() {
             </DialogTitle>
             <DialogDescription>
               {editItem 
-                ? `Update the ${contentDetails?.type === "anime" ? "episode" : "chapter"} information in the form below.`
+                ? `Update the ${contentDetails?.type === "anime" ? "episode" : "chapter"} information below.`
                 : `Fill out the form below to add a new ${contentDetails?.type === "anime" ? "episode" : "chapter"} to ${contentDetails?.title}.`}
             </DialogDescription>
           </DialogHeader>
@@ -598,7 +601,7 @@ export default function AdminEpisodesPage() {
               onSuccess={() => handleFormClose(true)}
               onCancel={() => setFormOpen(false)}
             />
-          ) : selectedContent && contentDetails?.type === "manga" ? (
+          ) : selectedContent && (contentDetails?.type === "manga" || contentDetails?.type === "comics") ? (
             <ChapterForm 
               initialData={editItem} 
               contentId={selectedContent!}

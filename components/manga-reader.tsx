@@ -22,12 +22,15 @@ import {
   ChevronUp,
   BookOpen,
   Eye,
-  EyeOff
+  EyeOff,
+  MessageSquare
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Progress } from "@/components/ui/progress"
 import { updateReadingProgress } from "@/lib/reading-history"
 import { Switch } from "@/components/ui/switch"
+import { CommentSection } from './comment-section'
+import { Button } from "@/components/ui/button"
 
 interface Chapter {
   number: number
@@ -72,6 +75,7 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
   const [autoHideControls, setAutoHideControls] = useState(true)
   const [isAutoScrolling, setIsAutoScrolling] = useState(false)
   const [autoScrollSpeed, setAutoScrollSpeed] = useState(1)
+  const [showComments, setShowComments] = useState(false)
   
   const [loadedPages, setLoadedPages] = useState<Record<number, boolean>>({})
   
@@ -607,6 +611,11 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
     };
   }, []);
 
+  const toggleComments = () => {
+    setShowComments(!showComments);
+    if (showSettings) setShowSettings(false);
+  }
+
   return (
     <AnimatePresence>
       <motion.div
@@ -1000,7 +1009,8 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
                       <Switch
                         checked={showPageNumbers}
                         onCheckedChange={setShowPageNumbers}
-                      />
+                      >
+                      </Switch>
                     </div>
                     <div className={`flex items-center justify-between py-1 ${readingMode !== 'Long Strip' ? 'opacity-50' : ''}`}>
                       <span className="text-sm font-medium text-gray-400 select-none">შუალედი (გრძელი ზოლი)</span>
@@ -1176,6 +1186,7 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
                     onClick={(e) => {
                       e.stopPropagation();
                       setShowSettings(!showSettings);
+                      if (showComments) setShowComments(false);
                     }}
                     className="p-1.5 rounded-full hover:bg-gray-800/70 transition-colors text-gray-300 hover:text-white"
                     whileHover={{ scale: 1.1 }}
@@ -1183,6 +1194,18 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
                     title="პარამეტრები (S)"
                   >
                     <Settings className="h-5 w-5" />
+                  </motion.button>
+                  <motion.button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleComments();
+                    }}
+                    className={`p-1.5 rounded-full hover:bg-gray-800/70 transition-colors ${showComments ? "text-purple-400" : "text-gray-300 hover:text-white"}`}
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                    title="კომენტარები (C)"
+                  >
+                    <MessageSquare className="h-5 w-5" />
                   </motion.button>
                   <motion.button
                     onClick={(e) => {
@@ -1197,6 +1220,31 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
                     {isFullscreen ? <Minimize2 className="h-5 w-5" /> : <Maximize2 className="h-5 w-5" />}
                   </motion.button>
                 </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {showComments && (
+            <motion.div 
+              className="fixed right-0 top-0 bottom-0 w-[350px] bg-black border-l border-white/20 overflow-y-auto z-50 text-white"
+              initial={{ x: 350, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: 350, opacity: 0 }}
+              transition={{ duration: 0.3 }}
+            >
+              <div className="sticky top-0 z-10 flex items-center justify-between p-4 bg-black border-b border-white/20">
+                <h2 className="text-lg font-medium text-white">Comments</h2>
+                <Button variant="ghost" size="icon" onClick={toggleComments} className="text-white hover:text-white/80">
+                  <X className="h-5 w-5" />
+                </Button>
+              </div>
+              <div className="p-4">
+                <CommentSection 
+                  contentId={`${mangaId}-chapter-${chapter.id || chapter.number}`}
+                  contentType="manga"
+                />
               </div>
             </motion.div>
           )}

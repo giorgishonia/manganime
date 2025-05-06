@@ -43,6 +43,7 @@ type Chapter = {
 
 type ChapterManagerProps = {
   contentId: string;
+  contentType?: 'manga' | 'comics';
   onChaptersUpdated?: () => void;
   initialChapters?: Chapter[];
 };
@@ -65,6 +66,7 @@ function getValidDateOrUndefined(dateString: string | undefined): string | undef
 
 export default function ChapterManager({ 
   contentId, 
+  contentType,
   onChaptersUpdated,
   initialChapters = []
 }: ChapterManagerProps) {
@@ -143,7 +145,9 @@ export default function ChapterManager({
         headers['x-supabase-service-role'] = serviceRoleKey;
       }
       
-      const response = await fetch(`/api/chapters?contentId=${contentId}`, {
+      const apiUrl = `/api/chapters?contentId=${contentId}${contentType ? `&contentType=${contentType}` : ''}`;
+      
+      const response = await fetch(apiUrl, {
         credentials: 'include',
         headers
       });
@@ -271,7 +275,9 @@ export default function ChapterManager({
             </DialogHeader>
             <ScrollArea className="max-h-[calc(90vh-180px)]">
               <div className="p-1">
-                <ChapterForm 
+                <ChapterForm
+                  contentId={contentId}
+                  contentType={contentType}
                   initialData={editingChapter ? {
                     id: editingChapter.id,
                     number: editingChapter.number,
@@ -280,7 +286,6 @@ export default function ChapterManager({
                     thumbnail: editingChapter.thumbnail || "",
                     pages: Array.isArray(editingChapter.pages) ? editingChapter.pages : []
                   } : undefined}
-                  contentId={contentId}
                   onSuccess={handleFormSuccess}
                   onCancel={handleFormCancel}
                 />

@@ -99,7 +99,7 @@ export default function HistoryPage() {
             <AlertCircle className="h-16 w-16 mb-4 text-gray-600" />
             <p className="text-xl mb-2">ისტორია ცარიელია</p>
             <p className="text-sm">დაიწყეთ მანგას კითხვა, რომ აქ გამოჩნდეს.</p>
-            <Link href="/read">
+            <Link href="/manga">
               <Button className="mt-6 bg-purple-600 hover:bg-purple-700">
                 მანგას კითხვის დაწყება
               </Button>

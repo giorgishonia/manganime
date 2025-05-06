@@ -35,17 +35,19 @@ export interface Comment {
   id: string
   user_id: string
   content_id: string
-  content_type: 'anime' | 'manga'
+  content_type: 'anime' | 'manga' | 'comics'
   text: string
   media_url?: string
   created_at: string
   updated_at: string
+  parent_comment_id?: string | null
   user_profile?: {
     username: string
     avatar_url: string
   }
   like_count?: number;
   user_has_liked?: boolean;
+  replies?: Comment[];
 }
 
 // Check if the comments table exists and has the right structure
@@ -85,7 +87,7 @@ export async function ensureCommentsTable() {
 // Fetch comments for a specific content
 export async function getCommentsByContentId(
   contentId: string,
-  contentType: 'anime' | 'manga'
+  contentType: 'anime' | 'manga' | 'comics'
 ) {
   try {
     // Use the public client for reading (RLS should allow reads)
@@ -146,11 +148,12 @@ export async function getCommentsByContentId(
 export async function addComment(
   userId: string,
   contentId: string,
-  contentType: 'anime' | 'manga',
+  contentType: 'anime' | 'manga' | 'comics',
   text: string,
   username: string = 'User',
   avatarUrl: string | null = null,
-  mediaUrl: string | null = null
+  mediaUrl: string | null = null,
+  parentCommentId: string | null = null
 ) {
   try {
     // Ensure userId is in UUID format
@@ -163,6 +166,7 @@ export async function addComment(
       content_type: contentType,
       text: text,
       media_url: mediaUrl,
+      parent_comment_id: parentCommentId,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     }
@@ -302,9 +306,371 @@ export async function updateComment(
   }
 }
 
-// Get all comments - now just uses getCommentsByContentId since we're not using local storage
-export async function getAllComments(contentId: string, contentType: 'anime' | 'manga') {
-  return getCommentsByContentId(contentId, contentType)
+// Get replies for a comment
+export async function getCommentReplies(commentId: string) {
+  try {
+    const { data, error } = await supabase
+      .from('comments')
+      .select('*')
+      .eq('parent_comment_id', commentId)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching comment replies:', error);
+      return { success: false, error, replies: [] };
+    }
+
+    // If we have replies, fetch user profiles
+    if (data && data.length > 0) {
+      const userIds = [...new Set(data.map(reply => reply.user_id))];
+      
+      // Fetch user profiles
+      const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, username, avatar_url, vip_status, vip_tier, vip_theme')
+        .in('id', userIds);
+      
+      if (profilesError) {
+        console.warn('Error fetching profiles for replies:', profilesError);
+      }
+      
+      // Map profiles to replies
+      const repliesWithProfiles = data.map(reply => {
+        const profile = profiles?.find(p => p.id === reply.user_id);
+        return {
+          ...reply,
+          user_profile: profile ? {
+            username: profile.username || 'User',
+            avatar_url: profile.avatar_url || null,
+            vip_status: profile.vip_status || false,
+            vip_tier: profile.vip_tier || null,
+            vip_theme: profile.vip_theme || null
+          } : {
+            username: 'User',
+            avatar_url: null
+          }
+        };
+      });
+      
+      return { success: true, replies: repliesWithProfiles as Comment[] };
+    }
+
+    return { success: true, replies: data as Comment[] };
+  } catch (error) {
+    console.error('Error fetching comment replies:', error);
+    return { success: false, error, replies: [] };
+  }
+}
+
+// Fetch all comments for a specific content with their replies
+export async function getAllComments(
+  contentId: string,
+  contentType: 'anime' | 'manga' | 'comics',
+  userId?: string | null
+) {
+  try {
+    // Ensure userId is UUID if provided
+    const formattedUserId = userId ? ensureUUID(userId) : null;
+    
+    // First try to get comments with parent_comment_id filter
+    try {
+      // Get only the top-level comments (those without a parent_comment_id)
+      const { data, error } = await supabase
+        .from('comments')
+        .select('*')
+        .eq('content_id', contentId)
+        .eq('content_type', contentType)
+        .is('parent_comment_id', null)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        // If the error is about the parent_comment_id column not existing,
+        // we'll fall back to the simpler query below
+        if (error.code === '42703' && error.message.includes('parent_comment_id')) {
+          throw new Error('parent_comment_id column does not exist');
+        }
+        
+        console.error('Error fetching comments:', error);
+        return { success: false, error, comments: [] };
+      }
+
+      // If we have top-level comments, fetch their replies and user profiles
+      if (data && data.length > 0) {
+        // Get all top-level comment IDs to fetch their replies
+        const commentIds = data.map(comment => comment.id);
+        
+        // Try to fetch all replies for these comments
+        try {
+          const { data: allReplies, error: repliesError } = await supabase
+            .from('comments')
+            .select('*')
+            .eq('content_id', contentId)
+            .eq('content_type', contentType)
+            .in('parent_comment_id', commentIds)
+            .order('created_at', { ascending: true });
+          
+          if (repliesError) {
+            console.warn('Error fetching replies:', repliesError);
+          }
+          
+          // Get unique user IDs from both comments and replies
+          const userIds = [...new Set([
+            ...data.map(comment => comment.user_id),
+            ...(allReplies?.map(reply => reply.user_id) || [])
+          ])];
+          
+          // Fetch all user profiles
+          const { data: profiles, error: profilesError } = await supabase
+            .from('profiles')
+            .select('id, username, avatar_url, vip_status, vip_tier, vip_theme')
+            .in('id', userIds);
+          
+          if (profilesError) {
+            console.warn('Error fetching profiles:', profilesError);
+          }
+          
+          // Get all comment and reply IDs for like fetching
+          const allCommentIds = [
+            ...data.map(c => c.id),
+            ...(allReplies?.map(r => r.id) || [])
+          ];
+          
+          let likesData: any[] = [];
+          let userLikesSet = new Set<string>();
+
+          if (allCommentIds.length > 0) {
+            // Fetch like counts for all comments/replies
+            const { data: likeCounts, error: countError } = await supabase
+              .from('comment_likes')
+              .select('comment_id, user_id') // Select user_id to count
+              .in('comment_id', allCommentIds);
+
+            if (countError) {
+              console.warn('Error fetching like counts:', countError);
+            } else if (likeCounts) {
+              // Calculate counts per comment_id
+              const counts: Record<string, number> = {};
+              likeCounts.forEach(like => {
+                counts[like.comment_id] = (counts[like.comment_id] || 0) + 1;
+              });
+              likesData = Object.entries(counts).map(([comment_id, count]) => ({ comment_id, like_count: count }));
+            }
+
+            // Fetch likes for the current user if userId is provided
+            if (formattedUserId) {
+              const { data: userLikes, error: userLikesError } = await supabase
+                .from('comment_likes')
+                .select('comment_id')
+                .eq('user_id', formattedUserId)
+                .in('comment_id', allCommentIds);
+
+              if (userLikesError) {
+                console.warn('Error fetching user likes:', userLikesError);
+              } else if (userLikes) {
+                userLikes.forEach(like => userLikesSet.add(like.comment_id));
+              }
+            }
+          }
+          
+          // Group replies by parent comment ID
+          const repliesByParentId: Record<string, Comment[]> = {};
+          
+          if (allReplies) {
+            allReplies.forEach(reply => {
+              const parentId = reply.parent_comment_id;
+              if (parentId) {
+                if (!repliesByParentId[parentId]) {
+                  repliesByParentId[parentId] = [];
+                }
+                
+                // Add user profile and like info to reply
+                const profile = profiles?.find(p => p.id === reply.user_id);
+                const likeInfo = likesData.find(l => l.comment_id === reply.id);
+                
+                repliesByParentId[parentId].push({
+                  ...reply,
+                  user_profile: profile ? {
+                    username: profile.username || 'User',
+                    avatar_url: profile.avatar_url || null,
+                    vip_status: profile.vip_status || false,
+                    vip_tier: profile.vip_tier || null,
+                    vip_theme: profile.vip_theme || null
+                  } : {
+                    username: 'User',
+                    avatar_url: null
+                  },
+                  like_count: likeInfo?.like_count || 0,
+                  user_has_liked: formattedUserId ? userLikesSet.has(reply.id) : false
+                } as Comment);
+              }
+            });
+          }
+          
+          // Add profiles, replies, and like info to comments
+          const commentsWithProfiles = data.map(comment => {
+            const profile = profiles?.find(p => p.id === comment.user_id);
+            const likeInfo = likesData.find(l => l.comment_id === comment.id);
+            
+            return {
+              ...comment,
+              user_profile: profile ? {
+                username: profile.username || 'User',
+                avatar_url: profile.avatar_url || null,
+                vip_status: profile.vip_status || false,
+                vip_tier: profile.vip_tier || null,
+                vip_theme: profile.vip_theme || null
+              } : {
+                username: 'User',
+                avatar_url: null
+              },
+              replies: (repliesByParentId[comment.id] || []).sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()), // Ensure replies are sorted correctly
+              like_count: likeInfo?.like_count || 0,
+              user_has_liked: formattedUserId ? userLikesSet.has(comment.id) : false
+            } as Comment;
+          });
+          
+          return { success: true, comments: commentsWithProfiles };
+        } catch (error) {
+          console.warn('Error processing replies:', error);
+          // Continue with just the comments without replies
+        }
+        
+        // If we reach here, we have comments but couldn't process replies
+        // Add just the user profiles to comments
+        const userIds = [...new Set(data.map(comment => comment.user_id))];
+        
+        const { data: profiles, error: profilesError } = await supabase
+          .from('profiles')
+          .select('id, username, avatar_url, vip_status, vip_tier, vip_theme')
+          .in('id', userIds);
+        
+        if (profilesError) {
+          console.warn('Error fetching profiles:', profilesError);
+        }
+        
+        const commentsWithProfiles = data.map(comment => {
+          const profile = profiles?.find(p => p.id === comment.user_id);
+          
+          return {
+            ...comment,
+            user_profile: profile ? {
+              username: profile.username || 'User',
+              avatar_url: profile.avatar_url || null,
+              vip_status: profile.vip_status || false,
+              vip_tier: profile.vip_tier || null,
+              vip_theme: profile.vip_theme || null
+            } : {
+              username: 'User',
+              avatar_url: null
+            },
+            replies: [],
+            like_count: 0,
+            user_has_liked: false
+          } as Comment;
+        });
+        
+        return { success: true, comments: commentsWithProfiles };
+      }
+
+      return { success: true, comments: data as Comment[] };
+    } catch (error) {
+      // Fall back to simpler query if parent_comment_id column doesn't exist
+      console.log('Falling back to basic comments query due to:', error);
+    }
+    
+    // FALLBACK QUERY - Get all comments without parent filtering
+    const { data: fallbackData, error: fallbackError } = await supabase
+      .from('comments')
+      .select('*')
+      .eq('content_id', contentId)
+      .eq('content_type', contentType)
+      .order('created_at', { ascending: false });
+    
+    if (fallbackError) {
+      console.error('Error fetching comments (fallback):', fallbackError);
+      return { success: false, error: fallbackError, comments: [] };
+    }
+    
+    // Add profiles and like data in fallback mode
+    if (fallbackData && fallbackData.length > 0) {
+      const fallbackUserIds = [...new Set(fallbackData.map(comment => comment.user_id))];
+      const { data: fallbackProfiles, error: fallbackProfilesError } = await supabase
+        .from('profiles')
+        .select('id, username, avatar_url, vip_status, vip_tier, vip_theme')
+        .in('id', fallbackUserIds);
+      
+      if (fallbackProfilesError) {
+        console.warn('Error fetching profiles (fallback):', fallbackProfilesError);
+      }
+
+      // Fetch likes data similarly for fallback
+      let fallbackLikesData: any[] = [];
+      let fallbackUserLikesSet = new Set<string>();
+      const fallbackCommentIds = fallbackData.map(c => c.id); // Use fallbackData
+
+      if (fallbackCommentIds.length > 0) {
+        // Fetch like counts
+        const { data: likeCounts, error: countError } = await supabase
+          .from('comment_likes')
+          .select('comment_id, user_id')
+          .in('comment_id', fallbackCommentIds);
+        
+        if (countError) {
+          console.warn('Error fetching fallback like counts:', countError);
+        } else if (likeCounts) {
+          const counts: Record<string, number> = {};
+          likeCounts.forEach(like => {
+            counts[like.comment_id] = (counts[like.comment_id] || 0) + 1;
+          });
+          fallbackLikesData = Object.entries(counts).map(([comment_id, count]) => ({ comment_id, like_count: count }));
+        }
+
+        // Fetch user likes
+        if (formattedUserId) {
+          const { data: userLikes, error: userLikesError } = await supabase
+            .from('comment_likes')
+            .select('comment_id')
+            .eq('user_id', formattedUserId)
+            .in('comment_id', fallbackCommentIds);
+
+          if (userLikesError) {
+            console.warn('Error fetching fallback user likes:', userLikesError);
+          } else if (userLikes) {
+            userLikes.forEach(like => fallbackUserLikesSet.add(like.comment_id));
+          }
+        }
+      }
+      
+      const commentsWithProfiles = fallbackData.map(comment => { // Use fallbackData
+        const profile = fallbackProfiles?.find(p => p.id === comment.user_id); // Use fallbackProfiles
+        const likeInfo = fallbackLikesData.find(l => l.comment_id === comment.id);
+        
+        return {
+          ...comment,
+          user_profile: profile ? {
+            username: profile.username || 'User',
+            avatar_url: profile.avatar_url || null,
+            vip_status: profile.vip_status || false,
+            vip_tier: profile.vip_tier || null,
+            vip_theme: profile.vip_theme || null
+          } : {
+            username: 'User',
+            avatar_url: null
+          },
+          replies: [], // No replies in fallback mode
+          like_count: likeInfo?.like_count || 0,
+          user_has_liked: formattedUserId ? fallbackUserLikesSet.has(comment.id) : false
+        } as Comment;
+      });
+      
+      return { success: true, comments: commentsWithProfiles };
+    }
+    
+    return { success: true, comments: fallbackData as Comment[] }; // Return fallbackData if empty
+  } catch (error) {
+    console.error('Error fetching comments:', error);
+    return { success: false, error, comments: [] };
+  }
 }
 
 // Upload a media file for a comment

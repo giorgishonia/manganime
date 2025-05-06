@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react'
 import Image from 'next/image'
 import { motion } from 'framer-motion'
-import { Button } from '@/components/ui/button'
 import { X } from 'lucide-react'
 
 // Define sticker categories and their items
@@ -20,16 +19,6 @@ const STICKER_CATEGORIES = [
     ]
   },
   {
-    name: 'Reactions',
-    stickers: [
-      { id: 'reaction1', url: '/stickers/reactions/lol.gif', alt: 'LOL' },
-      { id: 'reaction2', url: '/stickers/reactions/wow.gif', alt: 'Wow' },
-      { id: 'reaction3', url: '/stickers/reactions/cool.gif', alt: 'Cool' },
-      { id: 'reaction4', url: '/stickers/reactions/facepalm.gif', alt: 'Facepalm' },
-      { id: 'reaction5', url: '/stickers/reactions/thinking.gif', alt: 'Thinking' },
-    ]
-  },
-  {
     name: 'Manga',
     stickers: [
       { id: 'manga1', url: '/stickers/manga/baka.gif', alt: 'Baka' },
@@ -38,18 +27,6 @@ const STICKER_CATEGORIES = [
       { id: 'manga4', url: '/stickers/manga/musashi.gif', alt: 'Vagabond manga' },
       { id: 'manga5', url: '/stickers/manga/climber.gif', alt: 'The climber manga' },
       { id: 'manga6', url: '/stickers/manga/punpun.gif', alt: 'Punpun manga' },
-
-    ]
-  },
-  // For development/testing - using actual accessible GIFs
-  {
-    name: 'Test',
-    stickers: [
-      { id: 'test1', url: 'https://media.tenor.com/BEfvQnxnYgEAAAAi/bunny-cute.gif', alt: 'Bunny' },
-      { id: 'test2', url: 'https://media.tenor.com/oDz2eTc4kLIAAAAi/pikachu-happy.gif', alt: 'Pikachu' },
-      { id: 'test3', url: 'https://media.tenor.com/tMxsyVcq1HEAAAAC/anime-love.gif', alt: 'Anime love' },
-      { id: 'test4', url: 'https://media.tenor.com/Gt6-uKqJl8QAAAAC/anime-girl.gif', alt: 'Anime girl' },
-      { id: 'test5', url: 'https://media.tenor.com/uIm2qPDp_NkAAAAd/anime-funny.gif', alt: 'Anime funny' },
     ]
   }
 ]
@@ -66,7 +43,7 @@ interface StickerSelectorProps {
 }
 
 export function StickerSelector({ onSelectSticker, onClose }: StickerSelectorProps) {
-  const [activeCategory, setActiveCategory] = useState(STICKER_CATEGORIES[3].name) // Default to Test category for now
+  const [activeCategory, setActiveCategory] = useState(STICKER_CATEGORIES[0].name) // Default to Anime category
   
   const handleStickerClick = (sticker: Sticker) => {
     onSelectSticker(sticker)
@@ -79,17 +56,16 @@ export function StickerSelector({ onSelectSticker, onClose }: StickerSelectorPro
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 10 }}
+      onClick={(e) => e.stopPropagation()}
     >
       <div className="flex justify-between items-center mb-3">
         <h3 className="text-sm font-medium">Select a Sticker</h3>
-        <Button 
-          variant="ghost" 
-          size="sm" 
-          className="h-6 w-6 p-0 text-gray-400 hover:text-white"
+        <div 
+          className="h-6 w-6 p-0 text-gray-400 hover:text-white flex items-center justify-center rounded-full hover:bg-white/10 cursor-pointer"
           onClick={onClose}
         >
           <X className="h-4 w-4" />
-        </Button>
+        </div>
       </div>
       
       {/* Category tabs */}
@@ -102,7 +78,10 @@ export function StickerSelector({ onSelectSticker, onClose }: StickerSelectorPro
                 ? 'bg-purple-600 text-white'
                 : 'bg-white/10 hover:bg-white/20 text-gray-300'
             }`}
-            onClick={() => setActiveCategory(category.name)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setActiveCategory(category.name);
+            }}
           >
             {category.name}
           </button>
@@ -115,7 +94,10 @@ export function StickerSelector({ onSelectSticker, onClose }: StickerSelectorPro
           <button
             key={sticker.id}
             className="relative bg-black/50 border border-white/5 rounded-md hover:border-white/20 transition-all h-20 overflow-hidden flex items-center justify-center"
-            onClick={() => handleStickerClick(sticker)}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleStickerClick(sticker);
+            }}
           >
             <Image
               src={sticker.url}

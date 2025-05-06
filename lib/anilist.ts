@@ -155,20 +155,27 @@ export async function getAnimeById(id: string | number) {
             timeUntilAiring
             airingAt
           }
-          characters(sort: ROLE, page: 1, perPage: 10) {
+          characters(sort: ROLE, page: 1, perPage: 20) {
             nodes {
               id
               name {
                 full
+                native
               }
               age
+              gender
               image {
                 medium
                 large
               }
+              description
             }
             edges {
+              id
               role
+              node {
+                id
+              }
             }
           }
           relations {
@@ -217,6 +224,29 @@ export async function getAnimeById(id: string | number) {
     if (!data || !data.Media) {
       console.error(`No anime found with ID: ${id}`);
       return null;
+    }
+    
+    // Process character data
+    if (data.Media.characters) {
+      // Create a map of node IDs to roles
+      const roleMap = new Map();
+      if (data.Media.characters.edges) {
+        data.Media.characters.edges.forEach((edge: any) => {
+          roleMap.set(edge.node.id, edge.role);
+        });
+      }
+      
+      // Enhance node data with role information
+      if (data.Media.characters.nodes) {
+        data.Media.characters.nodes = data.Media.characters.nodes.map((node: any) => {
+          return {
+            ...node,
+            role: roleMap.get(node.id) || 'SUPPORTING'
+          };
+        });
+      }
+      
+      console.log(`Processed ${data.Media.characters.nodes?.length || 0} characters with roles`);
     }
     
     console.log(`Successfully fetched anime data for ID: ${id}`);
@@ -291,7 +321,7 @@ export async function getMangaById(id: string | number) {
             }
           }
         }
-        characters(sort: ROLE) {
+        characters(sort: ROLE, page: 1, perPage: 20) {
           edges {
             id
             role
@@ -307,6 +337,7 @@ export async function getMangaById(id: string | number) {
               }
               gender
               age
+              description
             }
           }
           nodes {
@@ -321,6 +352,7 @@ export async function getMangaById(id: string | number) {
             }
             gender
             age
+            description
           }
         }
         recommendations(sort: RATING_DESC) {
@@ -369,22 +401,34 @@ export async function getMangaById(id: string | number) {
       return null;
     }
     
+    // Process character data
+    if (data.Media.characters) {
+      // Create a map of node IDs to roles
+      const roleMap = new Map();
+      if (data.Media.characters.edges) {
+        data.Media.characters.edges.forEach((edge: any) => {
+          roleMap.set(edge.node.id, edge.role);
+        });
+      }
+      
+      // Enhance node data with role information
+      if (data.Media.characters.nodes) {
+        data.Media.characters.nodes = data.Media.characters.nodes.map((node: any) => {
+          return {
+            ...node,
+            role: roleMap.get(node.id) || 'SUPPORTING'
+          };
+        });
+      }
+      
+      console.log(`Processed ${data.Media.characters.nodes?.length || 0} characters with roles`);
+    }
+    
     console.log('AniList API - Character data received:', {
       hasCharacters: !!data.Media.characters,
       nodeCount: data.Media.characters?.nodes?.length || 0,
       edgeCount: data.Media.characters?.edges?.length || 0
     });
-
-    // Log character structure in detail
-    if (data.Media.characters) {
-      if (data.Media.characters.edges && data.Media.characters.edges.length > 0) {
-        console.log('First character edge structure:', JSON.stringify(data.Media.characters.edges[0], null, 2));
-      }
-      
-      if (data.Media.characters.nodes && data.Media.characters.nodes.length > 0) {
-        console.log('First character node structure:', JSON.stringify(data.Media.characters.nodes[0], null, 2));
-      }
-    }
 
     return data.Media;
   } catch (error) {

@@ -58,6 +58,7 @@ export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const id = searchParams.get("id");
   const contentId = searchParams.get("contentId");
+  const contentType = searchParams.get("contentType");
   
   const supabase = createRouteHandlerClient({ cookies });
   
@@ -76,13 +77,19 @@ export async function GET(request: NextRequest) {
     } else if (contentId) {
       // Get chapters for a specific content
       // Note: Using the content_id field (snake_case) as per database schema
-      console.log("Fetching chapters for contentId:", contentId);
+      console.log("Fetching chapters for contentId:", contentId, "contentType:", contentType);
       
-      const { data, error } = await supabase
+      let query = supabase
         .from("chapters")
         .select("*")
-        .eq("content_id", contentId)
-        .order("number");
+        .eq("content_id", contentId);
+      
+      // If content type is specified, filter by it
+      if (contentType) {
+        query = query.eq("content_type", contentType);
+      }
+      
+      const { data, error } = await query.order("number");
         
       if (error) {
         console.error("Error fetching chapters:", error);
@@ -207,10 +214,10 @@ export async function POST(request: NextRequest) {
     
     console.log("Content found:", contentData);
     
-    if (contentData.type !== "manga") {
+    if (contentData.type !== "manga" && contentData.type !== "comics") {
       console.error("Content type mismatch:", contentData.type);
       return NextResponse.json(
-        { error: "Chapters can only be added to manga content", details: `Content type is: ${contentData.type}` },
+        { error: "Chapters can only be added to manga or comics content", details: `Content type is: ${contentData.type}` },
         { status: 400 }
       );
     }
