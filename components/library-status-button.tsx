@@ -38,7 +38,7 @@ export function LibraryStatusButton({
 }: LibraryStatusButtonProps) {
   const [isOpen, setIsOpen] = useState(false)
   
-  const isAnime = type === MediaType.ANIME
+  const isAnime = type === 'anime'
   
   const getStatusInfo = (status: MediaStatus | null) => {
     switch (status) {
@@ -116,7 +116,7 @@ export function LibraryStatusButton({
       onStatusChange(null as any)
       
       // Remove from library in database
-      await updateItemStatus(id, type.toLowerCase(), 'removed', '', '', 0)
+      await updateItemStatus(id, type.toLowerCase() as MediaType, 'removed' as MediaStatus, '', '', 0)
       
       // Show success toast
       toast({
