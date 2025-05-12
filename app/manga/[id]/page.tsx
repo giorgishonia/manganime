@@ -46,7 +46,7 @@ import { CharacterSection } from '@/components/character-section'
 import { CommentSection } from '@/components/comment-section'
 import ChapterManager from '@/components/admin/chapter-manager'
 import { isValid } from "date-fns";
-import { getMangaProgress, getChapterProgress, getReadPercentage, getMangaTotalProgress, getLatestChapterRead, calculateMangaProgressByChapter } from '@/lib/reading-history'
+import { getMangaProgress, getChapterProgress, getReadPercentage, getMangaTotalProgress, getLatestChapterRead, calculateMangaProgressByChapter, updateReadingProgress } from '@/lib/reading-history'
 import { Progress } from '@/components/ui/progress'
 import { MediaStatus, MediaType, getLibraryItem, getLibraryItemSync, hasStatus, hasStatusSync, updateItemStatus } from '@/lib/user-library'
 import { toast } from '@/components/ui/use-toast'
@@ -60,6 +60,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { useUnifiedAuth } from '@/components/unified-auth-provider'
 import { useAuth } from '@/components/supabase-auth-provider'
+import { AppSidebar } from '@/components/app-sidebar'
 
 // Animation variants
 const pageVariants = {
@@ -416,42 +417,51 @@ export default function MangaPage({ params }: { params: { id: string } }) {
   }
 
   const handleReadClick = (chapterIndex = 0, resumeFromProgress = false) => {
-    let selectedIndex = chapterIndex;
-    let initialPage = 0;
+    if (!processedData) return;
     
-    // If resuming from progress, find the chapter index that matches the stored progress
-    if (resumeFromProgress && readingProgress && processedData) {
-      const progressChapterIndex = processedData.chapterList.findIndex(
-        (ch: any) => ch.id === readingProgress.chapterId || 
-                     ch.number === readingProgress.chapterNumber
-      );
-      
-      if (progressChapterIndex !== -1) {
-        selectedIndex = progressChapterIndex;
-        // Also set the initial page to resume from
-        initialPage = readingProgress.currentPage;
-      }
+    if (processedData.chapterList.length === 0) {
+      toast({
+        title: "თავები არ არის",
+        description: "ამ მანგას ჯერ არ აქვს ხელმისაწვდომი თავები",
+        duration: 3000,
+      });
+      return;
     }
     
-    setSelectedChapter(selectedIndex);
-    // Store the initial page to use when opening the reader
-    setInitialReaderPage(initialPage);
+    setSelectedChapter(chapterIndex);
+    
+    // If resumeFromProgress is true AND readingProgress exists for this chapter/manga combo
+    if (resumeFromProgress && readingProgress) {
+      setInitialReaderPage(readingProgress.pageNumber);
+    } else {
+      setInitialReaderPage(0);
+    }
+    
     setIsReaderOpen(true);
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    
+    // Update reading progress to indicate this manga/chapter is being read
+    const chapterId = processedData.chapterList[chapterIndex].id || 
+                      `chapter-${processedData.chapterList[chapterIndex].number}`;
+    
+    updateReadingProgress({
+      mangaId,
+      chapterId,
+      chapterNumber: processedData.chapterList[chapterIndex].number,
+      chapterTitle: processedData.chapterList[chapterIndex].title,
+      currentPage: 0,
+      totalPages: processedData.chapterList[chapterIndex].pages.length,
+      lastRead: Date.now(),
+      mangaTitle: processedData.title,
+      mangaThumbnail: processedData.coverImage
+    });
   };
 
   // Replace the generateMockChapters function with a formatChapters function
   const formatChapters = (chaptersData: any[] = []) => {
     if (!chaptersData || chaptersData.length === 0) {
-      // Return empty array or fallback to mock data if needed
-      console.log("No chapters available, returning empty array");
-      return Array.from({ length: 1 }, (_, i) => ({
-        number: i + 1,
-        title: `No chapters available`,
-        releaseDate: new Date().toLocaleDateString(),
-        thumbnail: mangaData.coverImage?.large || "/placeholder.svg", 
-        pages: ["/manga-page-placeholder.jpg"]
-      }));
+      // Create an empty chapters indicator that's compatible with the Chapter interface
+      console.log("No chapters available, returning empty state indicator");
+      return [];
     }
     
     return chaptersData.map((chapter) => ({
@@ -901,10 +911,10 @@ export default function MangaPage({ params }: { params: { id: string } }) {
       localStorage.setItem('favorites', JSON.stringify(favorites));
       
       toast({
-        title: isFavorite ? "რჩეულებიდან ამოშლილია" : "რჩეულებში დამატებულია",
-        description: isFavorite 
-          ? `"${processedData?.title}" ამოშლილია რჩეულებიდან` 
-          : `"${processedData?.title}" დამატებულია რჩეულებში`,
+        title: !isFavorite ? "რჩეულებში დამატებულია" : "რჩეულებიდან ამოშლილია",
+        description: !isFavorite 
+          ? `"${processedData?.title}" დამატებულია რჩეულებში` 
+          : `"${processedData?.title}" ამოშლილია რჩეულებიდან`,
         duration: 3000,
       });
     } catch (error) {
@@ -931,6 +941,11 @@ export default function MangaPage({ params }: { params: { id: string } }) {
     return (
       <div className="min-h-screen bg-black text-white flex justify-center items-center">
         <div className="text-center">
+          <div
+            className="mb-6"
+          >
+            <img src="/images/mascot/confused.png" alt="Page not found" className="mx-auto w-36 h-36" />
+          </div>
           <h1 className="text-2xl font-bold mb-4">მანგა ვერ მოიძებნა</h1>
           <button onClick={() => router.back()} className="px-4 py-2 bg-purple-600 rounded-md">
             უკან დაბრუნება
@@ -943,6 +958,8 @@ export default function MangaPage({ params }: { params: { id: string } }) {
   return (
     <div className="flex min-h-screen bg-[#070707] text-white antialiased">
 
+      <AppSidebar />
+      
       <motion.div 
         ref={scrollRef}
         className="flex-1 min-h-screen text-white relative overflow-y-auto overflow-x-hidden md:pl-20"
@@ -1240,7 +1257,7 @@ export default function MangaPage({ params }: { params: { id: string } }) {
                               className="text-gray-400"
                               onClick={() => {
                                 setLibraryStatus(null);
-                                updateItemStatus(mangaId, 'manga', 'plan_to_read', '', '', 0);
+                                updateItemStatus(mangaId, 'manga', null, processedData.title, processedData.coverImage, 0, 0);
                               }}
                             >
                               <X className="mr-2 h-4 w-4" />
@@ -1344,129 +1361,146 @@ export default function MangaPage({ params }: { params: { id: string } }) {
                             
                             {/* Simple chapter list for dropdown */}
                             <div className="py-2">
-                              {processedData?.chapterList?.map((chapter: any, index: number) => {
-                                const chapterId = chapter.id || `chapter-${chapter.number}`;
-                                const readPercentage = getReadPercentage(mangaId, chapterId);
-                                const isCurrentlyReading = readingProgress?.chapterId === chapterId || readingProgress?.chapterNumber === chapter.number;
-                                
-                                return (
-                                  <div 
-                                    key={`chapter-dropdown-${index}`}
-                                    onClick={() => handleReadClick(index)}
-                                    className={cn(
-                                      "flex items-center p-2 hover:bg-purple-900/20 rounded cursor-pointer transition-colors mx-2",
-                                      isCurrentlyReading && "bg-purple-900/20 text-purple-300"
-                                    )}
-                                  >
-                                    <div className={cn(
-                                      "h-7 w-7 rounded-full flex items-center justify-center text-xs mr-3 flex-shrink-0",
-                                      isCurrentlyReading 
-                                        ? "bg-purple-700 text-white ring-2 ring-purple-500/50" 
-                                        : readPercentage > 0 
-                                          ? "bg-green-700/70 text-white" 
-                                          : "bg-gray-800"
-                                    )}>
-                                      {chapter.number}
-                                    </div>
-                                    
-                                    <div className="flex-1 min-w-0">
-                                      <div className="flex items-center justify-between gap-2">
-                                        <span className="font-medium text-sm truncate">{chapter.title}</span>
-                                        {isCurrentlyReading && (
-                                          <BookOpen className="h-4 w-4 flex-shrink-0 text-purple-400 ml-1" />
+                              {processedData?.chapterList?.length === 0 ? (
+                                <div className="text-center py-5 px-4">
+                                  <p className="text-white/70 text-sm">თავები ჯერ არ არის ხელმისაწვდომი.</p>
+                                </div>
+                              ) : (
+                                processedData?.chapterList?.map((chapter: any, index: number) => {
+                                  const chapterId = chapter.id || `chapter-${chapter.number}`;
+                                  const readPercentage = getReadPercentage(mangaId, chapterId);
+                                  const isCurrentlyReading = readingProgress?.chapterId === chapterId || readingProgress?.chapterNumber === chapter.number;
+                                  
+                                  return (
+                                    <div 
+                                      key={`chapter-dropdown-${index}`}
+                                      onClick={() => handleReadClick(index)}
+                                      className={cn(
+                                        "flex items-center p-2 hover:bg-purple-900/20 rounded cursor-pointer transition-colors mx-2",
+                                        isCurrentlyReading && "bg-purple-900/20 text-purple-300"
+                                      )}
+                                    >
+                                      <div className={cn(
+                                        "h-7 w-7 rounded-full flex items-center justify-center text-xs mr-3 flex-shrink-0",
+                                        isCurrentlyReading 
+                                          ? "bg-purple-700 text-white ring-2 ring-purple-500/50" 
+                                          : readPercentage > 0 
+                                            ? "bg-green-700/70 text-white" 
+                                            : "bg-gray-800"
+                                      )}>
+                                        {chapter.number}
+                                      </div>
+                                      
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center justify-between gap-2">
+                                          <span className="font-medium text-sm truncate">{chapter.title}</span>
+                                          {isCurrentlyReading && (
+                                            <BookOpen className="h-4 w-4 flex-shrink-0 text-purple-400 ml-1" />
+                                          )}
+                                        </div>
+                                        
+                                        <div className="text-xs text-gray-400 flex items-center">
+                                          <CalendarDays className="h-3 w-3 mr-1" />
+                                          {chapter.releaseDate}
+                                        </div>
+                                        
+                                        {readPercentage > 0 && (
+                                          <div className="mt-2 w-full">
+                                            <Progress 
+                                              value={readPercentage} 
+                                              className="h-1.5 bg-gray-800/50 w-full" 
+                                              indicatorClassName={isCurrentlyReading ? "bg-purple-500" : "bg-green-500"}
+                                            />
+                                          </div>
                                         )}
                                       </div>
-                                      
-                                      <div className="text-xs text-gray-400 mt-1 flex items-center">
-                                        <CalendarDays className="h-3 w-3 mr-1" />
-                                        {chapter.releaseDate}
-                                      </div>
-                                      
-                                      {readPercentage > 0 && (
-                                        <div className="mt-2 w-full">
-                                          <Progress 
-                                            value={readPercentage} 
-                                            className="h-1.5 bg-gray-800/50 w-full" 
-                                            indicatorClassName={isCurrentlyReading ? "bg-purple-500" : "bg-green-500"}
-                                          />
-                                        </div>
-                                      )}
                                     </div>
-                                  </div>
-                                );
-                              })}
+                                  );
+                                })
+                              )}
                             </div>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </div>
                       
-                      {/* Responsive chapter list */}
-                      <div className="space-y-2">
-                        {processedData?.chapterList?.map((chapter: any, index: number) => {
-                          const chapterId = chapter.id || `chapter-${chapter.number}`;
-                          const readPercentage = getReadPercentage(mangaId, chapterId);
-                          const isCurrentlyReading = readingProgress?.chapterId === chapterId || readingProgress?.chapterNumber === chapter.number;
-                          
-                          return (
-                            <motion.div
-                              key={`chapter-${index}`}
-                              className="flex items-center justify-between bg-black/40 backdrop-blur-sm border border-white/10 rounded-lg overflow-hidden hover:bg-gray-800/40 transition-all duration-200 hover:border-purple-500/30"
-                              whileHover={{ scale: 1.01, y: -2 }}
-                              whileTap={{ scale: 0.99 }}
-                            >
-                              <div className="flex items-center flex-1 p-3 md:p-4">
-                                <div className={cn(
-                                  "h-8 w-8 md:h-10 md:w-10 rounded-full flex items-center justify-center text-sm mr-3 md:mr-4 flex-shrink-0",
-                                  isCurrentlyReading 
-                                    ? "bg-purple-700 text-white ring-2 ring-purple-500/50" 
-                                    : readPercentage > 0 
-                                      ? "bg-green-700/70 text-white" 
-                                      : "bg-gray-800"
-                                )}>
-                                  <Book className="h-4 w-4 md:h-5 md:w-5" />
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                  <h3 className="font-medium text-base md:text-lg truncate">
-                                    Chapter {chapter.number}: {chapter.title}
-                                  </h3>
-                                  
-                                  <div className="text-xs text-gray-400 flex items-center gap-2">
-                                    <CalendarDays className="h-3 w-3" />
-                                    {chapter.releaseDate}
+                      {/* Responsive chapter list - SCROLLABLE CONTAINER */}
+                      {processedData.chapterList.length === 0 ? (
+                        <div className="text-center py-12 border border-dashed border-white/10 rounded-lg bg-black/20 backdrop-blur-sm">
+                          <p className="text-white/70 text-lg">თავები ჯერ არ არის ხელმისაწვდომი.</p>
+                          <img src="/images/mascot/no-chapters.png" alt="No chapters mascot" className="mx-auto mt-4 w-32 h-32" />
+                        </div>
+                      ) : (
+                        <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
+                          {processedData?.chapterList?.map((chapter: any, index: number) => {
+                            const chapterId = chapter.id || `chapter-${chapter.number}`;
+                            const readPercentage = getReadPercentage(mangaId, chapterId);
+                            const isCurrentlyReading = readingProgress?.chapterId === chapterId || readingProgress?.chapterNumber === chapter.number;
+                            
+                            return (
+                              <motion.div
+                                key={`chapter-${index}`}
+                                onClick={() => handleReadClick(index)} // Make entire div clickable
+                                className={cn(
+                                  "flex items-center justify-between bg-black/40 backdrop-blur-sm border border-white/10 rounded-lg overflow-hidden transition-all duration-200",
+                                  "hover:bg-purple-600/20 hover:border-purple-500/40 cursor-pointer group" // Enhanced hover, added group for potential inner element styling on hover
+                                )}
+                                whileHover={{ scale: 1.02, y: -2 }} // Slightly more noticeable hover scale
+                                whileTap={{ scale: 0.99 }}
+                              >
+                                <div className="flex items-center flex-1 p-3 md:p-4">
+                                  <div className={cn(
+                                    "h-10 w-10 md:h-12 md:w-12 rounded-lg flex items-center justify-center text-lg mr-3 md:mr-4 flex-shrink-0 font-semibold transition-colors duration-200", // Larger, rounded-lg, font-semibold
+                                    isCurrentlyReading 
+                                      ? "bg-purple-600 text-white ring-2 ring-purple-400/50 group-hover:bg-purple-500"
+                                      : readPercentage === 100
+                                        ? "bg-green-600 text-white group-hover:bg-green-500"
+                                        : readPercentage > 0
+                                          ? "bg-sky-600 text-white group-hover:bg-sky-500" // Different color for in-progress
+                                          : "bg-gray-700 group-hover:bg-gray-600 text-gray-300"
+                                  )}>
+                                    {chapter.number} {/* Display chapter number directly */}
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <h3 className="font-medium text-sm md:text-base truncate group-hover:text-purple-300 transition-colors duration-200">
+                                      {chapter.title} {/* Removed "Chapter {chapter.number}:" as number is prominent now */}
+                                    </h3>
                                     
-                                    {readPercentage > 0 && (
-                                      <span className={cn(
-                                        "ml-2 px-1.5 py-0.5 rounded text-xs",
-                                        isCurrentlyReading ? "bg-purple-900/50 text-purple-300" : "bg-green-900/50 text-green-300"
-                                      )}>
-                                        {isCurrentlyReading ? "Reading" : `${readPercentage}%`}
+                                    <div className="text-xs text-gray-400 flex items-center gap-2 mt-1">
+                                      <CalendarDays className="h-3 w-3" />
+                                      {chapter.releaseDate}
+                                      
+                                      {readPercentage > 0 && (
+                                        <span className={cn(
+                                          "ml-auto px-1.5 py-0.5 rounded text-[10px] font-medium", // Use ml-auto to push to the right
+                                          isCurrentlyReading ? "bg-purple-500/80 text-white"
+                                          : readPercentage === 100 ? "bg-green-500/80 text-white"
+                                          : "bg-sky-500/80 text-white"
+                                        )}>
+                                          {isCurrentlyReading ? "კითხულობ" 
+                                            : readPercentage === 100 ? "დასრულებულია"
+                                            : `${readPercentage}% წაკითხულია`}
                                       </span>
                                     )}
-                                  </div>
-                                  
-                                  {readPercentage > 0 && (
-                                    <div className="mt-2 w-full max-w-xs">
-                                      <Progress 
-                                        value={readPercentage} 
-                                        className="h-1.5 bg-gray-800/50" 
-                                        indicatorClassName={isCurrentlyReading ? "bg-purple-500" : "bg-green-500"}
-                                      />
                                     </div>
-                                  )}
+                                    
+                                    {/* Simplified Progress Bar - only show if not 100% and not actively reading this one directly */}
+                                    {readPercentage > 0 && readPercentage < 100 && !isCurrentlyReading && (
+                                      <div className="mt-2 w-full max-w-xs">
+                                        <Progress 
+                                          value={readPercentage} 
+                                          className="h-1 bg-gray-700/50 group-hover:bg-gray-600/50" 
+                                          indicatorClassName="bg-sky-500 group-hover:bg-sky-400"
+                                        />
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
-                              </div>
-                              
-                              <button 
-                                onClick={() => handleReadClick(index)}
-                                className="rounded-l-lg bg-purple-600 hover:bg-purple-700 text-white px-3 md:px-6 h-full flex items-center justify-center transition-colors"
-                              >
-                                <Book className="h-4 w-4 md:hidden" />
-                                <span className="font-medium hidden md:inline">წაკითხვა</span>
-                              </button>
-                            </motion.div>
-                          );
-                        })}
-                      </div>
+                                {/* REMOVED READ BUTTON */}
+                              </motion.div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                     
                     {/* Right side: Characters grid */}

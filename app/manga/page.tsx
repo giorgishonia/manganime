@@ -82,6 +82,19 @@ const filterVariants = {
   animate: { opacity: 1, y: 0, transition: { duration: 0.3, ease: [0.22, 1, 0.36, 1] } }
 };
 
+const cardHoverVariants = {
+  initial: { scale: 1, y: 0, boxShadow: "0px 5px 15px rgba(0, 0, 0, 0.1)" },
+  hover: { 
+    scale: 1.03,
+    y: -6,
+    boxShadow: "0px 15px 25px rgba(99, 102, 241, 0.2), 0px 5px 10px rgba(0,0,0, 0.1)",
+    transition: { 
+      duration: 0.25,
+      ease: [0.4, 0, 0.2, 1]
+    }
+  }
+};
+
 // Helper function to check if content is favorited
 function isMangaFavorited(id: string): boolean {
   if (typeof window === 'undefined') return false;
@@ -128,7 +141,6 @@ function toggleMangaFavorite(manga: MangaData): boolean {
 const MangaCard = ({ manga, index }: { manga: MangaData, index: number }) => {
   const router = useRouter()
   const hasBeenRead = hasMangaBeenRead(manga.id)
-  const progress = getMangaProgress(manga.id)
   const [isFavorite, setIsFavorite] = useState(false)
   
   // Check favorite status on mount
@@ -139,9 +151,8 @@ const MangaCard = ({ manga, index }: { manga: MangaData, index: number }) => {
   // Get the latest chapter read
   const latestChapterRead = getLatestChapterRead(manga.id)
   
-  // Extract total chapters from manga data
-  const totalChapters = manga.totalChapters || 
-    (manga.chapters ? parseInt(manga.chapters.toString(), 10) : 0) || 10
+  // Use the pre-calculated totalChapters from MangaData
+  const totalChapters = manga.totalChapters || 0;
   
   // Calculate overall manga progress based on chapters
   const progressPercentage = calculateMangaProgressByChapter(latestChapterRead, totalChapters)
@@ -159,109 +170,114 @@ const MangaCard = ({ manga, index }: { manga: MangaData, index: number }) => {
       initial="initial"
       animate="animate"
       exit="exit"
-      transition={{ delay: index * 0.05 }}
-      className="group cursor-pointer"
+      layout
+      className="relative group cursor-pointer"
       onClick={() => router.push(`/manga/${manga.id}`)}
+      transition={{ delay: index * 0.05 }}
     >
-      <div className="relative overflow-hidden rounded-lg bg-black/20 shadow-lg group-hover:shadow-xl transition-all duration-300 border border-white/5 group-hover:border-purple-500/30">
+      <m.div
+        className="relative overflow-hidden rounded-xl bg-transparent transition-all duration-300 group-hover:border-purple-500/70 group-hover:shadow-2xl group-hover:shadow-purple-500/20 flex flex-col flex-grow"
+        variants={cardHoverVariants}
+        initial="initial"
+        whileHover="hover"
+      >
         <div className="aspect-[2/3] relative overflow-hidden">
-          <m.div
-            whileHover={{ scale: 1.05 }}
-            transition={{ duration: 0.4 }}
-            className="h-full w-full"
-          >
-            <Image 
-              src={manga.thumbnail || "/placeholder.svg"} 
-              alt={manga.title}
-              fill
-              className="object-cover transition-all duration-500"
-              sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-            />
-          </m.div>
+          <Image 
+            src={manga.thumbnail || "/placeholder.svg"} 
+            alt={manga.title}
+            fill
+            className="object-cover transition-transform duration-300 ease-in-out group-hover:scale-110"
+            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+          />
           
-          <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/80"></div>
+          <div className="absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-black/90 via-black/70 to-transparent pointer-events-none"></div>
           
-          {/* Favorite button */}
+          {/* BookOpen icon overlay on hover */}
+          <div className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+            <BookOpen className="w-12 h-12 text-white/90 drop-shadow-lg" />
+          </div>
+
+          {/* Favorite button - Top Right */}
           <button 
             onClick={handleFavoriteClick}
-            className={`absolute top-2 right  -2 z-10 bg-black/60 backdrop-blur-sm p-1.5 rounded-full 
-              transition-all duration-300 border 
-              ${isFavorite 
-                ? 'opacity-100 border-red-500/50 bg-red-500/20' 
-                : 'opacity-0 group-hover:opacity-100 border-white/10 hover:border-red-500/50'}`}
+            className={cn(
+              "absolute top-2.5 right-2.5 z-20 p-2 rounded-full transition-all duration-300 backdrop-blur-md border",
+              isFavorite 
+                ? "bg-red-500/30 border-red-500/50 text-red-400" 
+                : "bg-black/50 border-white/20 text-white/80 hover:bg-red-500/20 hover:text-red-400 hover:border-red-500/40",
+              "opacity-0 group-hover:opacity-100" // Initially hidden, shows on group hover
+            )}
+            aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
           >
             <m.div
               initial={{ scale: 1 }}
-              animate={{ scale: isFavorite ? 1.2 : 1 }}
-              whileTap={{ scale: 0.8 }}
-              transition={{ type: "spring", stiffness: 500, damping: 15 }}
+              animate={{ scale: isFavorite ? 1.1 : 1 }}
+              whileTap={{ scale: 0.9 }}
+              transition={{ type: "spring", stiffness: 400, damping: 12 }}
             >
-              <Heart className={`w-4 h-4 ${isFavorite ? 'text-red-500 fill-red-500' : 'text-white/90'}`} />
+              <Heart className={cn("w-4 h-4", isFavorite && "fill-current")} />
             </m.div>
           </button>
+
+          {/* Rating badge - Top Left */}
+          {manga.rating > 0 && (
+            <div className="absolute top-2.5 left-2.5 bg-black/70 backdrop-blur-sm px-2.5 py-1 rounded-lg flex items-center gap-1 text-xs text-yellow-400 border border-yellow-500/30 shadow-md">
+              <Star className="w-3.5 h-3.5 fill-current" />
+              <span className="font-semibold">{manga.rating.toFixed(1)}</span>
+            </div>
+          )}
+
+          {/* Chapter Count Badge - Bottom Left on Image */}
+          <div className="absolute bottom-2.5 left-2.5 bg-black/70 backdrop-blur-sm px-2.5 py-1 rounded-lg text-xs text-white/90 border border-white/20 shadow-md">
+             {manga.chapters || "0 თავი"} 
+          </div>
           
-          {/* Reading progress indicator */}
+          {/* Reading progress indicator bar */}
           {hasBeenRead && (
-            <div className="absolute top-0 left-0 right-0 h-1 bg-gray-900">
-              <div 
-                className="h-full bg-gradient-to-r from-purple-500 to-indigo-600" 
-                style={{ 
-                  width: `${progressPercentage}%` 
-                }}
+            <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-gray-700/50">
+              <m.div 
+                className="h-full bg-gradient-to-r from-purple-500 to-indigo-500 shadow-lg" 
+                style={{ width: `${progressPercentage}%` }}
+                initial={{ width: 0 }}
+                animate={{ width: `${progressPercentage}%` }}
+                transition={{ duration: 0.5, ease: "easeOut" }}
               />
             </div>
           )}
           
-          {/* Reading badge */}
-          {hasBeenRead && (
-            <div className="absolute top-2 left-2 bg-black/70 backdrop-blur-sm text-white px-2 py-1 rounded-md text-xs font-medium flex items-center gap-1 border border-purple-500/30">
-              <span className="text-purple-400">{progressPercentage}% Read</span>
-            </div>
-          )}
-          
-          {/* Rating badge */}
-          {manga.rating > 0 && (
-            <div className="absolute top-2 right-2 bg-black/70 backdrop-blur-sm text-white px-2 py-1 rounded-md text-xs font-medium flex items-center gap-1">
-              <Star className="w-3 h-3 text-yellow-400 fill-yellow-400" />
-              {manga.rating.toFixed(1)}
-            </div>
-          )}
-          
-          {/* Genre pills */}
-          <div className="absolute bottom-2 left-2 flex flex-wrap gap-1 max-w-[calc(100%-1rem)]">
-            {manga.genres?.slice(0, 2).map((genre, idx) => (
-              <div key={idx} className="text-xs px-2 py-0.5 bg-black/70 backdrop-blur-sm rounded-full truncate max-w-full">
-                {genre}
+          {/* Genre pills - show first one - Bottom Right on Image */}
+          {manga.genres && manga.genres.length > 0 && (
+            <div className="absolute bottom-2.5 right-2.5 flex flex-wrap gap-1 max-w-[calc(100%-1rem)]"> 
+              <div className="text-xs px-2.5 py-1 bg-black/70 backdrop-blur-sm rounded-lg truncate max-w-full border border-white/20 shadow-md">
+                {manga.genres[0]}
               </div>
-            ))}
-          </div>
+            </div>
+          )}
         </div>
         
-        <div className="p-3">
-          <h3 className="font-semibold text-sm line-clamp-1 group-hover:text-purple-400 transition-colors">
+        <div className="p-3.5 space-y-1.5">
+          <h3 className="text-base font-semibold text-white line-clamp-1 group-hover:text-purple-400 transition-colors duration-200" title={manga.title}>
             {manga.title}
           </h3>
           {manga.englishTitle && manga.englishTitle !== manga.title && (
-            <p className="text-xs text-gray-400 line-clamp-1 mt-0.5">{manga.englishTitle}</p>
+            <p className="text-xs text-gray-400 line-clamp-1 mt-0.5" title={manga.englishTitle}>{manga.englishTitle}</p>
           )}
-          <div className="flex items-center gap-2 mt-2 text-xs text-gray-400">
-            <div className="flex items-center gap-1">
-              <Clock className="w-3 h-3" />
-              <span>{manga.status}</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <BookOpen className="w-3 h-3" />
-              <span>{manga.chapters || "0 თავი"}</span>
-            </div>
+          <div className="flex items-center gap-3 pt-1 text-xs text-gray-400">
+            {manga.status && (
+              <div className="flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-gray-500" />
+                <span>{manga.status}</span>
+              </div>
+            )}
             {manga.release_year && (
-              <div className="flex items-center gap-1">
-                <CalendarDays className="w-3 h-3" />
+              <div className="flex items-center gap-1.5">
+                <CalendarDays className="w-3.5 h-3.5 text-gray-500" />
                 <span>{manga.release_year}</span>
               </div>
             )}
           </div>
         </div>
-      </div>
+      </m.div>
     </m.div>
   )
 }
@@ -297,21 +313,26 @@ export default function ReadPage() {
         
         if (mangaResponse.success && mangaResponse.content) {
           // Transform data for manga
-          const transformedManga = mangaResponse.content.map((content: any) => ({
-            id: content.id,
-            title: content.georgian_title || content.title,
-            englishTitle: content.georgian_title ? content.title : null,
-            description: content.description || "No description available",
-            image: (content.bannerImage && content.bannerImage.trim() !== '') ? content.bannerImage : content.thumbnail,
-            thumbnail: content.thumbnail,
-            rating: content.rating || 0,
-            status: content.status,
-            chapters: content.chapters ? `${content.chapters} chapters` : "0 chapters",
-            totalChapters: typeof content.chapters === 'number' ? content.chapters : 
-              (typeof content.chapters === 'string' ? parseInt(content.chapters, 10) : 0),
-            genres: content.genres || [],
-            release_year: content.release_year
-          })).filter((content: {image?: string}) => content.image);
+          const transformedManga = mangaResponse.content.map((content: any) => {
+            const chapterCount = typeof content.chapters_count === 'number' ? content.chapters_count :
+                                 (typeof content.chapters === 'number' ? content.chapters : 
+                                 (typeof content.chapters === 'string' ? parseInt(content.chapters.replace(/[^\d]/g, ''), 10) : 0));
+            
+            return {
+              id: content.id,
+              title: content.georgian_title || content.title,
+              englishTitle: content.georgian_title ? content.title : null,
+              description: content.description || "No description available",
+              image: (content.bannerImage && content.bannerImage.trim() !== '') ? content.bannerImage : content.thumbnail,
+              thumbnail: content.thumbnail,
+              rating: content.rating || 0,
+              status: content.status,
+              chapters: chapterCount > 0 ? `${chapterCount} თავი` : "0 თავი", // Display string
+              totalChapters: chapterCount, // Numeric value for calculations
+              genres: content.genres || [],
+              release_year: content.release_year
+            }
+          }).filter((content: {image?: string}) => content.image);
           
           setMangas(transformedManga);
           
@@ -447,11 +468,11 @@ export default function ReadPage() {
     <div className="flex min-h-screen bg-[#070707] text-white antialiased">
       <AppSidebar />
 
-      <main className="flex-1 overflow-x-hidden">
+      <main className="flex-1 overflow-x-hidden md:pl-[100px]">
         {/* Featured Banner */}
         <section className="relative w-full h-[500px] overflow-hidden">
           {/* --- DEBUG LOG --- */}
-          {(() => { console.log("[app/manga/page.tsx] Rendering Banner. featured.image:", featured?.image); return null; })()}
+          {/* {(() => { console.log("[app/manga/page.tsx] Rendering Banner. featured.image:", featured?.image); return null; })()} */}
           <AnimatePresence mode="wait">
             {isFetching ? (
               <m.div
@@ -498,7 +519,7 @@ export default function ReadPage() {
             )}
           </AnimatePresence>
 
-          <div className="absolute bottom-0 left-0 right-0 md:bottom-12 md:left-8 z-10 md:pl-24 lg:pl-32">
+          <div className="absolute bottom-0 left-0 right-0 md:bottom-12 z-10 p-6 md:p-8">
             <AnimatePresence mode="wait">
               {isFetching ? (
                 <div className="space-y-4 w-full">
@@ -700,7 +721,7 @@ export default function ReadPage() {
         </section>
 
         {/* Manga Catalog Section */}
-        <section className="px-8 py-8 pl-[100px]">
+        <section className="px-4 md:px-8 py-8">
           <m.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -1000,7 +1021,7 @@ export default function ReadPage() {
 
                 {/* Continue Reading Section (if user has reading history) */}
                 {recentlyRead.length > 0 && (
-          <section className="pt-8 px-8 pl-[77px] md:pl-[100px]"> {/* Adjusted padding */}
+          <section className="pt-8 px-4 md:px-8"> {/* Adjusted padding */}
             <m.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}

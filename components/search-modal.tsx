@@ -281,9 +281,11 @@ export function SearchModal({ isOpen, onClose }: SearchModalProps) {
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
-                      className="p-8 text-center text-gray-400"
+                      className="p-8 text-center"
                     >
-                      <p>შედეგები ვერ მოიძებნა</p>
+                      <img src="/images/mascot/no-search.png" alt="No search results mascot" className="mx-auto w-32 h-32 mb-4" />
+                      <p className="text-white/70 text-lg">შედეგები ვერ მოიძებნა</p>
+                      <p className="text-sm text-white/50 mt-1">სცადე სხვა საძიებო სიტყვა</p>
                     </m.div>
                   ) : query.length > 0 ? (
                     <m.div

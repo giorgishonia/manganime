@@ -49,6 +49,7 @@ import { useAuth } from "@/components/supabase-auth-provider";
 
 import EpisodeForm from "@/components/admin/episode-form";
 import ChapterForm from "@/components/admin/chapter-form";
+import MultipleChapterForm from "@/components/admin/multiple-chapter-form";
 import { getContentById, getAllContent } from "@/lib/content";
 import { supabase } from "@/lib/supabase";
 
@@ -125,6 +126,7 @@ export default function AdminEpisodesPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [contentType, setContentType] = useState<string | null>(null);
+  const [multipleChapterFormOpen, setMultipleChapterFormOpen] = useState(false);
 
   // Check auth and load content
   useEffect(() => {
@@ -260,6 +262,10 @@ export default function AdminEpisodesPage() {
   const handleAddItem = () => {
     setEditItem(null);
     setFormOpen(true);
+  };
+
+  const handleAddMultipleChapters = () => {
+    setMultipleChapterFormOpen(true);
   };
 
   const handleEditItem = (item: ContentItem) => {
@@ -420,10 +426,18 @@ export default function AdminEpisodesPage() {
               <h2 className="text-xl font-semibold">{contentDetails.title}</h2>
               <p className="text-sm text-muted-foreground capitalize">{contentDetails.type} • {contentDetails.status}</p>
             </div>
-            <Button onClick={handleAddItem}>
-              <PlusCircle className="mr-2 h-4 w-4" /> 
-              Add {contentDetails.type === "anime" ? "Episode" : "Chapter"}
-            </Button>
+            <div className="flex space-x-2">
+              <Button onClick={handleAddItem}>
+                <PlusCircle className="mr-2 h-4 w-4" /> 
+                Add {contentDetails.type === "anime" ? "Episode" : "Chapter"}
+              </Button>
+              {(contentDetails.type === "manga" || contentDetails.type === "comics") && (
+                <Button onClick={handleAddMultipleChapters} variant="outline">
+                  <PlusCircle className="mr-2 h-4 w-4" />
+                  Add Multiple Chapters
+                </Button>
+              )}
+            </div>
           </div>
 
           {contentDetails.type === "anime" ? (
@@ -609,6 +623,27 @@ export default function AdminEpisodesPage() {
               onCancel={() => setFormOpen(false)}
             />
           ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={multipleChapterFormOpen} onOpenChange={setMultipleChapterFormOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Add Multiple Chapters to {contentDetails?.title}</DialogTitle>
+            <DialogDescription>
+              Select images and configure settings to add multiple chapters at once.
+            </DialogDescription>
+          </DialogHeader>
+          {selectedContent && contentDetails && (contentDetails.type === "manga" || contentDetails.type === "comics") && (
+            <MultipleChapterForm
+              contentId={selectedContent}
+              onSuccess={() => {
+                setMultipleChapterFormOpen(false);
+                handleFormClose(true);
+              }}
+              onCancel={() => setMultipleChapterFormOpen(false)}
+            />
+          )}
         </DialogContent>
       </Dialog>
 

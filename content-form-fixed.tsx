@@ -30,43 +30,42 @@ import { Separator } from "@/components/ui/separator";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { createContent, updateContent } from "@/lib/content";
 
-// Define genre options
+// ჟანრების სიის განსაზღვრა
 const genreOptions = [
-  { label: "Action", value: "action" },
-  { label: "Adventure", value: "adventure" },
-  { label: "Comedy", value: "comedy" },
-  { label: "Drama", value: "drama" },
-  { label: "Fantasy", value: "fantasy" },
-  { label: "Horror", value: "horror" },
-  { label: "Mystery", value: "mystery" },
-  { label: "Romance", value: "romance" },
-  { label: "Sci-Fi", value: "sci-fi" },
-  { label: "Slice of Life", value: "slice-of-life" },
-  { label: "Sports", value: "sports" },
-  { label: "Supernatural", value: "supernatural" },
-  { label: "Thriller", value: "thriller" },
+  { label: "აქშენი", value: "action" },
+  { label: "სათავგადასავლო", value: "adventure" },
+  { label: "კომედია", value: "comedy" },
+  { label: "დრამა", value: "drama" },
+  { label: "ფენტეზი", value: "fantasy" },
+  { label: "საშინელება", value: "horror" },
+  { label: "საიდუმლოება", value: "mystery" },
+  { label: "რომანტიკა", value: "romance" },
+  { label: "მეცნიერული ფანტასტიკა", value: "sci-fi" },
+  { label: "ცხოვრების ნაჭერი", value: "slice-of-life" },
+  { label: "სპორტი", value: "sports" },
+  { label: "ზებუნებრივი", value: "supernatural" },
+  { label: "თრილერი", value: "thriller" },
 ];
+
 
 // Form schema - only including fields we're certain exist in the database
 const contentFormSchema = z.object({
   title: z.string().min(1, {
-    message: "Title is required",
+    message: "სათაური სავალდებულოა",
   }),
-  description: z.string().min(1, "Description is required"),
+  description: z.string().min(1, "აღწერა სავალდებულოა"),
   type: z.enum(["anime", "manga"], {
-    required_error: "Content type is required",
+    required_error: "კონტენტის ტიპი სავალდებულოა",
   }),
   status: z.enum(["ongoing", "completed", "hiatus"], {
-    required_error: "Status is required",
+    required_error: "სტატუსი სავალდებულოა",
   }),
-  thumbnail: z.string().min(1, "Thumbnail URL is required"),
+  thumbnail: z.string().min(1, "მთავარი სურათის URL სავალდებულოა"),
   banner_image: z.string().optional(),
-  genres: z.array(z.string()).min(1, "At least one genre is required"),
+  genres: z.array(z.string()).min(1, "მინიმუმ ერთი ჟანრი სავალდებულოა"),
   season: z.string().optional(),
-  release_year: z.coerce.number().min(1900, "Invalid year").max(new Date().getFullYear() + 1, "Year cannot be in the future").optional(),
-  content_type: z.string().min(1, {
-    message: "კონტენტის ტიპი სავალდებულოა",
-  }),
+  release_year: z.coerce.number().min(1900, "არასწორი წელი").max(new Date().getFullYear() + 1, "წელი არ შეიძლება იყოს მომავალში").optional(),
+  // content_type field removed as it's not used in the form UI
 });
 
 type ContentFormValues = z.infer<typeof contentFormSchema>;
@@ -114,14 +113,14 @@ export default function ContentFormFixed({
       if (initialData?.id) {
         // Update existing content
         await updateContent(initialData.id, data);
-        toast.success("Content updated successfully");
+        toast.success("კონტენტი წარმატებით განახლდა");
       } else {
         // Create new content
         const result = await createContent(data);
         if (result.success) {
-          toast.success("Content created successfully");
+          toast.success("კონტენტი წარმატებით შეიქმნა");
         } else {
-          toast.error("Failed to create content");
+          toast.error("კონტენტის შექმნა ვერ მოხერხდა");
         }
       }
       
@@ -267,7 +266,7 @@ export default function ContentFormFixed({
                 <FormLabel>ჟანრები</FormLabel>
                 <FormControl>
                   <MultiSelect
-                    options={genreOptions}
+                    options={genreOptions} // Assuming genreOptions are fine in English for now or will be translated separately if needed
                     placeholder="აირჩიეთ ჟანრები"
                     selected={field.value}
                     onChange={field.onChange}

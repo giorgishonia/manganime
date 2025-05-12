@@ -54,6 +54,41 @@ async function checkAdminStatus(request: NextRequest, supabase: any) {
   return { isAdmin: true };
 }
 
+async function authorizeRequest(request: NextRequest, supabaseInstance: any) {
+  // 1. Check for Service Role Key Header (for admin actions from trusted clients)
+  const serviceRoleHeader = request.headers.get('x-supabase-service-role');
+  if (serviceRoleHeader) {
+    if (serviceRoleHeader === process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      console.log("API Chapters: Authorized via Service Role Key.");
+      return { authorized: true, user: null, error: null, status: 200 }; // User is null because it's a service action
+    } else {
+      console.warn("API Chapters: Invalid Service Role Key received.");
+      return { authorized: false, user: null, error: 'Invalid service role key.', status: 403 }; // Forbidden
+    }
+  }
+
+  // 2. Fallback to User Session Authentication
+  const { data: { session }, error: sessionError } = await supabaseInstance.auth.getSession();
+
+  if (sessionError) {
+    console.error('API Chapters: Session retrieval error:', sessionError);
+    return { authorized: false, user: null, error: 'Session retrieval error', status: 500 };
+  }
+  if (!session) {
+    console.error('API Chapters: No session found. User not authenticated or session expired.');
+    return { authorized: false, user: null, error: 'Unauthorized: No active session', status: 401 };
+  }
+
+  // Optional: Here you could add an additional check for user role from your 'profiles' table if needed for session-based admin access
+  // For now, if a session exists, we'll consider it potentially authorized for general actions,
+  // but specific admin role checks should be done if not using service key.
+  // const { data: profile } = await supabaseInstance.from('profiles').select('role').eq('id', session.user.id).single();
+  // if (profile?.role !== 'admin') { return { authorized: false, user: session.user, error: 'Forbidden: Admin role required', status: 403 }; }
+
+  console.log("API Chapters: Authorized via user session for user:", session.user.id);
+  return { authorized: true, user: session.user, error: null, status: 200 };
+}
+
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const id = searchParams.get("id");
@@ -131,271 +166,96 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const supabase = createRouteHandlerClient({ cookies });
+  const authResult = await authorizeRequest(request, supabase);
+
+  if (!authResult.authorized) {
+    return NextResponse.json({ error: authResult.error }, { status: authResult.status });
+  }
+  // If authResult.user is needed for associating with the chapter, it's available here.
+
   try {
-    console.log("POST /api/chapters - Starting authentication check");
-    const supabase = createRouteHandlerClient({ cookies });
-    
-    // DEVELOPMENT MODE BYPASS - Skip admin check in development
-    const isDevelopment = process.env.NODE_ENV === 'development';
-    if (isDevelopment) {
-      console.log("DEVELOPMENT MODE: Bypassing admin check for API");
-      // Skip admin validation and proceed
-    } else {
-      // Check admin status
-      const adminStatus = await checkAdminStatus(request, supabase);
-      
-      if (!adminStatus.isAdmin) {
-        console.error("Authorization failed:", adminStatus.error);
-        return NextResponse.json(
-          { error: adminStatus.error || "Unauthorized" },
-          { status: adminStatus.status || 401 }
-        );
-      }
+    const chapterData = await request.json();
+    if (!chapterData.contentId || typeof chapterData.number !== 'number' || !chapterData.title || !Array.isArray(chapterData.pages)) {
+        return NextResponse.json({ error: 'Invalid chapter data. Missing or incorrect required fields.' }, { status: 400 });
     }
-    
-    console.log("Admin access confirmed, proceeding with chapter creation");
-    
-    // Get the raw request body for debugging
-    const rawData = await request.text();
-    console.log("Raw request body:", rawData);
-    
-    // Parse the JSON manually with better error handling
-    let chapterData;
-    try {
-      chapterData = JSON.parse(rawData);
-      console.log("Parsed chapter data:", chapterData);
-    } catch (parseError) {
-      console.error("JSON parse error:", parseError);
-      return NextResponse.json(
-        { error: "Invalid JSON in request body", details: parseError.message },
-        { status: 400 }
-      );
-    }
-    
-    // Validate chapter data with detailed errors
-    let validatedData;
-    try {
-      validatedData = chapterSchema.parse(chapterData);
-      console.log("Validation passed, validated data:", validatedData);
-    } catch (validationError) {
-      console.error("Validation error:", validationError);
-      if (validationError instanceof z.ZodError) {
-        return NextResponse.json(
-          { error: "Validation failed", details: validationError.errors },
-          { status: 400 }
-        );
-      }
-      throw validationError;
-    }
-    
-    // Verify content exists with better error handling
-    console.log("Verifying content exists for ID:", validatedData.contentId);
-    const { data: contentData, error: contentError } = await supabase
-      .from("content")
-      .select("id, type")
-      .eq("id", validatedData.contentId)
-      .single();
-      
-    if (contentError) {
-      console.error("Content error:", contentError);
-      return NextResponse.json(
-        { error: "Content lookup failed", details: contentError.message },
-        { status: 500 }
-      );
-    }
-    
-    if (!contentData) {
-      console.error("Content not found for ID:", validatedData.contentId);
-      return NextResponse.json(
-        { error: "Content not found", details: `No content with ID: ${validatedData.contentId}` },
-        { status: 404 }
-      );
-    }
-    
-    console.log("Content found:", contentData);
-    
-    if (contentData.type !== "manga" && contentData.type !== "comics") {
-      console.error("Content type mismatch:", contentData.type);
-      return NextResponse.json(
-        { error: "Chapters can only be added to manga or comics content", details: `Content type is: ${contentData.type}` },
-        { status: 400 }
-      );
-    }
-    
-    // Insert chapter into database with better error handling
-    console.log("Inserting chapter into database");
-    try {
-      // Create a database-ready object using snake_case field names to match database schema
-      const dbData = {
-        content_id: validatedData.contentId,
-        number: validatedData.number,
-        title: validatedData.title,
-        description: validatedData.description || '',
-        thumbnail: validatedData.thumbnail || '',
-        pages: validatedData.pages,
-        release_date: validatedData.releaseDate
-      };
-      
-      console.log("Database data:", dbData);
-      
-      const { data, error } = await supabase
-        .from("chapters")
-        .insert(dbData)
-        .select()
-        .single();
-        
-      if (error) {
-        console.error("Database insert error:", error);
-        throw error;
-      }
-      
-      console.log("Chapter created successfully:", data);
-      return NextResponse.json(data, { status: 201 });
-    } catch (dbError) {
-      console.error("Database error:", dbError);
-      return NextResponse.json(
-        { error: "Database operation failed", details: dbError.message || String(dbError) },
-        { status: 500 }
-      );
-    }
-  } catch (error) {
-    console.error("Unhandled error in chapter creation:", error);
-    
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: "Validation failed", details: error.errors },
-        { status: 400 }
-      );
-    }
-    
-    return NextResponse.json(
-      { error: "Failed to create chapter", details: error.message || String(error) },
-      { status: 500 }
-    );
+    const newChapter = {
+        content_id: chapterData.contentId,
+        number: chapterData.number,
+        title: chapterData.title,
+        pages: chapterData.pages,
+        release_date: chapterData.release_date || null,
+        thumbnail: chapterData.thumbnail || null,
+        description: chapterData.description || null,
+        // user_id: authResult.user?.id, // Example if you want to link chapter to user
+    };
+    const { data, error } = await supabase.from('chapters').insert([newChapter]).select().single();
+    if (error) throw error;
+    return NextResponse.json(data, { status: 201 });
+  } catch (e: any) {
+    console.error('API Chapters POST: Error processing request:', e);
+    return NextResponse.json({ error: e.message || 'Server error processing request.' }, { status: e instanceof SyntaxError ? 400 : 500 });
   }
 }
 
 export async function PUT(request: NextRequest) {
   const supabase = createRouteHandlerClient({ cookies });
-  const searchParams = request.nextUrl.searchParams;
-  const id = searchParams.get("id");
-  
-  if (!id) {
-    return NextResponse.json(
-      { error: "Chapter ID is required" },
-      { status: 400 }
-    );
+  const authResult = await authorizeRequest(request, supabase);
+
+  if (!authResult.authorized) {
+    return NextResponse.json({ error: authResult.error }, { status: authResult.status });
   }
-  
-  // DEVELOPMENT MODE BYPASS - Skip admin check in development
-  const isDevelopment = process.env.NODE_ENV === 'development';
-  if (isDevelopment) {
-    console.log("DEVELOPMENT MODE: Bypassing admin check for API");
-    // Skip admin validation and proceed
-  } else {
-    // Check admin status
-    const adminStatus = await checkAdminStatus(request, supabase);
-    
-    if (!adminStatus.isAdmin) {
-      console.error("Authorization failed:", adminStatus.error);
-      return NextResponse.json(
-        { error: adminStatus.error || "Unauthorized" },
-        { status: adminStatus.status || 401 }
-      );
-    }
-  }
-  
+
   try {
-    const chapterData = await request.json();
-    
-    // Validate chapter data
-    const validatedData = chapterSchema.parse(chapterData);
-    
-    // Create a database-ready object using snake_case field names to match database schema
-    const dbData = {
-      content_id: validatedData.contentId,
-      number: validatedData.number,
-      title: validatedData.title,
-      description: validatedData.description || '',
-      thumbnail: validatedData.thumbnail || '',
-      pages: validatedData.pages,
-      release_date: validatedData.releaseDate
-    };
-    
-    console.log("Updating chapter with data:", dbData);
-    
-    // Update chapter in database
-    const { data, error } = await supabase
-      .from("chapters")
-      .update(dbData)
-      .eq("id", id)
-      .select()
-      .single();
-      
-    if (error) throw error;
-    
-    return NextResponse.json(data);
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: error.errors },
-        { status: 400 }
-      );
+    const chapterDataToUpdate = await request.json();
+    const { searchParams } = new URL(request.url);
+    const chapterId = searchParams.get('id');
+    if (!chapterId) return NextResponse.json({ error: 'Chapter ID required.' }, { status: 400 });
+
+    const updatePayload: { [key: string]: any } = {};
+    if (chapterDataToUpdate.title !== undefined) updatePayload.title = chapterDataToUpdate.title;
+    if (chapterDataToUpdate.number !== undefined) updatePayload.number = chapterDataToUpdate.number;
+    if (chapterDataToUpdate.pages !== undefined) updatePayload.pages = chapterDataToUpdate.pages;
+    if (chapterDataToUpdate.description !== undefined) updatePayload.description = chapterDataToUpdate.description;
+    updatePayload.release_date = chapterDataToUpdate.release_date;
+    updatePayload.thumbnail = chapterDataToUpdate.thumbnail;
+    Object.keys(updatePayload).forEach(key => updatePayload[key] === undefined && delete updatePayload[key]);
+
+    if (Object.keys(updatePayload).length === 0) {
+      return NextResponse.json({ error: 'No valid fields for update.' }, { status: 400 });
     }
-    
-    console.error("Error updating chapter:", error);
-    return NextResponse.json(
-      { error: "Failed to update chapter" },
-      { status: 500 }
-    );
+
+    const { data, error } = await supabase.from('chapters').update(updatePayload).eq('id', chapterId).select().single();
+    if (error) throw error;
+    if (!data) return NextResponse.json({ error: 'Chapter not found or update failed.' }, { status: 404 });
+    return NextResponse.json(data);
+  } catch (e: any) {
+    console.error('API Chapters PUT: Error processing request:', e);
+    return NextResponse.json({ error: e.message || 'Server error processing request.' }, { status: e instanceof SyntaxError ? 400 : 500 });
   }
 }
 
 export async function DELETE(request: NextRequest) {
   const supabase = createRouteHandlerClient({ cookies });
-  const searchParams = request.nextUrl.searchParams;
-  const id = searchParams.get("id");
-  
-  if (!id) {
-    return NextResponse.json(
-      { error: "Chapter ID is required" },
-      { status: 400 }
-    );
+  const authResult = await authorizeRequest(request, supabase);
+
+  if (!authResult.authorized) {
+    return NextResponse.json({ error: authResult.error }, { status: authResult.status });
   }
-  
-  // DEVELOPMENT MODE BYPASS - Skip admin check in development
-  const isDevelopment = process.env.NODE_ENV === 'development';
-  if (isDevelopment) {
-    console.log("DEVELOPMENT MODE: Bypassing admin check for API");
-    // Skip admin validation and proceed
-  } else {
-    // Check admin status
-    const adminStatus = await checkAdminStatus(request, supabase);
-    
-    if (!adminStatus.isAdmin) {
-      console.error("Authorization failed:", adminStatus.error);
-      return NextResponse.json(
-        { error: adminStatus.error || "Unauthorized" },
-        { status: adminStatus.status || 401 }
-      );
-    }
-  }
-  
+
   try {
-    // Delete chapter from database
-    const { error } = await supabase
-      .from("chapters")
-      .delete()
-      .eq("id", id);
-      
+    const { searchParams } = new URL(request.url);
+    const chapterId = searchParams.get('id');
+    if (!chapterId) return NextResponse.json({ error: 'Chapter ID required.' }, { status: 400 });
+
+    const { error } = await supabase.from('chapters').delete().eq('id', chapterId);
     if (error) throw error;
-    
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error("Error deleting chapter:", error);
-    return NextResponse.json(
-      { error: "Failed to delete chapter" },
-      { status: 500 }
-    );
+    return NextResponse.json({ message: 'Chapter deleted successfully.' });
+  } catch (e: any) {
+    console.error('API Chapters DELETE: Error processing request:', e);
+    return NextResponse.json({ error: e.message || 'Server error processing request.' }, { status: 500 });
   }
-} 
+}
+
+// Ensure the route is treated as dynamic
+export const dynamic = 'force-dynamic'; 

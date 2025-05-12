@@ -125,7 +125,7 @@ function toggleComicsFavorite(comics: ComicsData): boolean {
 const ComicsCard = ({ comics, index }: { comics: ComicsData, index: number }) => {
   const router = useRouter()
   const hasBeenRead = hasMangaBeenRead(comics.id) // Reuse manga reading history functions
-  const progress = getMangaProgress(comics.id)
+  // const progress = getMangaProgress(comics.id); // This might be redundant
   const [isFavorite, setIsFavorite] = useState(false)
   
   // Check favorite status on mount
@@ -134,14 +134,13 @@ const ComicsCard = ({ comics, index }: { comics: ComicsData, index: number }) =>
   }, [comics.id]);
   
   // Get the latest chapter read
-  const latestChapterRead = getLatestChapterRead(comics.id)
+  const latestChapterRead = getLatestChapterRead(comics.id) // Reuse manga function
   
-  // Extract total chapters from comics data
-  const totalChapters = comics.totalChapters || 
-    (comics.chapters ? parseInt(comics.chapters.toString(), 10) : 0) || 10
+  // Use the pre-calculated totalChapters from ComicsData
+  const totalChapters = comics.totalChapters || 0;
   
   // Calculate overall comics progress based on chapters
-  const progressPercentage = calculateMangaProgressByChapter(latestChapterRead, totalChapters)
+  const progressPercentage = calculateMangaProgressByChapter(latestChapterRead, totalChapters) // Reuse manga function
   
   // Handle favorite button click
   const handleFavoriteClick = (e: React.MouseEvent) => {
@@ -152,18 +151,17 @@ const ComicsCard = ({ comics, index }: { comics: ComicsData, index: number }) =>
   
   return (
     <m.div
-      variants={cardVariants}
+      variants={cardVariants} // Assuming cardVariants are defined appropriately
       initial="initial"
       animate="animate"
-      exit="exit"
+      exit="exit" // Ensure exit is defined if used with AnimatePresence
       transition={{ delay: index * 0.05 }}
-      className="group cursor-pointer"
+      className="group cursor-pointer flex flex-col h-full" // Added flex flex-col and h-full
       onClick={() => router.push(`/comics/${comics.id}`)}
     >
-      <div className="relative overflow-hidden rounded-lg bg-black/20 shadow-lg group-hover:shadow-xl transition-all duration-300 border border-white/5 group-hover:border-purple-500/30">
+      <div className="relative overflow-hidden rounded-xl bg-transparent transition-all duration-300 group-hover:border-purple-500/70 group-hover:shadow-2xl group-hover:shadow-purple-500/20 flex flex-col flex-grow">
         <div className="aspect-[2/3] relative overflow-hidden">
-          <m.div
-            whileHover={{ scale: 1.05 }}
+          <m.div // Consider if this motion div is needed or if Image itself handles motion
             transition={{ duration: 0.4 }}
             className="h-full w-full"
           >
@@ -171,95 +169,102 @@ const ComicsCard = ({ comics, index }: { comics: ComicsData, index: number }) =>
               src={comics.thumbnail || "/placeholder.svg"} 
               alt={comics.title}
               fill
-              className="object-cover transition-all duration-500"
+              className="object-cover transition-transform duration-300 ease-in-out group-hover:scale-110"
               sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
             />
           </m.div>
           
-          <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/80"></div>
-          
-          {/* Favorite button */}
+          <div className="absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-black/90 via-black/70 to-transparent pointer-events-none"></div>
+
+          {/* BookOpen icon overlay on hover (assuming comics are read like manga) */}
+          <div className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+            <BookOpen className="w-12 h-12 text-white/90 drop-shadow-lg" />
+          </div>
+
+          {/* Favorite button - Top Right */}
           <button 
             onClick={handleFavoriteClick}
-            className={`absolute top-2 right-2 z-10 bg-black/60 backdrop-blur-sm p-1.5 rounded-full 
-              transition-all duration-300 border 
-              ${isFavorite 
-                ? 'opacity-100 border-red-500/50 bg-red-500/20' 
-                : 'opacity-0 group-hover:opacity-100 border-white/10 hover:border-red-500/50'}`}
+            className={cn(
+              "absolute top-2.5 right-2.5 z-20 p-2 rounded-full transition-all duration-300 backdrop-blur-md border",
+              isFavorite 
+                ? "bg-red-500/30 border-red-500/50 text-red-400" 
+                : "bg-black/50 border-white/20 text-white/80 hover:bg-red-500/20 hover:text-red-400 hover:border-red-500/40",
+              "opacity-0 group-hover:opacity-100"
+            )}
+            aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
           >
             <m.div
               initial={{ scale: 1 }}
-              animate={{ scale: isFavorite ? 1.2 : 1 }}
-              whileTap={{ scale: 0.8 }}
-              transition={{ type: "spring", stiffness: 500, damping: 15 }}
+              animate={{ scale: isFavorite ? 1.1 : 1 }}
+              whileTap={{ scale: 0.9 }}
+              transition={{ type: "spring", stiffness: 400, damping: 12 }}
             >
-              <Heart className={`w-4 h-4 ${isFavorite ? 'text-red-500 fill-red-500' : 'text-white/90'}`} />
+              <Heart className={cn("w-4 h-4", isFavorite && "fill-current")} />
             </m.div>
           </button>
           
-          {/* Reading progress indicator */}
+          {/* Rating badge - Top Left */}
+          {comics.rating > 0 && (
+            <div className="absolute top-2.5 left-2.5 bg-black/70 backdrop-blur-sm px-2.5 py-1 rounded-lg flex items-center gap-1 text-xs text-yellow-400 border border-yellow-500/30 shadow-md">
+              <Star className="w-3.5 h-3.5 fill-current" />
+              <span className="font-semibold">{comics.rating.toFixed(1)}</span>
+            </div>
+          )}
+          
+          {/* Reading progress indicator bar */}
           {hasBeenRead && (
-            <div className="absolute top-0 left-0 right-0 h-1 bg-gray-900">
-              <div 
-                className="h-full bg-gradient-to-r from-purple-500 to-indigo-600" 
-                style={{ 
-                  width: `${progressPercentage}%` 
-                }}
+            <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-gray-700/50">
+              <m.div 
+                className="h-full bg-gradient-to-r from-purple-500 to-indigo-500 shadow-lg" 
+                style={{ width: `${progressPercentage}%` }}
+                initial={{ width: 0 }}
+                animate={{ width: `${progressPercentage}%` }}
+                transition={{ duration: 0.5, ease: "easeOut" }}
               />
             </div>
           )}
-          
-          {/* Reading badge */}
+
+          {/* Progress Percentage Text Badge - Bottom Left on Image */}
           {hasBeenRead && (
-            <div className="absolute top-2 left-2 bg-black/70 backdrop-blur-sm text-white px-2 py-1 rounded-md text-xs font-medium flex items-center gap-1 border border-purple-500/30">
-              <span className="text-purple-400">{progressPercentage}% წაკითხულია</span>
+            <div className="absolute bottom-2.5 left-2.5 mb-0.5 bg-black/70 backdrop-blur-sm text-white px-2 py-0.5 rounded-md text-xs font-medium flex items-center gap-1 border border-purple-500/30 shadow-md">
+              <span className="text-purple-300">{progressPercentage}% წაკითხულია</span>
             </div>
           )}
           
-          {/* Rating badge */}
-          {comics.rating > 0 && (
-            <div className="absolute top-2 right-2 bg-black/70 backdrop-blur-sm text-white px-2 py-1 rounded-md text-xs font-medium flex items-center gap-1">
-              <Star className="w-3 h-3 text-yellow-400 fill-yellow-400" />
-              {comics.rating.toFixed(1)}
-            </div>
-          )}
-          
-          {/* Genre pills */}
-          <div className="absolute bottom-2 left-2 flex flex-wrap gap-1 max-w-[calc(100%-1rem)]">
-            {comics.genres?.slice(0, 2).map((genre, idx) => (
-              <div key={idx} className="text-xs px-2 py-0.5 bg-black/70 backdrop-blur-sm rounded-full truncate max-w-full">
+          {/* Genre pills - show first one - Bottom Right on Image */}
+          <div className="absolute bottom-2.5 right-2.5 flex flex-wrap gap-1.5 max-w-[calc(100%-80px)]">
+            {comics.genres?.slice(0, 1).map((genre, idx) => (
+              <div key={idx} className="text-xs px-2.5 py-1 bg-black/70 backdrop-blur-sm rounded-lg truncate max-w-full border border-white/20 shadow-md">
                 {genre}
               </div>
             ))}
           </div>
         </div>
         
-        <div className="p-3 space-y-1">
-          <h3 className="text-sm font-semibold text-white truncate" title={comics.title}>
+        <div className="p-3.5 space-y-1.5 mt-auto"> {/* mt-auto pushes content to bottom */}
+          <h3 className="text-base font-semibold text-white line-clamp-1 group-hover:text-purple-400 transition-colors duration-200" title={comics.title}>
             {comics.title}
           </h3>
-          {/* Show English title only if it exists and differs */}
           {comics.englishTitle && comics.englishTitle !== comics.title && (
-            <p className="text-xs text-gray-400 truncate" title={comics.englishTitle}>
+            <p className="text-xs text-gray-400 line-clamp-1 mt-0.5" title={comics.englishTitle}>
               {comics.englishTitle}
             </p>
           )}
           
-          {/* Status info */}
-          <div className="flex items-center gap-2 mt-1 text-xs text-gray-400">
+          <div className="flex items-center gap-3 pt-1 text-xs text-gray-400">
             {comics.status && (
-              <div className="flex items-center gap-1">
-                <Clock className="w-3 h-3" />
+              <div className="flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-gray-500" />
                 <span>{comics.status}</span>
               </div>
             )}
-            <div className="flex items-center gap-1">
-              <BookOpen className="w-3 h-3" />
-              <span>{comics.chapters || "0 თავი"}</span>
+            <div className="flex items-center gap-1.5">
+              <BookOpen className="w-3.5 h-3.5 text-gray-500" />
+              <span>{comics.chapters}</span>
             </div>
             {comics.release_year && (
-              <div className="flex items-center gap-1">
-                <CalendarDays className="w-3 h-3" />
+              <div className="flex items-center gap-1.5">
+                <CalendarDays className="w-3.5 h-3.5 text-gray-500" />
                 <span>{comics.release_year}</span>
               </div>
             )}
@@ -301,21 +306,25 @@ export default function ComicsPage() {
         
         if (comicsResponse.success && comicsResponse.content) {
           // Transform data for comics
-          const transformedComics = comicsResponse.content.map((content: any) => ({
-            id: content.id,
-            title: content.georgian_title || content.title,
-            englishTitle: content.georgian_title ? content.title : null,
-            description: content.description || "აღწერა არ არის ხელმისაწვდომი",
-            image: (content.bannerImage && content.bannerImage.trim() !== '') ? content.bannerImage : content.thumbnail,
-            thumbnail: content.thumbnail,
-            rating: content.rating || 0,
-            status: content.status,
-            chapters: content.chapters_count ? `${content.chapters_count} თავი` : "0 თავი",
-            totalChapters: typeof content.chapters_count === 'number' ? content.chapters_count : 
-              (typeof content.chapters_count === 'string' ? parseInt(content.chapters_count, 10) : 0),
-            genres: content.genres || [],
-            release_year: content.release_year
-          })).filter((content: {image?: string}) => content.image);
+          const transformedComics = comicsResponse.content.map((content: any) => {
+            const chapterCount = typeof content.chapters_count === 'number' ? content.chapters_count :
+                                 (typeof content.chapters === 'number' ? content.chapters : 
+                                 (typeof content.chapters === 'string' ? parseInt(content.chapters.replace(/[^\d]/g, ''), 10) : 0));
+            return {
+              id: content.id,
+              title: content.georgian_title || content.title,
+              englishTitle: content.georgian_title ? content.title : null,
+              description: content.description || "აღწერა არ არის ხელმისაწვდომი",
+              image: (content.bannerImage && content.bannerImage.trim() !== '') ? content.bannerImage : content.thumbnail,
+              thumbnail: content.thumbnail,
+              rating: content.rating || 0,
+              status: content.status,
+              chapters: chapterCount > 0 ? `${chapterCount} თავი` : "0 თავი",
+              totalChapters: chapterCount,
+              genres: content.genres || [],
+              release_year: content.release_year
+            }
+          }).filter((content: {image?: string}) => content.image);
           
           setComics(transformedComics);
           

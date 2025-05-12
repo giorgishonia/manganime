@@ -33,22 +33,23 @@ import { createContent, updateContent } from "@/lib/content";
 import { cn } from "@/lib/utils";
 import { getAnimeById, getMangaById, searchAniList } from "@/lib/anilist";
 
-// Define genre options
+// ჟანრების სიის განსაზღვრა
 const genreOptions = [
-  { label: "Action", value: "action" },
-  { label: "Adventure", value: "adventure" },
-  { label: "Comedy", value: "comedy" },
-  { label: "Drama", value: "drama" },
-  { label: "Fantasy", value: "fantasy" },
-  { label: "Horror", value: "horror" },
-  { label: "Mystery", value: "mystery" },
-  { label: "Romance", value: "romance" },
-  { label: "Sci-Fi", value: "sci-fi" },
-  { label: "Slice of Life", value: "slice-of-life" },
-  { label: "Sports", value: "sports" },
-  { label: "Supernatural", value: "supernatural" },
-  { label: "Thriller", value: "thriller" },
+  { label: "აქშენი", value: "action" },
+  { label: "სათავგადასავლო", value: "adventure" },
+  { label: "კომედია", value: "comedy" },
+  { label: "დრამა", value: "drama" },
+  { label: "ფენტეზი", value: "fantasy" },
+  { label: "საშინელება", value: "horror" },
+  { label: "საიდუმლოება", value: "mystery" },
+  { label: "რომანტიკა", value: "romance" },
+  { label: "მეცნიერული ფანტასტიკა", value: "sci-fi" },
+  { label: "ცხოვრების ნაჭერი", value: "slice-of-life" },
+  { label: "სპორტი", value: "sports" },
+  { label: "ზებუნებრივი", value: "supernatural" },
+  { label: "თრილერი", value: "thriller" },
 ];
+
 
 // Define Character type
 type Character = {
@@ -139,9 +140,12 @@ interface ComicVineResult {
 
 type ContentFormProps = {
   initialData?: any;
-  onSuccess: () => void;
+  onSuccess: (content?: any) => void;
   onCancel: () => void;
 };
+
+// Define ContentType for internal use
+type ContentType = "anime" | "manga" | "comics";
 
 // Simple debounce function
 function debounce<T extends (...args: any[]) => any>(
@@ -381,7 +385,7 @@ export default function ContentForm({
       }
       
       // Process alternative titles
-      if (data.alternativeTitles?.length > 0) {
+      if (data.alternativeTitles && data.alternativeTitles.length > 0) {
         contentData.alternative_titles = data.alternativeTitles;
       }
       
@@ -397,7 +401,7 @@ export default function ContentForm({
       
       // Process banner image
       if (data.bannerImage) {
-        contentData.bannerImage = data.bannerImage;
+        contentData.banner_image = data.bannerImage;
       }
       
       // Process season
@@ -522,7 +526,7 @@ export default function ContentForm({
         console.log("Comic details:", comicData);
         
         // Set form values from comic data
-        form.setValue("name", comicData.name || "");
+        form.setValue("title", comicData.name || "");
         form.setValue("description", stripHtml(comicData.description || ""));
         
         if (comicData.image) {
@@ -541,41 +545,73 @@ export default function ContentForm({
         // Process characters (limited to first 10)
         if (comicData.characters && comicData.characters.length > 0) {
           const processedCharacters = comicData.characters.slice(0, 10).map((character: any) => {
-            // Get the best available image URL from the imageUrls object
-            let bestImageUrl = null;
+            let characterImage = character.image?.original_url || character.image?.medium_url || character.image?.screen_url || character.image?.small_url || "";
             
-            // Check for imageUrls structure first
-            if (character.imageUrls) {
-              bestImageUrl = character.imageUrls.original || 
-                            character.imageUrls.medium || 
-                            character.imageUrls.screen || 
-                            character.imageUrls.small;
-            }
-            
-            // Fall back to direct image property if needed
-            if (!bestImageUrl) {
-              bestImageUrl = character.image;
-            }
-            
+            let genderString = "unspecified";
+            if (character.gender === 1) genderString = "Male";
+            else if (character.gender === 2) genderString = "Female";
+            // Add other mappings if Comic Vine has more gender codes
+
             return {
-              name: character.name,
-              image: bestImageUrl,
-              role: character.role || "Character", 
-              gender: character.gender || "",
-              age: character.age || "",
-              additional_info: JSON.stringify({
-                realName: character.realName,
-                aliases: character.aliases
-              })
+              name: character.name || "Unknown Character",
+              image: characterImage,
+              role: "SUPPORTING", // Default role, can be refined if API provides more detail
+              gender: genderString,
+              age: character.age || "", // Comic Vine might not provide age consistently
             };
           });
           
           form.setValue("characters", processedCharacters);
         }
         
+        toast.success(`Successfully imported data for "${comicData.name}" from Comic Vine!`);
+        setSearchModalOpen(false); // Close modal on success
       } else {
-        // Handle anime/manga from AniList as before
-        // ... existing code for anime/manga ...
+        // Handle anime/manga from AniList
+        const aniListId = result.id.toString();
+        let details;
+
+        if (contentType === "anime") {
+          details = await getAnimeById(aniListId);
+        } else if (contentType === "manga") {
+          details = await getMangaById(aniListId);
+        }
+
+        if (details) {
+          form.setValue("title", details.title.english || details.title.romaji || "");
+          form.setValue("description", stripHtml(details.description || ""));
+          form.setValue("thumbnail", details.coverImage.large || details.coverImage.extraLarge || "");
+          form.setValue("bannerImage", details.bannerImage || "");
+          form.setValue("genres", details.genres || []);
+          form.setValue("status", mapAniListStatus(details.status || ""));
+          form.setValue("releaseYear", details.startDate?.year || undefined);
+          form.setValue("anilistId", details.id.toString());
+          form.setValue("season", details.season || undefined);
+          form.setValue("rating", details.averageScore ? parseFloat((details.averageScore / 10).toFixed(1)) : undefined);
+          
+          // Populate alternative titles if available
+          const altTitles = [];
+          if (details.title.native) altTitles.push(details.title.native);
+          // You might want to add more sources for alternative titles if available from AniList API
+          form.setValue("alternativeTitles", altTitles);
+
+          // Process characters from AniList (first 10)
+          if (details.characters && details.characters.nodes) {
+            const aniListCharacters = details.characters.nodes.slice(0, 10).map((char: any) => ({
+              name: char.name?.full || "Unnamed Character",
+              image: char.image?.large || char.image?.medium || "",
+              role: char.role || "SUPPORTING", // AniList role should map directly or use SUPPORTING as fallback
+              age: char.age || "", // AniList might provide age as a string
+              gender: char.gender || "unspecified", // AniList gender, might need mapping if not direct string
+            }));
+            form.setValue("characters", aniListCharacters);
+          }
+
+          toast.success(`Successfully imported data for "${details.title.english || details.title.romaji}" from AniList!`);
+          setSearchModalOpen(false); // Close modal on success
+        } else {
+          toast.error(`Failed to fetch details for ${contentType} from AniList.`);
+        }
       }
     } catch (error) {
       console.error(`Error handling ${contentType} selection:`, error);

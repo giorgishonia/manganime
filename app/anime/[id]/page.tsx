@@ -724,9 +724,12 @@ export default function AnimePage({ params }: { params: { id: string } }) {
     return (
       <div className="min-h-screen bg-black text-white flex justify-center items-center">
         <div className="text-center">
-          <h1 className="text-2xl font-bold mb-4">Anime not found</h1>
+          <div className="mb-6">
+            <img src="/images/mascot/confused.png" alt="Anime not found" className="mx-auto w-36 h-36" />
+          </div>
+          <h1 className="text-2xl font-bold mb-4">ანიმე ვერ მოიძებნა</h1>
           <button onClick={() => router.back()} className="px-4 py-2 bg-purple-600 rounded-md">
-            Go Back
+            უკან დაბრუნება
           </button>
         </div>
       </div>

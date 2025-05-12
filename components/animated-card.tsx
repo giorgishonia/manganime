@@ -61,6 +61,24 @@ export function AnimatedCard({
     y.set(0);
   }
 
+  const { 
+    // HTML Drag events
+    onDrag, 
+    onDragStart, 
+    onDragEnd, 
+    onDragOver, 
+    onDragEnter, 
+    onDragLeave, 
+    onDrop, 
+    // HTML Animation events
+    onAnimationStart,
+    onAnimationEnd,
+    onAnimationIteration,
+    // HTML Transition events
+    onTransitionEnd,
+    ...restProps 
+  } = props;
+
   return (
     <motion.div
       ref={ref}
@@ -79,7 +97,7 @@ export function AnimatedCard({
       }}
       whileHover={disabled ? {} : { scale: 1.02 }}
       transition={{ type: "spring", stiffness: 400, damping: 17 }}
-      {...props}
+      {...restProps}
     >
       {/* Content container */}
       <div className="relative z-10 transform-gpu">

@@ -39,7 +39,7 @@ if (typeof window !== 'undefined') {
 }
 
 export const metadata: Metadata = {
-  title: 'MangAnime',
+  title: 'manganime',
   description: 'Explore anime and manga content',
 }
 
@@ -50,6 +50,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
+      <head>
+      <link rel="icon" href="/images/manganimelogo.png" type="image/png" />
+      </head>
       <body className={inter.className} suppressHydrationWarning>
         <NextAuthProvider>
           <SupabaseAuthProvider>

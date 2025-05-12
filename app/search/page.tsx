@@ -465,11 +465,11 @@ export default function SearchPage() {
                 animate="visible"
               >
                 <m.div 
-                  className="mb-4 mx-auto w-16 h-16 rounded-full bg-purple-900/20 flex items-center justify-center"
-                  animate={{ scale: [1, 1.05, 1] }}
-                  transition={{ duration: 2, repeat: Infinity }}
+                  className="mb-6"
+                  whileHover={{ y: -5 }}
+                  transition={{ type: "spring", stiffness: 400, damping: 10 }}
                 >
-                  <Search className="h-8 w-8 text-purple-400" />
+                  <img src="/images/mascot/no-search.png" alt="No search results mascot" className="mx-auto w-40 h-40" />
                 </m.div>
                 <h3 className="text-xl md:text-2xl font-medium text-white mb-2">
                   ვერაფერი მოიძებნა

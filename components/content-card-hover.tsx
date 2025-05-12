@@ -7,7 +7,7 @@ import { motion as m, AnimatePresence } from "framer-motion"
 interface ContentCardHoverProps {
   id: string
   onClose: () => void
-  contentType?: "ANIME" | "MANGA" // Add contentType prop
+  contentType?: "ANIME" | "MANGA" | "COMICS" // Add COMICS to content type
 }
 
 // Mock function to get content details
@@ -16,7 +16,7 @@ function getContentDetails(id: string, type: string) {
 
   return {
     id,
-    title: `${type === "ANIME" ? "Anime" : "Manga"} Title ${id}`,
+    title: `${type === "ANIME" ? "Anime" : type === "MANGA" ? "Manga" : "Comics"} Title ${id}`,
     description: "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
     image: `/placeholder.svg?seed=${numericId}`,
     rating: (Math.random() * 2 + 8).toFixed(1),

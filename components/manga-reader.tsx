@@ -76,6 +76,7 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
   const [isAutoScrolling, setIsAutoScrolling] = useState(false)
   const [autoScrollSpeed, setAutoScrollSpeed] = useState(1)
   const [showComments, setShowComments] = useState(false)
+  const [showInfoTutorial, setShowInfoTutorial] = useState(false)
   
   const [loadedPages, setLoadedPages] = useState<Record<number, boolean>>({})
   
@@ -91,39 +92,33 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
   const [isLongStripStabilized, setIsLongStripStabilized] = useState(false)
   
   const pageProgressRef = useRef<number>(0)
+  const longStripScrollYRef = useRef(0);
   
   const progressBarRef = useRef<HTMLDivElement>(null)
   
   const totalPages = chapter.pages.length
 
   useEffect(() => {
-    const handleMouseMove = () => {
-      setShowControls(true)
-
-      if (controlsTimeoutRef.current) {
-        clearTimeout(controlsTimeoutRef.current)
-      }
-      
-      if (autoHideControls) {
-        controlsTimeoutRef.current = setTimeout(() => {
-          setShowControls(false)
-        }, 3000)
-      }
-    }
-
-    document.addEventListener("mousemove", handleMouseMove)
-
-    if (!autoHideControls && controlsTimeoutRef.current) {
+    // Clear any existing timer first
+    if (controlsTimeoutRef.current) {
       clearTimeout(controlsTimeoutRef.current);
+      controlsTimeoutRef.current = null;
     }
 
-    return () => {
-      document.removeEventListener("mousemove", handleMouseMove)
-      if (controlsTimeoutRef.current) {
-        clearTimeout(controlsTimeoutRef.current)
-      }
+    // If controls are shown, autoHide is enabled, AND settings are NOT shown, set a new timer
+    if (showControls && autoHideControls && !showSettings) {
+      controlsTimeoutRef.current = setTimeout(() => {
+        setShowControls(false);
+      }, 3000);
     }
-  }, [autoHideControls])
+
+    // Cleanup function to clear timer on unmount or when dependencies change
+    return () => {
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
+      }
+    };
+  }, [showControls, autoHideControls, showSettings]);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -463,7 +458,7 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
     return (
       <div
         className={cn(
-          "relative",
+          "relative PageImage_wrapper",
           currentMode === "Long Strip" ? "w-full" : "h-full w-full flex items-center justify-center"
         )}
         data-page-element="true"
@@ -616,6 +611,45 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
     if (showSettings) setShowSettings(false);
   }
 
+  // New useEffect for scroll-based controls in Long Strip mode
+  useEffect(() => {
+    if (readingMode !== "Long Strip" || !longStripRef.current) {
+      return;
+    }
+    
+    const container = longStripRef.current;
+    // Initialize scrollYRef when effect runs for Long Strip or container becomes available
+    longStripScrollYRef.current = container.scrollTop;
+
+    const handleLongStripScroll = () => {
+      if (!container) return;
+      const currentScrollY = container.scrollTop;
+      const scrollThreshold = 10; // Min pixels to scroll to detect direction reliably
+
+      // Check if scroll position has changed meaningfully
+      if (Math.abs(currentScrollY - longStripScrollYRef.current) < scrollThreshold) {
+        return;
+      }
+
+      if (currentScrollY < longStripScrollYRef.current) { // Scrolled UP
+        if (!showControls) { 
+          setShowControls(true);
+        }
+      } else if (currentScrollY > longStripScrollYRef.current) { // Scrolled DOWN
+        if (showControls) { 
+           setShowControls(false);
+        }
+      }
+      longStripScrollYRef.current = currentScrollY; // Update ref after comparison and action
+    };
+
+    container.addEventListener('scroll', handleLongStripScroll, { passive: true });
+    
+    return () => {
+      container.removeEventListener('scroll', handleLongStripScroll);
+    };
+  }, [readingMode, longStripRef.current, showControls, autoHideControls]); // Added dependencies
+
   return (
     <AnimatePresence>
       <motion.div
@@ -627,9 +661,6 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
         transition={{ type: "spring", stiffness: 300, damping: 30 }}
         tabIndex={-1}
         onKeyDown={handleKeyDown}
-        onClick={() => {
-          if (autoHideControls) setShowControls(true);
-        }}
       >
         <AnimatePresence>
           {(showControls || !autoHideControls) && (
@@ -673,12 +704,34 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
           )}
         </AnimatePresence>
 
-        <div className="flex-1 relative overflow-hidden" onClick={(e) => e.stopPropagation()}> 
+        <div 
+          className="flex-1 relative overflow-hidden"
+          onContextMenu={(e) => {
+            e.preventDefault(); // Prevent default context menu
+            // If a click reaches here, it means it wasn't stopped by a more specific child control.
+            // Now, determine if the click was on a general background or page content area.
+            if (
+                // Case 1: Clicked directly on the background of this flex-1 div itself.
+                e.target === e.currentTarget ||
+
+                // Case 2: In Long Strip mode, clicked on the direct background of long strip or a page.
+                (readingMode === "Long Strip" &&
+                    longStripRef.current && longStripRef.current.contains(e.target as Node) &&
+                    (e.target === longStripRef.current || (e.target as HTMLElement).closest('[data-page-element="true"]'))
+                ) ||
+
+                // Case 3: In Single/Double Page mode, clicked on a page/image wrapper.
+                // Explicit L/R navigation areas should have their own e.stopPropagation().
+                (readingMode !== "Long Strip" && (e.target as HTMLElement).closest('.PageImage_wrapper'))
+            ) {
+                setShowControls(prev => !prev);
+            }
+          }}
+        > 
           {readingMode === "Long Strip" ? (
             <div 
               ref={longStripRef}
               className="absolute inset-0 overflow-y-auto scroll-smooth"
-              onClick={(e) => e.stopPropagation()}
             >
               <div 
                 className="flex flex-col items-center pt-12 pb-24"
@@ -754,10 +807,10 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
                 >
                   {readingMode === "Double Page" ? (
                     <div className={cn(
-                      "flex items-center justify-center w-full h-full", 
+                      "flex items-center justify-center w-full h-full PageImage_wrapper",
                       showPageGap ? "gap-4" : "gap-0"
                       )}>
-                      <div className="w-1/2 h-full flex-shrink-0">
+                      <div className="w-1/2 h-full flex-shrink-0 PageImage_wrapper_child">
                         <PageImage 
                           src={readingDirection === 'Left to Right' && currentPage > 0 ? chapter.pages[currentPage - 1] : chapter.pages[currentPage]}
                           alt={`Page ${readingDirection === 'Left to Right' && currentPage > 0 ? currentPage : currentPage + 1}`}
@@ -767,7 +820,7 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
                         />
                       </div>
                       { (readingDirection === 'Left to Right' ? currentPage : currentPage + 1) < totalPages && (
-                        <div className="w-1/2 h-full flex-shrink-0">
+                        <div className="w-1/2 h-full flex-shrink-0 PageImage_wrapper_child">
                           <PageImage 
                             src={readingDirection === 'Left to Right' ? chapter.pages[currentPage] : chapter.pages[currentPage + 1]}
                             alt={`Page ${readingDirection === 'Left to Right' ? currentPage + 1 : currentPage + 2}`}
@@ -787,7 +840,7 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
                       )}
                     </div>
                   ) : (
-                    <div className="w-full h-full relative">
+                    <div className="w-full h-full relative PageImage_wrapper">
                       <PageImage 
                         src={chapter.pages[currentPage]} 
                         alt={`Page ${currentPage + 1}`}
@@ -1185,10 +1238,25 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
                   <motion.button
                     onClick={(e) => {
                       e.stopPropagation();
-                      setShowSettings(!showSettings);
+                      setShowInfoTutorial(prev => !prev);
+                      if (showSettings) setShowSettings(false);
                       if (showComments) setShowComments(false);
                     }}
-                    className="p-1.5 rounded-full hover:bg-gray-800/70 transition-colors text-gray-300 hover:text-white"
+                    className={`p-1.5 rounded-full hover:bg-gray-800/70 transition-colors ${showInfoTutorial ? "text-purple-400 bg-gray-700/50" : "text-gray-300 hover:text-white"}`}
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                    title="ინფორმაცია"
+                  >
+                    <Info className="h-5 w-5" />
+                  </motion.button>
+                  <motion.button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowSettings(!showSettings);
+                      if (showComments) setShowComments(false);
+                      if (showInfoTutorial) setShowInfoTutorial(false);
+                    }}
+                    className={`p-1.5 rounded-full hover:bg-gray-800/70 transition-colors ${showSettings ? "text-purple-400 bg-gray-700/50" : "text-gray-300 hover:text-white"}`}
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.9 }}
                     title="პარამეტრები (S)"
@@ -1199,8 +1267,9 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
                     onClick={(e) => {
                       e.stopPropagation();
                       toggleComments();
+                      if (showInfoTutorial) setShowInfoTutorial(false);
                     }}
-                    className={`p-1.5 rounded-full hover:bg-gray-800/70 transition-colors ${showComments ? "text-purple-400" : "text-gray-300 hover:text-white"}`}
+                    className={`p-1.5 rounded-full hover:bg-gray-800/70 transition-colors ${showComments ? "text-purple-400 bg-gray-700/50" : "text-gray-300 hover:text-white"}`}
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.9 }}
                     title="კომენტარები (C)"
@@ -1249,7 +1318,90 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Info Tutorial Modal */}
+        <AnimatePresence>
+          {showInfoTutorial && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+              className="absolute inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+              onClick={() => setShowInfoTutorial(false)} // Click outside to close
+            >
+              <div 
+                className="bg-gray-900 p-6 rounded-lg shadow-xl border border-gray-700 max-w-sm w-full text-center relative"
+                onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside modal
+              >
+                <button 
+                  onClick={() => setShowInfoTutorial(false)}
+                  className="absolute top-2 right-2 p-1.5 rounded-full hover:bg-gray-700/80 text-gray-400 hover:text-white transition-colors"
+                  title="დახურვა"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+                <div className="flex justify-center mb-4">
+                  {/* Placeholder for animated mouse icon */}
+                  <div className="w-16 h-24 border-2 border-gray-600 rounded-lg flex flex-col items-center justify-between p-2 relative bg-gray-800">
+                    <div className="w-1 h-4 bg-gray-500 rounded-full"></div> {/* Scroll wheel */}
+                    <div className="flex w-full justify-between absolute top-1 left-0 right-0 px-1">
+                        <div className="w-[45%] h-6 bg-gray-700 rounded-l-md border border-gray-600"></div> {/* Left button */}
+                        <div className="w-[45%] h-6 bg-purple-500 rounded-r-md border border-purple-400 animate-pulse_subtle"></div> {/* Right button - highlighted */}
+                    </div>
+                  </div>
+                </div>
+                <h3 className="text-lg font-semibold text-white mb-2">კონტროლი</h3>
+                <p className="text-sm text-gray-300">
+                  კონტროლის პანელის საჩვენებლად ან დასამალად, დააჭირეთ მაუსის მარჯვენა ღილაკს.
+                </p>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Ghost Info Icon - Appears when controls are hidden and tutorial is not open */}
+        <AnimatePresence>
+          {!showControls && !showInfoTutorial && (
+            <motion.button
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              transition={{ duration: 0.2 }}
+              className="fixed bottom-4 right-4 z-40 p-2.5 bg-black/60 backdrop-blur-sm rounded-full shadow-lg border border-gray-700/50 text-white hover:bg-purple-600/50 hover:border-purple-500/70 transition-all"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowControls(true);
+                setShowInfoTutorial(true);
+              }}
+              title="ინფორმაცია"
+            >
+              <Info className="h-5 w-5" />
+            </motion.button>
+          )}
+        </AnimatePresence>
+
       </motion.div>
     </AnimatePresence>
   )
+}
+
+// Add a simple pulse animation for the mouse button
+const keyframes_pulse_subtle = `
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(0.96); }
+`;
+
+if (typeof document !== 'undefined') {
+  const styleSheet = document.createElement("style");
+  styleSheet.type = "text/css";
+  styleSheet.innerText = `
+    .animate-pulse_subtle {
+      animation: pulse_subtle 2s infinite;
+    }
+    @keyframes pulse_subtle {
+      ${keyframes_pulse_subtle}
+    }
+  `;
+  document.head.appendChild(styleSheet);
 }

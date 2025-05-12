@@ -286,16 +286,35 @@ export default function ChapterForm({
       
       if (!response.ok) {
         // Try to parse error JSON
-        let errorData;
+        let errorData: any;
         try {
           errorData = await response.json();
         } catch (e) {
           console.error("Failed to parse error response:", e);
         }
         
-        const errorMessage = errorData?.error || 'Failed to save chapter';
-        const errorDetails = errorData?.details ? `: ${JSON.stringify(errorData.details)}` : '';
-        throw new Error(errorMessage + errorDetails);
+        let displayErrorMessage = 'Failed to save chapter'; // Default message
+
+        if (errorData) {
+          if (typeof errorData.error === 'string') {
+            displayErrorMessage = errorData.error;
+          } else if (typeof errorData.error === 'object' && errorData.error !== null && typeof errorData.error.message === 'string') {
+            displayErrorMessage = errorData.error.message;
+          } else if (typeof errorData.message === 'string') { // Fallback for errors that have a top-level message
+            displayErrorMessage = errorData.message;
+          }
+
+          if (errorData.details) {
+            try {
+              const detailsString = JSON.stringify(errorData.details);
+              displayErrorMessage += ` (Details: ${detailsString})`;
+            } catch (stringifyError) {
+              console.error("Failed to stringify error details:", stringifyError);
+              // Optionally append a generic details error: displayErrorMessage += ' (Could not parse details)';
+            }
+          }
+        }
+        throw new Error(displayErrorMessage);
       } else {
         // Parse successful response
         const data = await response.json();

@@ -109,4 +109,33 @@ export async function uploadImageToCloudinary(
   }
 }
 
+/**
+ * Fetches all subfolders from a specified Cloudinary folder path.
+ */
+export async function getSubfolders(parentFolderPath: string): Promise<{name: string; path: string}[]> {
+  try {
+    // Ensure empty string or root isn't passed if your logic expects a specific folder
+    if (!parentFolderPath) {
+      // Decide handling: throw error, return empty, or default to root subfolders
+      // For now, let's assume a specific parent folder is intended.
+      // If you want to list root folders, parentFolderPath would be an empty string or null
+      // depending on how Cloudinary API handles it for `cloudinary.api.subfolders()`
+      // For this use case, a parent folder is expected.
+      // console.warn("getSubfolders called with empty parentFolderPath. This might not be intended.");
+      // return []; // Or handle as an error
+    }
+
+    const result = await cloudinary.api.sub_folders(parentFolderPath, { max_results: 500 });
+    // The Cloudinary API returns folders with 'name' and 'path' properties.
+    return result.folders.map((folder: { name: string; path: string }) => ({
+      name: folder.name,
+      path: folder.path,
+    }));
+  } catch (error) {
+    console.error(`Error fetching Cloudinary subfolders for '${parentFolderPath}':`, error);
+    // It's good practice to throw the error or a custom error to be handled by the caller
+    throw new Error(`Failed to fetch subfolders from Cloudinary for folder: ${parentFolderPath}`);
+  }
+}
+
 export default cloudinary; 

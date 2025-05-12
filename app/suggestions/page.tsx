@@ -316,9 +316,13 @@ export default function FeedbackPage() {
                 exit={{ opacity: 0, scale: 0.9 }}
                 className="text-center py-12 border rounded-lg bg-gradient-to-b from-black/30 to-purple-900/5 backdrop-blur-sm border-white/5"
               >
-                <div className="w-16 h-16 mx-auto bg-black/30 rounded-full flex items-center justify-center border border-white/10 mb-4">
-                  {selectedType !== "all" ? getTypeIcon(selectedType) : <BadgeInfo className="h-8 w-8 text-purple-400" />}
-                </div>
+                <m.div
+                  whileHover={{ y: -5 }}
+                  transition={{ type: "spring", stiffness: 400, damping: 10 }}
+                  className="mb-4"
+                >
+                  <img src="/images/mascot/suggestion.png" alt="Suggestion mascot" className="mx-auto w-32 h-32" />
+                </m.div>
                 <h3 className="text-lg font-medium">მოთხოვნები ვერ მოიძებნა</h3>
                 <p className="text-muted-foreground mt-1 max-w-md mx-auto">
                   {searchQuery.trim()

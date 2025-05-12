@@ -365,7 +365,7 @@ export function AppSidebar() {
               >
                 <MobileSidebarContent 
                   onClose={() => setIsMobileOpen(false)} 
-                  pathname={pathname}
+                  pathname={pathname ?? ""}
                   onSearchClick={() => {
                     setIsMobileOpen(false);
                     toggleSearch();
@@ -400,14 +400,14 @@ export function AppSidebar() {
         {/* <div className="absolute inset-0 pointer-events-none" /> */}
         
         <div className="h-full flex flex-col relative z-10">
-          <div className="flex items-center justify-center p-5 pb-8">
+          <div className="flex items-center justify-center pt-4 pb-4">
             <Link href="/">
-              <div
-                className="h-11 w-11 bg-gradient-to-br from-[hsl(var(--primary))] to-[hsl(var(--secondary))] text-white rounded-xl flex items-center justify-center font-bold text-lg shadow-lg"
+              <img
+                src="/images/manganimelogo.png"
+                alt="Manganime Logo"
+                className="h-11 w-11 rounded-xl object-cover"
                 title="მთავარი"
-              >
-                M
-              </div>
+              />
             </Link>
           </div>
           <div className="space-y-1 px-2">
@@ -601,9 +601,10 @@ export function AppSidebar() {
                     </Button>
                   </div>
                 ) : notifications.length === 0 ? (
-                  <div className="text-center text-gray-400 pt-10">
-                    <Bell className="h-12 w-12 mx-auto mb-3 text-gray-600" />
-                    შეტყობინებები არ არის.
+                  <div className="text-center py-8">
+                    <img src="/images/mascot/no-notifications.png" alt="No notifications mascot" className="mx-auto w-32 h-32 mb-3" />
+                    <p className="text-white/70">არ გაქვთ შეტყობინებები</p>
+                    <p className="text-sm text-white/50 mt-1">როდესაც მიიღებთ შეტყობინებებს, ისინი აქ გამოჩნდება</p>
                   </div>
                 ) : (
                   <div className="space-y-3">

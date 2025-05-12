@@ -23,12 +23,13 @@ interface ContentData {
   rating?: number
   status: string
   genres: string[]
-  type: 'anime' | 'manga'
+  type: 'anime' | 'manga' | 'comics'
   release_year?: number
   season?: string
   georgian_title?: string
   chapters_count?: number // Added for manga
   episodes_count?: number // Added for anime
+  publisher?: string      // Added for comics
 }
 
 // Animation variants for page transitions
@@ -52,11 +53,12 @@ const contentVariants = {
 };
 
 // Add a helper function to check if content is favorited
-function isContentFavorited(id: string, type: 'anime' | 'manga'): boolean {
+function isContentFavorited(id: string, type: 'anime' | 'manga' | 'comics'): boolean {
   if (typeof window === 'undefined') return false;
   try {
     const favorites = JSON.parse(localStorage.getItem('favorites') || '{}');
-    return !!favorites[`${type}-${id}`];
+    const contentKey = `${type}-${id}`;
+    return !!favorites[contentKey];
   } catch (error) {
     console.error("Error checking favorite status:", error);
     return false;
@@ -66,7 +68,7 @@ function isContentFavorited(id: string, type: 'anime' | 'manga'): boolean {
 // Add a helper function to toggle favorite status
 function toggleContentFavorite(
   id: string, 
-  type: 'anime' | 'manga', 
+  type: 'anime' | 'manga' | 'comics', 
   title: string, 
   image: string
 ): boolean {
@@ -99,18 +101,20 @@ function toggleContentFavorite(
 }
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<"anime" | "schedule" | "manga">("anime")
+  const [activeTab, setActiveTab] = useState<"anime" | "manga" | "comics">("anime")
   const [currentFeatured, setCurrentFeatured] = useState(0)
   const [isChanging, setIsChanging] = useState(false)
   const [selectedCategory, setSelectedCategory] = useState("ყველა")
   const [hoveredCard, setHoveredCard] = useState<string | null>(null) // Use string ID for hover
   const [isLoading, setIsLoading] = useState(true) // Main loading for initial data fetch
   const [isTabLoading, setIsTabLoading] = useState(false) // Loading state for tab transitions
-  const [hoveredContentType, setHoveredContentType] = useState<"ANIME" | "MANGA">("ANIME")
+  const [hoveredContentType, setHoveredContentType] = useState<"ANIME" | "MANGA" | "COMICS">("ANIME")
   const [featuredAnime, setFeaturedAnime] = useState<any[]>([])
   const [availableAnime, setAvailableAnime] = useState<any[]>([])
   const [availableManga, setAvailableManga] = useState<any[]>([])
+  const [availableComics, setAvailableComics] = useState<any[]>([])
   const [isFeaturedFavorite, setIsFeaturedFavorite] = useState(false)
+  const [hoverId, setHoverId] = useState<string | null>(null)
 
   // Ensure "ყველა" is set as the default category on initial render
   useEffect(() => {
@@ -130,6 +134,9 @@ export default function Home() {
         
         // Fetch all available manga
         const mangaResponse = await getAllContent('manga', 20);
+        
+        // Fetch all available comics
+        const comicsResponse = await getAllContent('comics', 20);
         
         let transformedAnime: any[] = [];
         
@@ -164,6 +171,35 @@ export default function Home() {
           const transformedManga = mangaResponse.content.map((content: ContentData) => {
             // --- DEBUG: Log raw values before transformation
             console.log(`[page.tsx manga map] ID: ${content.id}, Raw Banner: ${content.bannerImage}, Raw Thumb: ${content.thumbnail}`);
+            
+            // Improved chapter count extraction
+            let chapterCount = 0;
+            
+            // First try to get from chapters_count field (preferred)
+            if (typeof content.chapters_count === 'number' && !isNaN(content.chapters_count)) {
+              chapterCount = content.chapters_count;
+            }
+            // Then try to access potential dynamic properties
+            else {
+              const rawContent = content as any; // Cast to any to access potentially dynamic fields
+              
+              if (typeof rawContent.chapters === 'number' && !isNaN(rawContent.chapters)) {
+                chapterCount = rawContent.chapters;
+              }
+              else if (typeof rawContent.chapters === 'string' && rawContent.chapters) {
+                const extracted = parseInt(rawContent.chapters.replace(/[^\d]/g, ''), 10);
+                if (!isNaN(extracted)) {
+                  chapterCount = extracted;
+                }
+              }
+              // Debugging info for chapter count extraction
+              console.log(`[page.tsx] Manga ${content.id} chapter extraction:`, {
+                chapters_count: content.chapters_count,
+                rawChapters: rawContent.chapters,
+                finalCount: chapterCount
+              });
+            }
+            
             return {
               id: content.id,
               title: content.georgian_title || content.title,
@@ -173,7 +209,8 @@ export default function Home() {
               thumbnail: content.thumbnail,
               rating: content.rating || 0,
               status: content.status,
-              chapters: content.chapters_count ? `${content.chapters_count} თავი` : "0 თავი", // Default to "0 თავი" instead of "?"
+              chapters: chapterCount > 0 ? `${chapterCount} თავი` : "0 თავი", // Display string with count
+              totalChapters: chapterCount, // Numeric value for calculations
               genres: content.genres,
               type: 'manga'
             }
@@ -194,6 +231,61 @@ export default function Home() {
           }
         }
 
+        // Handle comics content
+        if (comicsResponse.success && comicsResponse.content) {
+          const transformedComics = comicsResponse.content.map((content: ContentData) => {
+            console.log(`[page.tsx comics map] ID: ${content.id}, Raw Banner: ${content.bannerImage}, Raw Thumb: ${content.thumbnail}`);
+            
+            // Extract chapter count for comics - similar to manga
+            let chapterCount = 0;
+            
+            if (typeof content.chapters_count === 'number' && !isNaN(content.chapters_count)) {
+              chapterCount = content.chapters_count;
+            } else {
+              const rawContent = content as any;
+              
+              if (typeof rawContent.chapters === 'number' && !isNaN(rawContent.chapters)) {
+                chapterCount = rawContent.chapters;
+              }
+              else if (typeof rawContent.chapters === 'string' && rawContent.chapters) {
+                const extracted = parseInt(rawContent.chapters.replace(/[^\d]/g, ''), 10);
+                if (!isNaN(extracted)) {
+                  chapterCount = extracted;
+                }
+              }
+              console.log(`[page.tsx] Comics ${content.id} chapter extraction:`, {
+                chapters_count: content.chapters_count,
+                rawChapters: rawContent.chapters,
+                finalCount: chapterCount
+              });
+            }
+            
+            return {
+              id: content.id,
+              title: content.georgian_title || content.title,
+              englishTitle: content.georgian_title ? content.title : null,
+              description: content.description || "აღწერა არ არის ხელმისაწვდომი",
+              image: (content.bannerImage && content.bannerImage.trim() !== '') ? content.bannerImage : content.thumbnail,
+              thumbnail: content.thumbnail,
+              rating: content.rating || 0,
+              status: content.status,
+              chapters: chapterCount > 0 ? `${chapterCount} თავი` : "0 თავი", // Display string with count
+              totalChapters: chapterCount, // Numeric value for calculations
+              genres: content.genres,
+              type: 'comics',
+              publisher: content.publisher || ''
+            }
+          }).filter((content: {image?: string}) => content.image);
+          
+          setAvailableComics(transformedComics);
+          
+          // Add comics to featured content if needed
+          if (transformedComics.length > 0 && featuredAnime.length < 5) {
+            const comicsForFeatured = transformedComics.slice(0, 2);
+            setFeaturedAnime(prev => [...prev, ...comicsForFeatured].slice(0, 5));
+          }
+        }
+
         // ---- DEBUG LOGGING START ----
         console.log("--- app/page.tsx Data Fetch --- ");
         console.log("Raw Anime Response Content (sample):");
@@ -202,18 +294,23 @@ export default function Home() {
         console.log(transformedAnime.slice(0, 2));
         console.log("Raw Manga Response Content (sample):");
         console.log(mangaResponse.success ? mangaResponse.content?.slice(0, 2) : "Failed or no manga content");
+        console.log("Raw Comics Response Content (sample):");
+        console.log(comicsResponse.success ? comicsResponse.content?.slice(0, 2) : "Failed or no comics content");
         console.log("Final Featured Anime State (sample):");
         // Safely construct the sample for logging
         const mangaSampleForFeatured = (mangaResponse.success && mangaResponse.content) ? mangaResponse.content.slice(0, 3) : [];
+        const comicsSampleForFeatured = (comicsResponse.success && comicsResponse.content) ? comicsResponse.content.slice(0, 2) : [];
         const finalFeaturedSample = (transformedAnime.length > 0) 
-            ? [...transformedAnime.slice(0, 2), ...mangaSampleForFeatured]
-            : (transformedAnime.length > 0 ? transformedAnime.slice(0, 5) : mangaSampleForFeatured.slice(0,5));
+            ? [...transformedAnime.slice(0, 2), ...mangaSampleForFeatured, ...comicsSampleForFeatured].slice(0, 5)
+            : (transformedAnime.length > 0 ? transformedAnime.slice(0, 5) : 
+              [...mangaSampleForFeatured, ...comicsSampleForFeatured].slice(0, 5));
         console.log(finalFeaturedSample.map((item: any) => ({
           id: item.id,
           title: item.title,
           banner: item.bannerImage,
           thumb: item.thumbnail,
           image_prop: item.image,
+          type: item.type,
         })));
         console.log("-----------------------------");
         // ---- DEBUG LOGGING END ----
@@ -259,11 +356,13 @@ export default function Home() {
       setHoveredContentType("ANIME")
     } else if (activeTab === "manga") {
       setHoveredContentType("MANGA")
+    } else if (activeTab === "comics") {
+      setHoveredContentType("COMICS")
     }
   }, [activeTab])
 
   // Handle tab changes with smooth transitions
-  const handleTabChange = (tab: "anime" | "schedule" | "manga") => {
+  const handleTabChange = (tab: "anime" | "manga" | "comics") => {
     if (tab === activeTab) return;
     
     setIsTabLoading(true);
@@ -290,6 +389,13 @@ export default function Home() {
   
   const mangaCategories = availableManga.reduce((acc, manga) => {
     manga.genres?.forEach((genre: string) => {
+      if (!acc.includes(genre)) acc.push(genre);
+    });
+    return acc;
+  }, [] as string[]);
+  
+  const comicsCategories = availableComics.reduce((acc, comic) => {
+    comic.genres?.forEach((genre: string) => {
       if (!acc.includes(genre)) acc.push(genre);
     });
     return acc;
@@ -329,7 +435,7 @@ export default function Home() {
     <div className="flex min-h-screen bg-[#070707] text-white antialiased">
       <AppSidebar />
 
-      <main className="flex-1 overflow-x-hidden ">
+      <main className="flex-1 overflow-x-hidden">
         {/* Featured Content */} 
         <section className="relative w-full h-[350px] md:h-[400px] px-4 pt-16 md:px-0 md:pt-0">
           {/* --- DEBUG LOG --- */}
@@ -373,17 +479,10 @@ export default function Home() {
           </AnimatePresence>
 
           {/* Content positioned correctly with padding */} 
-          <div className="absolute top-16 right-8 right-0 pb-24 md:pb-12 px-4 md:px-8 lg:px-12 z-10 mt-0">
+          <div className="absolute top-16 left-0 right-0 pb-24 md:pb-12 px-4 md:px-8 lg:px-12 z-10 mt-0">
             <AnimatePresence mode="wait">
               {isLoading || !featured ? (
                 <div className="space-y-4 mt-[-100px]"> {/* Adjust spacing for skeleton */} 
-                  <div className="h-10 bg-gray-700/30 rounded w-3/4"></div>
-                  <div className="h-6 bg-gray-700/30 rounded w-1/2"></div>
-                  <div className="h-20 bg-gray-700/30 rounded w-full"></div>
-                  <div className="flex gap-3">
-                    <div className="h-10 w-28 bg-gray-700/30 rounded-full"></div>
-                    <div className="h-10 w-36 bg-gray-700/30 rounded-full"></div>
-                  </div>
                 </div>
               ) : (
                 <m.div
@@ -396,22 +495,49 @@ export default function Home() {
                 >
                   {/* Featured Thumbnail - Hide on small screens */}
                   <m.div 
-                    className="w-28 h-40 md:w-36 md:h-56 md:block hidden rounded-lg overflow-hidden border-2 border-white/10 shadow-xl flex-shrink-0 block relative" /* Fixed width and removed hidden/sm:block */
+                    className="w-28 h-40 md:w-36 md:h-56 md:block hidden rounded-lg overflow-hidden border-2 border-white/10 shadow-xl flex-shrink-0 block relative group/thumbnail"
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: 0.3, duration: 0.5 }}
                   >
                     
-                    <div className="w-full h-full overflow-hidden">
+                    <div className="w-full h-full overflow-hidden rounded-lg">
                       <img
                         src={featured.thumbnail}
                         alt={featured.title}
-                        className="w-full h-full object-cover transition-transform duration-300 hover:scale-110 transform-origin-center"
+                        className="w-full h-full object-cover transition-transform duration-300 group-hover/thumbnail:scale-110 transform-origin-center"
                       />
                     </div>
+
+                    {/* Favorite button for featured content thumbnail */}
+                    {featured && (
+                        <button 
+                            onClick={(e) => {
+                                e.stopPropagation(); // Prevent navigation if the link is on parent
+                                handleFeaturedFavoriteToggle();
+                            }}
+                            className={cn(
+                                "absolute top-2 right-2 z-20 p-1.5 rounded-full transition-all duration-300 backdrop-blur-sm border",
+                                isFeaturedFavorite 
+                                    ? "bg-red-500/30 border-red-500/50 text-red-400"
+                                    : "bg-black/50 border-white/20 text-white/80 hover:bg-red-500/20 hover:text-red-400 hover:border-red-500/40",
+                                "opacity-0 group-hover/thumbnail:opacity-100" // Control opacity with group-hover/thumbnail
+                            )}
+                            aria-label={isFeaturedFavorite ? "Remove from favorites" : "Add to favorites"}
+                        >
+                            <m.div
+                                initial={{ scale: 1 }}
+                                animate={{ scale: isFeaturedFavorite ? 1.1 : 1 }}
+                                whileTap={{ scale: 0.9 }}
+                                transition={{ type: "spring", stiffness: 400, damping: 12 }}
+                            >
+                                <Heart className={cn("w-3.5 h-3.5", isFeaturedFavorite && "fill-current")} />
+                            </m.div>
+                        </button>
+                    )}
                   </m.div>
                   
-                  <div className="flex-1">
+                  <div className="w-fit">
                     <m.h1
                       className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-1"
                       variants={heroVariants}
@@ -463,7 +589,7 @@ export default function Home() {
                         
                     {/* Description with text fade mask effect */}
                     <m.div 
-                      className="relative mb-6"
+                      className="relative mb-6 w-fit"
                       variants={heroVariants}
                     >
                       <div 
@@ -473,7 +599,7 @@ export default function Home() {
                           WebkitMaskImage: 'linear-gradient(to bottom, black 50%, transparent 100%)'
                         }}
                       >
-                        <p className="text-sm leading-relaxed max-w-xl text-gray-300">
+                        <p className="text-sm leading-relaxed mb-[24px] max-w-xl text-gray-300">
                           {featured.description}
                         </p>
                       </div>
@@ -499,7 +625,8 @@ export default function Home() {
             >
               {[ 
                 { label: "ანიმე", value: "anime" },
-                { label: "მანგა", value: "manga" }
+                { label: "მანგა", value: "manga" },
+                { label: "კომიქსები", value: "comics" }
               ].map((tab) => (
                 <m.button
                   key={tab.value}
@@ -549,7 +676,7 @@ export default function Home() {
         </section>
 
         {/* Content based on active tab - Simplified layout */}
-        <div className="px-4 py-8 min-h-[500px] pt-24 md:pl-[100px]">
+        <div className="px-4 py-8 min-h-[500px] pt-24 pl-[100px]">
           <AnimatePresence mode="wait">
             {isTabLoading ? (
               <m.div
@@ -570,7 +697,7 @@ export default function Home() {
                 initial="initial"
                 animate="animate"
                 exit="exit"
-                className="max-w-7xl mx-auto"
+                className=" mx-auto"
               >
                 {activeTab === "anime" && (
                   <AnimeView
@@ -591,6 +718,17 @@ export default function Home() {
                     hoveredCard={hoveredCard}
                     setHoveredCard={setHoveredCard}
                     mangaData={availableManga}
+                  />
+                )}
+                
+                {activeTab === "comics" && (
+                  <MangaView // Reuse MangaView for comics since the structure is the same
+                    selectedCategory={selectedCategory}
+                    setSelectedCategory={setSelectedCategory}
+                    categories={[...comicsCategories]}
+                    hoveredCard={hoveredCard}
+                    setHoveredCard={setHoveredCard}
+                    mangaData={availableComics}
                   />
                 )}
               </m.div>
