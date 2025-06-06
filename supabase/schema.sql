@@ -39,7 +39,7 @@ CREATE OR REPLACE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
--- Content table for anime and manga
+-- Content table for manga and comics
 CREATE TABLE IF NOT EXISTS public.content (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   title TEXT NOT NULL,
@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS public.content (
   description TEXT,
   thumbnail TEXT NOT NULL,
   banner_image TEXT,
-  type TEXT NOT NULL CHECK (type IN ('anime', 'manga')),
+  type TEXT NOT NULL CHECK (type IN ('manga', 'comics')),
   status TEXT NOT NULL CHECK (status IN ('ongoing', 'completed', 'hiatus')),
   release_year INTEGER,
   season TEXT,
@@ -88,49 +88,20 @@ CREATE POLICY "Content can be deleted by admins."
     WHERE profiles.id = auth.uid() AND profiles.is_admin = true
   ));
 
--- Episodes table for anime
-CREATE TABLE IF NOT EXISTS public.episodes (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  content_id UUID NOT NULL REFERENCES public.content(id) ON DELETE CASCADE,
-  number INTEGER NOT NULL,
-  title TEXT NOT NULL,
-  thumbnail TEXT,
-  duration INTEGER,
-  release_date TIMESTAMP WITH TIME ZONE,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  UNIQUE(content_id, number)
-);
+-- Episodes table (No longer needed as anime is removed)
+-- CREATE TABLE episodes (
+--     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+--     content_id UUID REFERENCES content(id) ON DELETE CASCADE,
+--     number INTEGER NOT NULL,
+--     title TEXT,
+--     air_date DATE,
+--     duration INTEGER, -- Duration in minutes
+--     thumbnail_url TEXT,
+--     video_url TEXT, -- URL to the video file or stream
+--     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+-- );
 
--- Enable Row Level Security
-ALTER TABLE public.episodes ENABLE ROW LEVEL SECURITY;
-
--- Create policies for episodes
-CREATE POLICY "Episodes are viewable by everyone."
-  ON public.episodes FOR SELECT
-  USING (true);
-
-CREATE POLICY "Episodes can be created by admins."
-  ON public.episodes FOR INSERT
-  WITH CHECK (EXISTS (
-    SELECT 1 FROM public.profiles
-    WHERE profiles.id = auth.uid() AND profiles.is_admin = true
-  ));
-
-CREATE POLICY "Episodes can be updated by admins."
-  ON public.episodes FOR UPDATE
-  USING (EXISTS (
-    SELECT 1 FROM public.profiles
-    WHERE profiles.id = auth.uid() AND profiles.is_admin = true
-  ));
-
-CREATE POLICY "Episodes can be deleted by admins."
-  ON public.episodes FOR DELETE
-  USING (EXISTS (
-    SELECT 1 FROM public.profiles
-    WHERE profiles.id = auth.uid() AND profiles.is_admin = true
-  ));
-
--- Chapters table for manga
+-- Chapters table for manga and comics
 CREATE TABLE IF NOT EXISTS public.chapters (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   content_id UUID NOT NULL REFERENCES public.content(id) ON DELETE CASCADE,
@@ -176,7 +147,7 @@ CREATE TABLE IF NOT EXISTS public.favorites (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   content_id UUID NOT NULL REFERENCES public.content(id) ON DELETE CASCADE,
-  content_type TEXT NOT NULL CHECK (content_type IN ('anime', 'manga')),
+  content_type TEXT NOT NULL CHECK (content_type IN ('manga', 'comics')),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   UNIQUE(user_id, content_id, content_type)
 );
@@ -202,7 +173,7 @@ CREATE TABLE IF NOT EXISTS public.watchlist (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   content_id UUID NOT NULL REFERENCES public.content(id) ON DELETE CASCADE,
-  content_type TEXT NOT NULL CHECK (content_type IN ('anime', 'manga')),
+  content_type TEXT NOT NULL CHECK (content_type IN ('manga', 'comics')),
   status TEXT NOT NULL CHECK (status IN ('watching', 'completed', 'plan_to_watch', 'on_hold', 'dropped', 'reading', 'plan_to_read')),
   progress INTEGER DEFAULT 0,
   rating DECIMAL(3,1) DEFAULT NULL,
@@ -238,8 +209,8 @@ ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT fa
 CREATE TABLE IF NOT EXISTS public.comments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-    content_id TEXT NOT NULL,
-    content_type TEXT NOT NULL CHECK (content_type IN ('anime', 'manga')),
+    content_id UUID NOT NULL REFERENCES public.content(id) ON DELETE CASCADE,
+    content_type TEXT NOT NULL CHECK (content_type IN ('manga', 'comics')),
     text TEXT NOT NULL,
     media_url TEXT,
     parent_comment_id UUID REFERENCES public.comments(id) ON DELETE CASCADE,
@@ -307,4 +278,40 @@ DROP POLICY IF EXISTS "Users can view all comment likes" ON public.comment_likes
 CREATE POLICY "Users can view all comment likes"
     ON public.comment_likes 
     FOR SELECT 
-    USING (true); 
+    USING (true);
+
+-- Create feedback table for user feedback
+CREATE TABLE IF NOT EXISTS public.feedback (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    content_id UUID NOT NULL REFERENCES public.content(id) ON DELETE CASCADE,
+    content_type TEXT NOT NULL CHECK (content_type IN ('manga', 'comics', 'sticker', 'gif')),
+    feedback_type TEXT,
+    description TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Enable Row Level Security
+ALTER TABLE public.feedback ENABLE ROW LEVEL SECURITY;
+
+-- Create policies for feedback
+CREATE POLICY "Users can create their own feedback."
+    ON public.feedback 
+    FOR INSERT 
+    WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can view all feedback."
+    ON public.feedback 
+    FOR SELECT 
+    USING (true);
+
+CREATE POLICY "Users can update their own feedback."
+    ON public.feedback 
+    FOR UPDATE 
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete their own feedback."
+    ON public.feedback 
+    FOR DELETE 
+    USING (auth.uid() = user_id); 

@@ -82,8 +82,8 @@ export default function FeedbackPage() {
   }, [userId]);
 
   useEffect(() => {
-    const type = searchParams.get("type");
-    if (type && ["anime", "manga", "sticker", "gif", "feature", "bug", "improvement"].includes(type)) {
+    const type = searchParams?.get("type");
+    if (type && ["manga", "sticker", "gif", "feature", "bug", "improvement"].includes(type)) {
       setSelectedType(type);
     }
   }, [searchParams]);

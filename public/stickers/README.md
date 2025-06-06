@@ -1,10 +1,19 @@
 # Stickers for MangAnime Comment System
 
-This directory contains stickers that can be used in the comment system. Stickers are organized by category:
+This directory contains stickers that can be used in the comment system of the MangAnime platform.
 
-- `anime/` - Anime reaction stickers
-- `reactions/` - General reaction stickers
-- `manga/` - Manga-themed stickers
+## Structure
+
+- `manga/` - Manga reaction stickers
+- `comics/` - Comics reaction stickers (if different from manga)
+- `generic/` - Generic reaction stickers (e.g., thumbs up, lol, heart)
+
+Each subdirectory should contain PNG or GIF files for the stickers.
+
+## Usage
+
+When a user wants to add a sticker to their comment, the frontend should display a picker that shows stickers from these directories.
+The path to the sticker (e.g., `/stickers/manga/happy.png`) will be stored with the comment.
 
 ## Adding New Stickers
 

@@ -93,7 +93,10 @@ export function AvatarUploader({ currentAvatarUrl, userId, onAvatarUpdate }: Ava
           // Try to update the user metadata directly to ensure it's consistent
           // This helps override OAuth provider avatars like Discord
           console.log('Also updating user metadata with new avatar URL');
-          const supabase = createClient();
+          const supabase = createClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+          );
           
           // First get current user data to preserve other metadata
           const { data: userData } = await supabase.auth.getUser();

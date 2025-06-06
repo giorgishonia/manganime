@@ -176,7 +176,7 @@ export default function FavoritesPage() {
           
           {/* Hero content */}
           <div className="absolute inset-0 flex flex-col justify-end p-6 md:p-10 md:pl-[77px]">
-            <div className="max-w-7xl mx-auto w-full">
+            <div className="max-w-7xl justify-center flex mx-auto w-full">
               <m.div 
                 className="flex items-center gap-3 mb-4"
                 initial={{ opacity: 0, y: 20 }}
@@ -221,7 +221,7 @@ export default function FavoritesPage() {
         <div className="max-w-7xl mx-auto px-4 md:px-8 md:pl-[77px]">
           {/* Filter and view controls */}
           <m.div 
-            className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4"
+            className="flex flex-col md:flex-row justify-center items-start md:items-start mt-8 mb-8 gap-4"
             variants={filterVariants}
             initial="hidden"
             animate="visible"
@@ -229,14 +229,14 @@ export default function FavoritesPage() {
             <Tabs 
               defaultValue="all" 
               onValueChange={setActiveTab} 
-              className="w-full"
+              className="w-full md:w-auto"
             >
-              <TabsList className="bg-black/40 border border-white/10 p-1 w-full flex flex-wrap backdrop-blur-sm rounded-xl overflow-hidden">
+              <TabsList className="bg-black/40 border border-white/10 p-1 w-fit flex flex-wrap backdrop-blur-sm rounded-xl overflow-hidden">
                 <TabsTrigger 
                   value="all" 
                   className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-purple-600 data-[state=active]:to-indigo-600 data-[state=active]:text-white px-2 sm:px-4 py-2 rounded-lg text-xs sm:text-sm flex-1 sm:flex-none"
                 >
-                  <m.div className="flex items-center justify-center gap-1" whileHover={{ x: 2 }}>
+                  <m.div className="flex items-start justify-start gap-1" whileHover={{ x: 2 }}>
                     <Sparkles className="w-3 h-3 sm:w-4 sm:h-4 hidden sm:block" />
                     <span>ყველა ({favorites.length})</span>
                   </m.div>
@@ -269,9 +269,136 @@ export default function FavoritesPage() {
                   </m.div>
                 </TabsTrigger>
               </TabsList>
+              <AnimatePresence mode="wait">
+                <TabsContent value={activeTab} key={activeTab} className="mt-12">
+                  {filteredFavorites.length > 0 ? (
+                    <m.div 
+                      className={cn(
+                        "grid gap-4",
+                        viewMode === 'grid' 
+                          ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5' 
+                          : 'grid-cols-1'
+                      )}
+                      variants={containerVariants}
+                      initial="hidden"
+                      animate="visible"
+                    >
+                      {filteredFavorites.map((item) => (
+                        <m.div 
+                          key={`${item.type}-${item.id}`}
+                          variants={itemVariants}
+                          className={cn(
+                            "group relative bg-black/40 border border-white/5 backdrop-blur-sm rounded-xl overflow-hidden transition-all duration-300 flex flex-col",
+                            viewMode === 'list' ? "flex-row items-center" : ""
+                          )}
+                        >
+                          {/* Remove button */}
+                          <m.button
+                            className="absolute top-2 right-2 z-10 bg-black/70 border border-white/10 rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                            onClick={() => handleRemoveFavorite(item.id, item.type)}
+                            whileHover={{ scale: 1.1 }}
+                            whileTap={{ scale: 0.9 }}
+                          >
+                            <X className="w-3 h-3 text-white/80" />
+                          </m.button>
+                          
+                          {/* Type indicator */}
+                          <div className="absolute top-2 left-2 z-10 bg-black/70 border border-white/10 rounded-full px-2 py-1 text-xs flex items-center gap-1">
+                            {item.type === 'manga' && <BookOpen className="w-3 h-3" />}
+                            {item.type === 'comics' && <BookMarked className="w-3 h-3" />}
+                            {item.type === 'anime' && <TrendingUp className="w-3 h-3" />}
+                            <span>{item.type === 'manga' ? 'მანგა' : item.type === 'comics' ? 'კომიქსი' : 'ანიმე'}</span>
+                          </div>
+                          
+                          {/* Image */}
+                          <Link 
+                            href={`/${item.type}/${item.id}`} 
+                            className={cn(
+                              "block overflow-hidden w-full",
+                              viewMode === 'list' ? "w-24 h-24 rounded-lg m-3 flex-shrink-0" : "aspect-[2/3]"
+                            )}
+                          >
+                            <m.img 
+                              src={item.image} 
+                              alt={item.title}
+                              className="w-full h-full object-cover object-center transition-transform duration-700"
+                              loading="lazy"
+                              initial={{ scale: 1.1 }}
+                              animate={{ scale: 1 }}
+                              whileHover={{ scale: 1.05 }}
+                              whileInView={{ opacity: 1 }}
+                              style={{ viewTransitionName: `image-${item.id}` }} 
+                            />
+                          </Link>
+                          
+                          {/* Content */}
+                          <div className={cn(
+                            "p-3 pt-2 flex flex-col flex-grow",
+                            viewMode === 'list' ? "flex-1 py-3 pl-0" : ""
+                          )}>
+                            <Link href={`/${item.type}/${item.id}`} className="hover:underline">
+                              <h3 className="text-sm font-medium line-clamp-2">{item.title}</h3>
+                            </Link>
+                            <div className="flex items-center gap-2 text-white/60 text-xs mt-auto pt-1">
+                              <Clock className="w-3 h-3" />
+                              <span>დამატებულია {new Date(item.addedAt).toLocaleDateString('ka-GE')}</span>
+                            </div>
+                          </div>
+                        </m.div>
+                      ))}
+                    </m.div>
+                  ) : (
+                    <m.div 
+                      className="flex flex-col items-center justify-center py-16 px-4 text-center"
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+                    >
+                      <div className="mb-6 opacity-90">
+                        <img 
+                          src="/images/mascot/no-favorite.png" 
+                          alt="No favorites" 
+                          className="w-48 h-48 object-contain"
+                          style={{
+                            filter: "drop-shadow(0 0 20px rgba(139, 92, 246, 0.3))"
+                          }}
+                        />
+                      </div>
+                      
+                      <h3 className="text-xl font-semibold mb-2">
+                        {activeTab === 'all' && "თქვენ არ გაქვთ რჩეული კონტენტი"}
+                        {activeTab === 'manga' && "თქვენ არ გაქვთ რჩეული მანგა"}
+                        {activeTab === 'comics' && "თქვენ არ გაქვთ რჩეული კომიქსი"}
+                        {activeTab === 'anime' && "თქვენ არ გაქვთ რჩეული ანიმე"}
+                      </h3>
+                      
+                      <p className="text-white/70 mb-6 max-w-md">
+                        დააკლიკეთ გულის ღილაკს თქვენი საყვარელი კონტენტის გვერდზე მის რჩეულებში დასამატებლად
+                      </p>
+                      
+                      <m.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
+                        <Button 
+                          variant="outline" 
+                          className="bg-white/5 hover:bg-white/10 border border-white/10"
+                          asChild
+                        >
+                          <Link href={activeTab === 'all' ? '/home' : `/${activeTab}`} className="flex items-center gap-2">
+                            <span>დაათვალიერეთ {
+                              activeTab === 'all' ? 'კონტენტი' : 
+                              activeTab === 'manga' ? 'მანგები' :
+                              activeTab === 'comics' ? 'კომიქსები' : 'ანიმეები'
+                            }</span>
+                            <ChevronRight className="h-4 w-4" />
+                          </Link>
+                        </Button>
+                      </m.div>
+                    </m.div>
+                  )}
+                </TabsContent>
+              </AnimatePresence>
             </Tabs>
             
-            <div className="flex items-center gap-3 self-end md:self-auto">
+            <div className="flex items-center gap-3 self-end md:self-start">
               <div className="text-xs text-white/60">ხედი:</div>
               <div className="flex items-center bg-black/40 border border-white/10 p-1 rounded-lg">
                 <m.button
@@ -293,135 +420,6 @@ export default function FavoritesPage() {
               </div>
             </div>
           </m.div>
-          
-          {/* Favorites content */}
-          <AnimatePresence mode="wait">
-            <TabsContent value={activeTab} key={activeTab} className="mt-0">
-              {filteredFavorites.length > 0 ? (
-                <m.div 
-                  className={cn(
-                    "grid gap-4",
-                    viewMode === 'grid' 
-                      ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5' 
-                      : 'grid-cols-1'
-                  )}
-                  variants={containerVariants}
-                  initial="hidden"
-                  animate="visible"
-                >
-                  {filteredFavorites.map((item) => (
-                    <m.div 
-                      key={`${item.type}-${item.id}`}
-                      variants={itemVariants}
-                      className={cn(
-                        "group relative bg-black/40 border border-white/5 backdrop-blur-sm rounded-xl overflow-hidden transition-all duration-300",
-                        viewMode === 'list' ? "flex items-center" : "h-[280px]"
-                      )}
-                    >
-                      {/* Remove button */}
-                      <m.button
-                        className="absolute top-2 right-2 z-10 bg-black/70 border border-white/10 rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-                        onClick={() => handleRemoveFavorite(item.id, item.type)}
-                        whileHover={{ scale: 1.1 }}
-                        whileTap={{ scale: 0.9 }}
-                      >
-                        <X className="w-3 h-3 text-white/80" />
-                      </m.button>
-                      
-                      {/* Type indicator */}
-                      <div className="absolute top-2 left-2 z-10 bg-black/70 border border-white/10 rounded-full px-2 py-1 text-xs flex items-center gap-1">
-                        {item.type === 'manga' && <BookOpen className="w-3 h-3" />}
-                        {item.type === 'comics' && <BookMarked className="w-3 h-3" />}
-                        {item.type === 'anime' && <TrendingUp className="w-3 h-3" />}
-                        <span>{item.type === 'manga' ? 'მანგა' : item.type === 'comics' ? 'კომიქსი' : 'ანიმე'}</span>
-                      </div>
-                      
-                      {/* Image */}
-                      <Link 
-                        href={`/${item.type}/${item.id}`} 
-                        className={cn(
-                          "block overflow-hidden",
-                          viewMode === 'list' ? "w-24 h-24 rounded-lg m-3" : "h-44"
-                        )}
-                      >
-                        <m.img 
-                          src={item.image} 
-                          alt={item.title}
-                          className="w-full h-full object-cover object-center transition-transform duration-700"
-                          loading="lazy"
-                          initial={{ scale: 1.1 }}
-                          animate={{ scale: 1 }}
-                          whileHover={{ scale: 1.05 }}
-                          whileInView={{ opacity: 1 }}
-                          style={{ viewTransitionName: `image-${item.id}` }} 
-                        />
-                      </Link>
-                      
-                      {/* Content */}
-                      <div className={cn(
-                        "p-3 pt-0",
-                        viewMode === 'list' ? "flex-1" : ""
-                      )}>
-                        <Link href={`/${item.type}/${item.id}`} className="hover:underline">
-                          <h3 className="text-sm font-medium line-clamp-2">{item.title}</h3>
-                        </Link>
-                        <div className="flex items-center gap-2 text-white/60 text-xs mt-2">
-                          <Clock className="w-3 h-3" />
-                          <span>დამატებულია {new Date(item.addedAt).toLocaleDateString('ka-GE')}</span>
-                        </div>
-                      </div>
-                    </m.div>
-                  ))}
-                </m.div>
-              ) : (
-                <m.div 
-                  className="flex flex-col items-center justify-center py-16 px-4 text-center"
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-                >
-                  <div className="mb-6 opacity-90">
-                    <img 
-                      src="/images/mascot/no-favorite.png" 
-                      alt="No favorites" 
-                      className="w-48 h-48 object-contain"
-                      style={{
-                        filter: "drop-shadow(0 0 20px rgba(139, 92, 246, 0.3))"
-                      }}
-                    />
-                  </div>
-                  
-                  <h3 className="text-xl font-semibold mb-2">
-                    {activeTab === 'all' && "თქვენ არ გაქვთ რჩეული კონტენტი"}
-                    {activeTab === 'manga' && "თქვენ არ გაქვთ რჩეული მანგა"}
-                    {activeTab === 'comics' && "თქვენ არ გაქვთ რჩეული კომიქსი"}
-                    {activeTab === 'anime' && "თქვენ არ გაქვთ რჩეული ანიმე"}
-                  </h3>
-                  
-                  <p className="text-white/70 mb-6 max-w-md">
-                    დააკლიკეთ გულის ღილაკს თქვენი საყვარელი კონტენტის გვერდზე მის რჩეულებში დასამატებლად
-                  </p>
-                  
-                  <m.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
-                    <Button 
-                      variant="outline" 
-                      className="bg-white/5 hover:bg-white/10 border border-white/10"
-                      asChild
-                    >
-                      <Link href={activeTab === 'all' ? '/home' : `/${activeTab}`} className="flex items-center gap-2">
-                        <span>დაათვალიერეთ {
-                          activeTab === 'all' ? 'კონტენტი' : 
-                          activeTab === 'manga' ? 'მანგები' :
-                          activeTab === 'comics' ? 'კომიქსები' : 'ანიმეები'
-                        }</span>
-                        <ChevronRight className="h-4 w-4" />
-                      </Link>
-                    </Button>
-                  </m.div>
-                </m.div>
-              )}
-            </TabsContent>
-          </AnimatePresence>
         </div>
       </main>
     </div>

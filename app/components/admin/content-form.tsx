@@ -19,7 +19,7 @@ import { uploadFile } from "@/lib/upload";
 import { supabase } from "@/lib/supabase";
 import { toast } from "react-hot-toast";
 
-type ContentType = "anime" | "manga" | "comics";
+type ContentType = "manga" | "comics";
 
 interface ComicVineResult {
   id: number;
@@ -58,7 +58,6 @@ interface ContentFormProps {
     bannerImage: string;
     publisher?: string;
     chapters_count: number;
-    episodes_count: number;
   };
   mode: "create" | "edit";
 }
@@ -106,14 +105,13 @@ export default function ContentForm({ initialData, mode }: ContentFormProps) {
     title: initialData?.title || "",
     description: initialData?.description || "",
     thumbnail: initialData?.thumbnail || "",
-    type: initialData?.type || "anime" as ContentType,
+    type: initialData?.type || "manga" as ContentType,
     status: initialData?.status || "Ongoing",
     releaseYear: initialData?.releaseYear || new Date().getFullYear(),
     genres: initialData?.genres || [],
     bannerImage: initialData?.bannerImage || "",
     publisher: initialData?.publisher || "",
     chapters_count: initialData?.chapters_count || 0,
-    episodes_count: initialData?.episodes_count || 0,
   });
   
   const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
@@ -264,15 +262,9 @@ export default function ContentForm({ initialData, mode }: ContentFormProps) {
       return;
     }
 
-    // Ensure chapters_count and episodes_count are provided as numbers
+    // Ensure chapters_count is provided as numbers for manga/comics
     if (finalFormData.type === "manga" || finalFormData.type === "comics") {
-      finalFormData.chapters_count = parseInt(finalFormData.chapters_count.toString(), 10) || 0;
-      // Reset episodes_count for manga/comics
-      finalFormData.episodes_count = 0;
-    } else if (finalFormData.type === "anime") {
-      finalFormData.episodes_count = parseInt(finalFormData.episodes_count.toString(), 10) || 0;
-      // Reset chapters_count for anime
-      finalFormData.chapters_count = 0;
+      finalFormData.chapters_count = parseInt(String(finalFormData.chapters_count), 10) || 0;
     }
 
     if (thumbnailFile) {
@@ -314,19 +306,6 @@ export default function ContentForm({ initialData, mode }: ContentFormProps) {
         </h2>
         
         <div className="flex space-x-4">
-          <button
-            type="button"
-            onClick={() => handleTypeChange("anime")}
-            className={`flex items-center px-4 py-2 rounded-lg ${
-              formData.type === "anime"
-                ? "bg-purple-600 text-white"
-                : "bg-gray-700 text-gray-300"
-            }`}
-          >
-            <Film className="mr-2 h-5 w-5" />
-            ანიმე
-          </button>
-          
           <button
             type="button"
             onClick={() => handleTypeChange("manga")}
@@ -534,39 +513,19 @@ export default function ContentForm({ initialData, mode }: ContentFormProps) {
             </div>
           </div>
 
-          {/* Add chapter/episode count fields based on content type */}
           <div>
-            {formData.type === "manga" || formData.type === "comics" ? (
-              <div>
-                <label htmlFor="chapters_count" className="block mb-2 text-sm font-medium text-gray-300">
-                  თავების რაოდენობა
-                </label>
-                <input
-                  type="number"
-                  id="chapters_count"
-                  name="chapters_count"
-                  value={formData.chapters_count}
-                  onChange={handleChange}
-                  min={0}
-                  className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
-                />
-              </div>
-            ) : (
-              <div>
-                <label htmlFor="episodes_count" className="block mb-2 text-sm font-medium text-gray-300">
-                  ეპიზოდების რაოდენობა
-                </label>
-                <input
-                  type="number"
-                  id="episodes_count"
-                  name="episodes_count"
-                  value={formData.episodes_count}
-                  onChange={handleChange}
-                  min={0}
-                  className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
-                />
-              </div>
-            )}
+            <label htmlFor="chapters_count" className="block mb-2 text-sm font-medium text-gray-300">
+              თავების რაოდენობა
+            </label>
+            <input
+              type="number"
+              id="chapters_count"
+              name="chapters_count"
+              value={formData.chapters_count}
+              onChange={handleChange}
+              min={0}
+              className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
+            />
           </div>
           
           {/* Publisher field - only visible for comics type */}

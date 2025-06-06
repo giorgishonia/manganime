@@ -6,7 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
 import { motion as m, AnimatePresence } from "framer-motion";
-import { Search, X, Film, BookOpen, ArrowRight, Check, Users, PlusCircle, Trash2, Book } from "lucide-react";
+import { Search, X, BookOpen, ArrowRight, Check, Users, PlusCircle, Trash2, Book } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
@@ -31,7 +31,7 @@ import {
 import { MultiSelect } from "@/components/ui/multi-select";
 import { createContent, updateContent } from "@/lib/content";
 import { cn } from "@/lib/utils";
-import { getAnimeById, getMangaById, searchAniList } from "@/lib/anilist";
+import { getMangaById, searchAniList } from "@/lib/anilist";
 
 // ჟანრების სიის განსაზღვრა
 const genreOptions = [
@@ -66,7 +66,7 @@ const contentFormSchema = z.object({
   title: z.string().min(1, "Title is required"),
   georgianTitle: z.string().optional(),
   description: z.string().min(1, "Description is required"),
-  type: z.enum(["anime", "manga", "comics"], {
+  type: z.enum(["manga", "comics"], {
     required_error: "Content type is required",
   }),
   status: z.enum(["ongoing", "completed", "hiatus"], {
@@ -169,7 +169,7 @@ export default function ContentForm({
   const [searchModalOpen, setSearchModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
-  const [searchType, setSearchType] = useState<"anime" | "manga" | "comics">("anime");
+  const [searchType, setSearchType] = useState<"manga" | "comics">("manga");
   const [isSearching, setIsSearching] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
@@ -233,7 +233,7 @@ export default function ContentForm({
     title: processedInitialData.title || "",
     georgianTitle: processedInitialData.georgianTitle || processedInitialData.georgian_title || "",
     description: processedInitialData.description || "",
-    type: processedInitialData.type || "anime",
+    type: processedInitialData.type === 'anime' ? 'manga' : (processedInitialData.type || "manga"),
     status: processedInitialData.status || "ongoing",
     thumbnail: processedInitialData.thumbnail || "",
     bannerImage: processedInitialData.bannerImage || processedInitialData.banner_image || "",
@@ -251,7 +251,7 @@ export default function ContentForm({
     title: "",
     georgianTitle: "",
     description: "",
-    type: "anime" as const,
+    type: "manga" as const,
     status: "ongoing" as const,
     thumbnail: "",
     bannerImage: "",
@@ -280,7 +280,7 @@ export default function ContentForm({
 
   // Add after other state variables
   const debouncedSearch = useRef(
-    debounce(async (query: string, type: "anime" | "manga" | "comics") => {
+    debounce(async (query: string, type: "manga" | "comics") => {
       if (query.length < 2) {
         setSearchResults([]);
         return;
@@ -312,8 +312,8 @@ export default function ContentForm({
             setSearchResults([]);
           }
         } else {
-          // Use AniList for anime and manga
-          const results = await searchAniList(query, type);
+          // Use AniList for manga (assuming it now only takes query)
+          const results = await searchAniList(query);
           
           if (results && results.length > 0) {
             setSearchResults(results.map((item: {
@@ -327,7 +327,7 @@ export default function ContentForm({
               id: item.id,
               title: item.title.english || item.title.romaji,
               image: item.coverImage.medium,
-              type: item.type === "ANIME" ? "anime" : "manga",
+              type: "manga",
               year: item.seasonYear || (item.startDate?.year ? parseInt(item.startDate.year.toString()) : undefined)
             })));
           } else {
@@ -567,15 +567,11 @@ export default function ContentForm({
         toast.success(`Successfully imported data for "${comicData.name}" from Comic Vine!`);
         setSearchModalOpen(false); // Close modal on success
       } else {
-        // Handle anime/manga from AniList
+        // Handle manga from AniList
         const aniListId = result.id.toString();
         let details;
 
-        if (contentType === "anime") {
-          details = await getAnimeById(aniListId);
-        } else if (contentType === "manga") {
-          details = await getMangaById(aniListId);
-        }
+        details = await getMangaById(aniListId);
 
         if (details) {
           form.setValue("title", details.title.english || details.title.romaji || "");
@@ -725,9 +721,8 @@ export default function ContentForm({
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="anime">Anime</SelectItem>
-                        <SelectItem value="manga">Manga</SelectItem>
-                        <SelectItem value="comics">Comics</SelectItem>
+                        <SelectItem value="manga">მანგა</SelectItem>
+                        <SelectItem value="comics">კომიქსი</SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -1209,22 +1204,16 @@ export default function ContentForm({
                   <div className="border-t border-white/5 p-2 md:p-3 flex flex-wrap items-center justify-between gap-2">
                     <div className="flex flex-wrap items-center gap-1 md:gap-2">
                       <ToggleButton
-                        active={searchType === "anime"}
-                        onClick={() => setSearchType("anime")}
-                        icon={<Film className="h-4 w-4" />}
-                        label="Anime"
-                      />
-                      <ToggleButton
                         active={searchType === "manga"}
                         onClick={() => setSearchType("manga")}
                         icon={<BookOpen className="h-4 w-4" />}
-                        label="Manga"
+                        label="მანგა"
                       />
                       <ToggleButton
                         active={searchType === "comics"}
                         onClick={() => setSearchType("comics")}
                         icon={<Book className="h-4 w-4" />}
-                        label="Comics"
+                        label="კომიქსი"
                       />
                     </div>
                     
@@ -1296,13 +1285,6 @@ export default function ContentForm({
                               <div className="flex-1 min-w-0">
                                 <h3 className="text-sm font-medium text-white">{result.title}</h3>
                                 <p className="text-xs text-gray-400 flex items-center gap-1">
-                                  {result.type === "anime" ? (
-                                    <Film className="h-3 w-3" />
-                                  ) : result.type === "comics" ? (
-                                    <Book className="h-3 w-3" />
-                                  ) : (
-                                    <BookOpen className="h-3 w-3" />
-                                  )}
                                   <span className="capitalize">{result.type}</span>
                                   {result.year && <span>• {result.year}</span>}
                                   {result.type === "comics" && result.publisher && (
@@ -1367,7 +1349,7 @@ export default function ContentForm({
   );
 }
 
-// Toggle button component for anime/manga selection
+// Toggle button component for manga/comics selection
 function ToggleButton({ 
   active, 
   onClick, 

@@ -6,51 +6,56 @@ interface NotificationData {
   sender_username?: string | null;
   comment_id?: string;
   content_id?: string;
-  content_type?: 'anime' | 'manga';
+  content_type?: 'manga' | 'comics';
   comment_snippet?: string;
   content_title?: string;
-  episode_number?: number | string;
   chapter_number?: number | string;
+  system_message_content?: string; // For system_message type
   // Add other relevant data fields as needed
 }
 
+// Define the specific notification types allowed
+export type NotificationType = 'comment_like' | 'comment_reply' | 'new_chapter' | 'content_update' | 'system_message' | 'new_content';
+
 /**
  * Creates a notification message based on type and data.
- * @param type Notification type (e.g., 'comment_like', 'new_episode')
+ * @param type Notification type
  * @param data Contextual data for the notification
  * @returns The constructed notification message string
  */
-function constructNotificationMessage(type: string, data: NotificationData): string {
+function constructNotificationMessage(type: NotificationType, data: NotificationData): string {
   const sender = data.sender_username || 'Someone';
 
   switch (type) {
     case 'comment_like':
-      return `${sender} liked your comment${data.comment_snippet ? ': "' + data.comment_snippet + '"' : '.'}`;
+      return `${sender}-მ მოიწონა კომენტარი${data.comment_snippet ? ': "' + data.comment_snippet + '"' : '.'}`;
     case 'comment_reply':
-      return `${sender} replied to your comment${data.comment_snippet ? ': "' + data.comment_snippet + '"' : '.'}`;
-    case 'new_episode':
-      return `Episode ${data.episode_number || 'New'} of ${data.content_title || 'a show'} you subscribed to is out!`;
+      return `${sender}-მ გიპასუხათ კომენტარზე${data.comment_snippet ? ': "' + data.comment_snippet + '"' : '.'}`;
     case 'new_chapter':
-      return `Chapter ${data.chapter_number || 'New'} of ${data.content_title || 'a manga'} you subscribed to is out!`;
+      return `${data.content_title || 'a manga'}-ის თავი ${data.chapter_number || 'New'} გამოვიდა!`;
+    case 'content_update': // Changed from new_content to align with Notification interface
+      return `${data.content_title || 'Content'} განახლდა.`; // Generic update message
+    case 'system_message': // Added system_message case
+      return data.system_message_content || 'თქვენ გაქვთ ახალი სისტემური შეტყობინება.';
     case 'new_content':
-      return `${data.content_title || 'New content'} was added to the site.`;
-    // Add more cases for different notification types
+      return `${data.content_title || 'Content'} განახლდა.`;
     default:
-      console.warn(`Unknown notification type: ${type}`);
-      return `You have a new notification.`;
+      // This default case should ideally not be reached if type is NotificationType
+      console.warn(`Unknown notification type: ${(type as any)}`);
+      return `თქვენ გაქვთ ახალი შეტყობინება.`;
   }
 }
 
 /**
  * Creates and inserts a notification into the database.
  * @param recipientUserId The user ID of the notification recipient.
- * @param type The type of notification (e.g., 'comment_like').
+ * @param type The type of notification.
  * @param data An object containing contextual data for the notification.
  * @returns Object indicating success or failure.
  */
 export async function createNotification(
   recipientUserId: string,
-  type: string,
+  type: NotificationType, // Use the specific NotificationType
   data: NotificationData
 ): Promise<{ success: boolean; error?: any }> {
   if (!supabase) {
@@ -102,7 +107,7 @@ export async function createNotification(
 export interface Notification {
   id: string;
   user_id: string;
-  type: string;
+  type: NotificationType; // Use the specific NotificationType
   sender_user_id?: string;
   content_id?: string;
   comment_id?: string;
@@ -113,6 +118,11 @@ export interface Notification {
     username: string;
     avatar_url: string;
   } | null; // Add sender profile
+  content_type?: 'manga' | 'comics';
+  content_title?: string;
+  chapter_number?: number | string;
+  related_user_id?: string;
+  related_user_username?: string;
 }
 
 // Cache notifications for a short period to avoid excessive requests
@@ -167,7 +177,7 @@ export async function getUserNotifications(
     ]);
 
     // If successful and using cache, update the cache
-    if (result.success && result.notifications) {
+    if (result.success && 'notifications' in result && result.notifications) {
       notificationCache[userId] = {
         timestamp: Date.now(),
         notifications: result.notifications
@@ -256,18 +266,28 @@ async function fetchNotificationsWithProfiles(
     }
 
     // Combine notifications with sender profiles
-    const processedNotifications = notificationsData.map(notif => ({
-      id: notif.id,
-      user_id: notif.user_id,
-      type: notif.type,
-      sender_user_id: notif.sender_user_id,
-      content_id: notif.content_id,
-      comment_id: notif.comment_id,
-      message: notif.message,
-      is_read: notif.is_read,
-      created_at: notif.created_at,
-      sender_profile: notif.sender_user_id ? senderProfilesMap.get(notif.sender_user_id) || null : null,
-    }));
+    const processedNotifications = notificationsData.map(notif => {
+      let profile = null;
+      if (notif.sender_user_id) {
+        profile = senderProfilesMap.get(notif.sender_user_id) || null;
+        if (!profile) {
+          // Log if a sender_user_id was present but no profile was found in the map
+          console.log(`[Notification Debug] Profile not found in map for sender_user_id: ${notif.sender_user_id}. Notification ID: ${notif.id}`);
+        }
+      }
+      return {
+        id: notif.id,
+        user_id: notif.user_id,
+        type: notif.type,
+        sender_user_id: notif.sender_user_id,
+        content_id: notif.content_id,
+        comment_id: notif.comment_id,
+        message: notif.message,
+        is_read: notif.is_read,
+        created_at: notif.created_at,
+        sender_profile: profile, // Assign the fetched profile (or null)
+      };
+    });
 
     return { success: true, notifications: processedNotifications };
   } catch (error) {

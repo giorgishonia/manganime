@@ -32,7 +32,15 @@ import {
   X,
   ChevronDown,
   Bell,
-  Loader2
+  Loader2,
+  Eye,
+  ChevronLeft,
+  Share2,
+  Play,
+  MessageCircle,
+  TrendingUp,
+  AlertTriangle,
+  CheckCircle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { MangaReader } from '@/components/manga-reader'
@@ -41,7 +49,7 @@ import { RelatedContent } from '@/components/related-content'
 import { RecommendedContent } from '@/components/recommended-content'
 import { DetailViewSkeleton, BannerSkeleton } from '@/components/ui/skeleton'
 import { stripHtml, formatStatus } from '@/lib/anilist'
-import { getContentById, getChapters } from '@/lib/content'
+import { getContentById, getChapters, incrementContentView } from '@/lib/content'
 import { CharacterSection } from '@/components/character-section'
 import { CommentSection } from '@/components/comment-section'
 import ChapterManager from '@/components/admin/chapter-manager'
@@ -61,6 +69,8 @@ import { Button } from "@/components/ui/button"
 import { useUnifiedAuth } from '@/components/unified-auth-provider'
 import { useAuth } from '@/components/supabase-auth-provider'
 import { AppSidebar } from '@/components/app-sidebar'
+import { EmojiRating, EMOJI_REACTIONS } from '@/components/emoji-rating'
+import { supabase } from '@/lib/supabase'
 
 // Animation variants
 const pageVariants = {
@@ -104,6 +114,8 @@ const formatSafeDate = (dateString: string | undefined) => {
   }
 };
 
+type Emoji = typeof EMOJI_REACTIONS[number]['emoji'];
+
 export default function ComicPage({ params }: { params: { id: string } }) {
   const router = useRouter()
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -128,6 +140,8 @@ export default function ComicPage({ params }: { params: { id: string } }) {
   const [overlayOpacity, setOverlayOpacity] = useState(20);
   const previousScrollY = useRef(0);
   const [isFavorite, setIsFavorite] = useState(false);
+  const [viewCount, setViewCount] = useState<number | null>(null);
+  const viewIncrementedRef = useRef(false);
 
   // Handle scroll effect for background
   useEffect(() => {
@@ -178,8 +192,8 @@ export default function ComicPage({ params }: { params: { id: string } }) {
 
   // Define fetchComicData outside useEffect
   const fetchComicData = async () => {
+    setIsLoading(true);
     try {
-      setIsLoading(true);
       // First, try to get the content from our database
       const dbResult = await getContentById(comicId);
       
@@ -193,11 +207,16 @@ export default function ComicPage({ params }: { params: { id: string } }) {
         console.log("Fetched chapters:", chapters);
         
         // Format content with chapters data
-        setComicData({
+        let fetchedComicData = {
           ...formatDatabaseContent(dbResult.content),
           chaptersData: chapters
-        });
+        };
         setIsFromDatabase(true);
+        setComicData(fetchedComicData);
+
+        // Reaction fetching is now handled by the EmojiRating component itself.
+        // The commented out block below is removed.
+
       } else {
         // If not found in database or wrong type, set data to null
         console.log("Comic not found in database or wrong type.");
@@ -215,7 +234,23 @@ export default function ComicPage({ params }: { params: { id: string } }) {
   // Fetch comic data on component mount
   useEffect(() => {
     fetchComicData();
+  }, [comicId, userId]);
+
+  // --- NEW useEffect to increment view count ---
+  useEffect(() => {
+    if (comicId && !viewIncrementedRef.current) {
+      incrementContentView(comicId)
+        .then(result => {
+          if (result.success) {
+            console.log(`View count API called successfully for comic ${comicId}`);
+          } else {
+            console.error("Failed to increment view count for comic", comicId, result.error);
+          }
+        });
+      viewIncrementedRef.current = true;
+    }
   }, [comicId]);
+  // --- END NEW useEffect ---
 
   // Add useEffect for admin check within the page component
   useEffect(() => {
@@ -326,7 +361,7 @@ export default function ComicPage({ params }: { params: { id: string } }) {
               year: rel.year
             }
           }
-        })) || [] 
+        })) || [], 
       },
       recommendations: { 
         nodes: content.recommendations?.map((rec: any) => ({
@@ -344,7 +379,7 @@ export default function ComicPage({ params }: { params: { id: string } }) {
             },
             genres: rec.genres || []
           }
-        })) || [] 
+        })) || [], 
       },
       characters: { 
         nodes: content.characters?.map((char: any) => ({
@@ -376,7 +411,8 @@ export default function ComicPage({ params }: { params: { id: string } }) {
             }
           }
         })) || []
-      }
+      },
+      view_count: content.view_count ?? 0,
     };
   };
 
@@ -393,8 +429,8 @@ export default function ComicPage({ params }: { params: { id: string } }) {
     let initialPage = 0;
     
     // If resuming from progress, find the chapter index that matches the stored progress
-    if (resumeFromProgress && readingProgress && processedData) {
-      const progressChapterIndex = processedData.chapterList.findIndex(
+    if (resumeFromProgress && readingProgress && comicData) {
+      const progressChapterIndex = comicData.chapterList.findIndex(
         (ch: any) => ch.id === readingProgress.chapterId || 
                      ch.number === readingProgress.chapterNumber
       );
@@ -411,6 +447,15 @@ export default function ComicPage({ params }: { params: { id: string } }) {
     setInitialReaderPage(initialPage);
     setIsReaderOpen(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
+
+    if (!comicData || comicData.chapterList.length === 0) {
+      toast({
+        title: "თავები არ არის",
+        description: "ამ კომიქსს ჯერ არ აქვს ხელმისაწვდომი თავები.",
+        duration: 3000,
+      });
+      return;
+    }
   };
 
   // Replace the generateMockChapters function with a formatChapters function
@@ -473,7 +518,8 @@ export default function ComicPage({ params }: { params: { id: string } }) {
         genres: rec.mediaRecommendation.genres || [],
       })) || [], 
     // Directly assign the mapped characters array
-    characters: mapCharacters(comicData) 
+    characters: mapCharacters(comicData), 
+    view_count: comicData.view_count ?? 0,
   } : null;
 
   // Add a debug log for the processed data
@@ -628,6 +674,8 @@ export default function ComicPage({ params }: { params: { id: string } }) {
   useEffect(() => {
     async function checkLibraryStatus() {
       if (comicId && processedData) {
+        // Set view count from fetched data
+        setViewCount(processedData.view_count ?? 0);
         try {
           const item = await getLibraryItem(comicId, 'comics');
           if (item) {
@@ -670,7 +718,7 @@ export default function ComicPage({ params }: { params: { id: string } }) {
   // Handle subscription toggle
   const handleToggleSubscription = async () => {
     if (!isAuthenticated || !userId) {
-      toast({ title: "Please log in to subscribe.", variant: "destructive" });
+      toast({ title: "გთხოვთ შეხვიდეთ გამოსაწერად.", variant: "destructive" });
       router.push('/login');
       return;
     }
@@ -696,11 +744,11 @@ export default function ComicPage({ params }: { params: { id: string } }) {
         toast({ title: "Failed to update subscription", description: errorMessage, variant: "destructive" });
       } else {
         setIsSubscribed(subscribed); // Confirm state
-        toast({ title: subscribed ? "Subscribed!" : "Unsubscribed", description: `You will ${subscribed ? 'now' : 'no longer'} receive notifications for ${processedData?.title || 'this comic'}.` });
+        toast({ title: subscribed ? "გამოწერილია!" : "გამოწერა გაუქმებულია", description: `თქვენ ${subscribed ? 'მიიღებთ' : 'აღარ მიიღებთ'} შეტყობინებებს ${processedData?.title || 'ამ კომიქსზე'}.` });
       }
     } catch (err: any) { // Explicitly type caught err as any
       setIsSubscribed(originalSubscribed); // Revert on error
-      toast({ title: "Error updating subscription", variant: "destructive" });
+      toast({ title: "შეცდომა გამოწერისას", variant: "destructive" });
       console.error("Subscription toggle error:", err);
     } finally {
       setIsSubProcessing(false);
@@ -733,14 +781,14 @@ export default function ComicPage({ params }: { params: { id: string } }) {
       
       toast({
         title: "სტატუსი განახლდა",
-        description: `"${processedData.title}" - მარკირებულია როგორც ${status ? status.replace('_', ' ') : 'Unknown'}`,
+        description: `"${processedData.title}" - აღინიშნა როგორც ${status ? status.replace('_', ' ') : 'ამოშლილია'}`,
         duration: 3000,
       });
     } catch (error) {
       console.error("Error updating status:", error);
       toast({
         title: "შეცდომა",
-        description: "სტატუსის განახლება ვერ მოხერხდა.",
+        description: "სტატუსის განახლება ვერ მოხერხდა. გთხოვთ სცადოთ ხელახლა.",
         duration: 3000,
       });
     }
@@ -758,9 +806,9 @@ export default function ComicPage({ params }: { params: { id: string } }) {
       case 'dropped':
         return { icon: <XCircle className="h-5 w-5" />, label: 'მიტოვებული', color: 'text-red-500' };
       case 'plan_to_read':
-        return { icon: <Bookmark className="h-5 w-5" />, label: 'სამომავლოდ', color: 'text-purple-500' };
+        return { icon: <Bookmark className="h-5 w-5" />, label: 'სამომავლოდ ვგეგმავ', color: 'text-purple-500' };
       default:
-        return { icon: <Plus className="h-5 w-5" />, label: 'დამატება ბიბლიოთეკაში', color: 'text-gray-400' };
+        return { icon: <Plus className="h-5 w-5" />, label: 'ბიბლიოთეკაში დამატება', color: 'text-gray-400' };
     }
   };
 
@@ -786,7 +834,7 @@ export default function ComicPage({ params }: { params: { id: string } }) {
   // Add function to toggle favorite status
   const handleToggleFavorite = async () => {
     if (!isAuthenticated || !userId) {
-      toast({ title: "Please log in to add favorites.", variant: "destructive" });
+      toast({ title: "გთხოვთ შეხვიდეთ რჩეულებში დასამატებლად.", variant: "destructive" });
       router.push('/login');
       return;
     }
@@ -817,8 +865,8 @@ export default function ComicPage({ params }: { params: { id: string } }) {
       toast({
         title: !isFavorite ? "რჩეულებში დამატებულია" : "რჩეულებიდან ამოშლილია",
         description: !isFavorite 
-          ? `"${processedData?.title}" დამატებულია რჩეულებში` 
-          : `"${processedData?.title}" ამოშლილია რჩეულებიდან`,
+          ? `"${processedData?.title}" დაემატა რჩეულებს.` 
+          : `"${processedData?.title}\" წაიშალა რჩეულებიდან.`,
         duration: 3000,
       });
     } catch (error) {
@@ -931,7 +979,7 @@ export default function ComicPage({ params }: { params: { id: string } }) {
             whileTap={{ scale: 0.95 }}
           >
             <ArrowLeft className="h-5 w-5" />
-            <span>{isReaderOpen ? "დახურვა" : "უკან"}</span>
+            <span>{isReaderOpen ? "დახურვა" : "უკან დაბრუნება"}</span>
           </motion.button>
 
           <AnimatePresence mode="wait">
@@ -957,7 +1005,7 @@ export default function ComicPage({ params }: { params: { id: string } }) {
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
                     <h2 className="text-xl font-bold">
-                      {processedData.georgianTitle || processedData.title}: {processedData.chapterList[selectedChapter]?.title || `Chapter ${processedData.chapterList[selectedChapter]?.number}`}
+                      {processedData.georgianTitle || processedData.title}: {processedData.chapterList[selectedChapter]?.title || `თავი ${processedData.chapterList[selectedChapter]?.number}`}
                     </h2>
                     <span className="text-gray-400">{processedData.chapterList[selectedChapter]?.releaseDate}</span>
                   </div>
@@ -999,6 +1047,18 @@ export default function ComicPage({ params }: { params: { id: string } }) {
                         className="w-full aspect-[2/3] rounded-xl overflow-hidden shadow-2xl"
                       />
                     </div>
+                    {/* Emoji Rating Component Added Below CoverImage */}
+                    <motion.div 
+                      className="w-full sm:w-60 md:w-[260px] mx-auto md:mx-0 mt-4"
+                    >
+                      {/* Simplified EmojiRating call - it handles its own data */}
+                      {processedData && (
+                        <EmojiRating 
+                          contentId={comicId} 
+                          contentType="comics"
+                        />
+                      )}
+                    </motion.div>
                   </motion.div>
 
                   {/* Details */}
@@ -1009,11 +1069,12 @@ export default function ComicPage({ params }: { params: { id: string } }) {
                         {processedData.status}
                       </div>
                       
-                      {processedData.genres.slice(0, 3).map((genre: string, idx: number) => (
-                        <div key={idx} className="px-3 py-1 bg-gray-800 text-gray-300 rounded-full">
-                          {genre}
+                      {viewCount !== null && (
+                        <div className="flex items-center gap-1.5 text-sm text-white/70 bg-white/10 px-3 py-1 rounded-full">
+                          <Eye className="h-4 w-4 text-primary/80" />
+                          <span>{viewCount.toLocaleString()} ნახვა</span>
                         </div>
-                      ))}
+                      )}
                     </div>
                 
                     {/* Display native title as subtitle if no Georgian title */}
@@ -1046,8 +1107,8 @@ export default function ComicPage({ params }: { params: { id: string } }) {
                         <BookOpen className="h-4 w-4 text-gray-400" />
                         <span>
                           {typeof processedData.chapters === 'number' 
-                            ? `${processedData.chapters} chapter${processedData.chapters !== 1 ? 's' : ''}`
-                            : `${processedData.chapters} chapters`
+                            ? `${processedData.chapters} თავი${processedData.chapters !== 1 ? '' : ''}`
+                            : `${processedData.chapters} თავები`
                           }
                         </span>
                       </div>
@@ -1057,6 +1118,13 @@ export default function ComicPage({ params }: { params: { id: string } }) {
                           <Star className="h-4 w-4 fill-current" />
                           <span className="font-medium text-white">{processedData.rating.toFixed(1)}</span>
                           <span className="text-xs text-gray-500">/10</span>
+                        </div>
+                      )}
+                      {/* Add view count here */}
+                      {processedData.view_count !== undefined && processedData.view_count !== null && (
+                        <div className="flex items-center gap-2">
+                          <Eye className="h-4 w-4 text-gray-400" />
+                          <span>{processedData.view_count.toLocaleString()} ნახვა</span>
                         </div>
                       )}
                     </motion.div>
@@ -1086,7 +1154,7 @@ export default function ComicPage({ params }: { params: { id: string } }) {
                         whileTap={{ scale: 0.97 }}
                       >
                         <BookOpen className="h-5 w-5" />
-                        გაგრძელება
+                        კითხვის გაგრძელება
                         <span className="ml-1 text-xs bg-purple-500 px-2 py-0.5 rounded-full">
                           {readingProgress.chapterNumber}
                         </span>
@@ -1131,7 +1199,7 @@ export default function ComicPage({ params }: { params: { id: string } }) {
                           onClick={() => handleStatusChange('plan_to_read')}
                         >
                           <Bookmark className="mr-2 h-4 w-4" />
-                          <span>სამომავლოდ</span>
+                          <span>სამომავლოდ ვგეგმავ</span>
                         </DropdownMenuItem>
                         
                         <DropdownMenuItem 
@@ -1169,7 +1237,7 @@ export default function ComicPage({ params }: { params: { id: string } }) {
                               }}
                             >
                               <X className="mr-2 h-4 w-4" />
-                              <span>ამოშლა ბიბლიოთეკიდან</span>
+                              <span>ბიბლიოთეკიდან ამოშლა</span>
                             </DropdownMenuItem>
                           </>
                         )}
@@ -1188,7 +1256,7 @@ export default function ComicPage({ params }: { params: { id: string } }) {
                       onClick={handleToggleFavorite}
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
-                      title={isFavorite ? "Remove from favorites" : "Add to favorites"}
+                      title={isFavorite ? "რჩეულებიდან წაშლა" : "რჩეულებში დამატება"}
                     >
                       <motion.div
                         initial={{ scale: 1 }}
@@ -1205,7 +1273,7 @@ export default function ComicPage({ params }: { params: { id: string } }) {
                       >
                         <Heart className={cn("h-5 w-5", isFavorite && "fill-red-500 text-red-500")} />
                       </motion.div>
-                      <span>{isFavorite ? "რჩეულია" : "რჩეულებში დამატებულია"}</span>
+                      <span>{isFavorite ? "რჩეულია" : "რჩეულებში დამატება"}</span>
                     </motion.button>
 
                     {/* Subscribe Button */}
@@ -1221,14 +1289,14 @@ export default function ComicPage({ params }: { params: { id: string } }) {
                       disabled={isSubProcessing}
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
-                      title={isSubscribed ? "Unsubscribe from new chapter notifications" : "Subscribe to new chapter notifications"}
+                      title={isSubscribed ? "გამოწერის გაუქმება" : "ახალი თავების გამოწერა"}
                     >
                       {isSubProcessing ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
                       ) : isSubscribed ? (
-                        <Bell className="h-4 w-4" /> // Or Check? Or BellOff?
+                        <Bell className="h-4 w-4" />
                       ) : (
-                        <Bell className="h-4 w-4" /> // Or BellPlus?
+                        <Bell className="h-4 w-4" />
                       )}
                       <span>{isSubscribed ? "გამოწერილია" : "გამოწერა"}</span>
                     </motion.button>
@@ -1253,7 +1321,7 @@ export default function ComicPage({ params }: { params: { id: string } }) {
                               whileTap={{ scale: 0.98 }}
                             >
                               <BookOpen className="h-4 w-4 text-purple-400" />
-                              <span>{readingProgress ? 'გაგრძელება' : 'თავის არჩევა'}</span>
+                              <span>{readingProgress ? 'კითხვის გაგრძელება' : 'თავის არჩევა'}</span>
                               <ChevronDown className="h-4 w-4 text-purple-400 ml-1" />
                             </motion.button>
                           </DropdownMenuTrigger>
@@ -1372,7 +1440,7 @@ export default function ComicPage({ params }: { params: { id: string } }) {
                                         : readPercentage === 100 ? "bg-green-500/80 text-white"
                                         : "bg-sky-500/80 text-white"
                                       )}>
-                                        {isCurrentlyReading ? "კითხულობ" 
+                                        {isCurrentlyReading ? "მიმდინარე" 
                                           : readPercentage === 100 ? "დასრულებულია"
                                           : `${readPercentage}% წაკითხულია`}
                                       </span>
@@ -1476,7 +1544,7 @@ export default function ComicPage({ params }: { params: { id: string } }) {
                             variants={itemVariants}
                           >
                             <ChevronRight className="mr-2 h-5 w-5 text-purple-400" />
-                            მსგავსი კონტენტი
+                            მსგავსი შიგთავსი
                           </motion.h2>
                           <RelatedContent items={processedData.relations} />
                         </motion.section>
@@ -1495,7 +1563,7 @@ export default function ComicPage({ params }: { params: { id: string } }) {
                             variants={itemVariants}
                           >
                             <Bookmark className="mr-2 h-5 w-5 text-purple-400" />
-                            შეიძლება მოგეწონოთ
+                            რეკომენდებული
                           </motion.h2>
                           <RecommendedContent items={processedData.recommendations} />
                         </motion.section>

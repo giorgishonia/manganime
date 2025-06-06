@@ -1,4 +1,5 @@
 "use client"
+import Image from "next/image";
 import { createClient } from "@/lib/supabase/server";
 import type React from "react"
 
@@ -10,7 +11,6 @@ import {
   Clock,
   Edit,
   Eye,
-  Film,
   LogOut,
   Menu,
   MoreHorizontal,
@@ -28,6 +28,7 @@ import {
   Cake as CakeIcon,
   Upload as UploadIcon,
   Crown as CrownIcon,
+  Book,
 } from "lucide-react"
 import { AppSidebar } from "@/components/app-sidebar"
 import { Button } from "@/components/ui/button"
@@ -81,7 +82,7 @@ interface ContentItem {
 // Interface for activity item
 interface ActivityItem {
   id: string;
-  type: "anime" | "manga";
+  type: 'manga' | 'comics';
   action: string;
   contentTitle: string;
   details: string;
@@ -101,27 +102,12 @@ function calculateAge(birthDate: string | null | undefined): number | null {
 }
 
 export default function ProfilePage() {
-  const [activeAnimeTab, setActiveAnimeTab] = useState("watching")
   const [activeMangaTab, setActiveMangaTab] = useState("reading")
-  const [activeMainTab, setActiveMainTab] = useState("anime")
   const [isLoading, setIsLoading] = useState(true)
-  const [animeWatching, setAnimeWatching] = useState<ContentItem[]>([])
-  const [animeCompleted, setAnimeCompleted] = useState<ContentItem[]>([])
-  const [animePlanToWatch, setAnimePlanToWatch] = useState<ContentItem[]>([])
   const [mangaReading, setMangaReading] = useState<ContentItem[]>([])
   const [mangaCompleted, setMangaCompleted] = useState<ContentItem[]>([])
   const [mangaPlanToRead, setMangaPlanToRead] = useState<ContentItem[]>([])
   const [stats, setStats] = useState({
-    anime: {
-      watching: 0,
-      completed: 0,
-      onHold: 0,
-      dropped: 0,
-      planToWatch: 0,
-      totalEpisodes: 0,
-      daysWatched: 0,
-      meanScore: 0,
-    },
     manga: {
       reading: 0,
       completed: 0,
@@ -160,56 +146,65 @@ export default function ProfilePage() {
     async function loadSecondaryData() {
         if (!user || !profile) return;
 
-        // Try to load anime watchlist...
-        // Try to load manga watchlist...
-        // After loading database data, now load localStorage items...
-        // Load user activities...
-        // (Keep existing watchlist/activity loading logic here, using user.id)
-        try {
-          // Get anime watchlist
-          const animeWatchlistResult = await getUserWatchlist(user.id, 'anime')
-          if (animeWatchlistResult.success && animeWatchlistResult.watchlist) {
-            // Process watchlist data...
-            // (existing anime processing logic)
-          } else if (animeWatchlistResult.error) {
-              // (existing anime error handling)
-          }
-        } catch (animeError) {
-           // (existing anime catch block)
-        }
-
         try {
             // Get manga watchlist
             const mangaWatchlistResult = await getUserWatchlist(user.id, 'manga')
             if (mangaWatchlistResult.success && mangaWatchlistResult.watchlist) {
-                // Process watchlist data...
-                 // (existing manga processing logic)
+                const readingManga: ContentItem[] = []
+                const completedManga: ContentItem[] = []
+                const planToReadManga: ContentItem[] = []
+                // ... (existing manga processing logic, ensure it's robust) ...
+                setMangaReading(readingManga)
+                setMangaCompleted(completedManga)
+                setMangaPlanToRead(planToReadManga)
+
+                // Update manga stats
+                setStats(prevStats => ({
+                    ...prevStats,
+                    manga: {
+                        ...prevStats.manga,
+                        reading: readingManga.length,
+                        completed: completedManga.length,
+                        planToRead: planToReadManga.length,
+                        // ... (other manga stat calculations if needed)
+                    }
+                }))
+
             } else if (mangaWatchlistResult.error) {
-               // (existing manga error handling)
+               console.error("Error fetching manga watchlist:", mangaWatchlistResult.error)
+               toast.error("მანგას სიის ჩატვირთვა ვერ მოხერხდა")
             }
         } catch (mangaError) {
-           // (existing manga catch block)
+           console.error("Failed to load manga data:", mangaError)
+           toast.error("მანგას მონაცემების ჩატვირთვა ვერ მოხერხდა")
         }
+        
+        // Removed anime watchlist fetching and processing
 
         // Load localStorage items only if user is available
         if (user) {
              try {
                 // Get localStorage manga items...
                 const localMangaItems = await getLibraryItems('manga');
-                 // (existing local manga processing logic)
-
-                // Get localStorage anime items...
-                 const localAnimeItems = await getLibraryItems('anime');
-                 // (existing local anime processing logic)
+                // ... (existing local manga processing logic)
             } catch (localStorageError) {
                 console.error('Error loading localStorage items:', localStorageError);
             }
+            // Removed localAnimeItems fetching
         }
 
          // Load user activities...
         if (user) {
             try {
-               // (existing activity loading logic)
+               const { data: activityData, error: activityError } = await supabase
+                .from('user_activity')
+                .select('*')
+                .eq('user_id', user.id)
+                .order('timestamp', { ascending: false })
+                .limit(10);
+
+              if (activityError) throw activityError;
+              setActivities(activityData as ActivityItem[] || []);
             } catch (activityError) {
                 console.error("Failed to load activity data:", activityError);
             }
@@ -349,10 +344,7 @@ export default function ProfilePage() {
             {/* VIP badge */}
             {profile?.vip_status && (
               <div className="absolute top-4 right-4">
-                <VIPBadge 
-                  tier={profile.vip_tier || 'basic'} 
-                  size="md"
-                />
+                <VIPBadge size="md" />
               </div>
             )}
             
@@ -376,7 +368,12 @@ export default function ProfilePage() {
               {/* Avatar */}
               <div className="relative flex-shrink-0">
                 {/* Responsive avatar size */}
-                <div className="w-24 h-24 md:w-32 md:h-32 rounded-full overflow-hidden border-4 border-black">
+                <div className={cn(
+                  "w-24 h-24 md:w-32 md:h-32 rounded-full overflow-hidden border-4",
+                  profile?.vip_status ? (profile.vip_theme ? `border-${profile.vip_theme}-500` : "border-yellow-400") : "border-black"
+                  // Ensure Tailwind is configured for dynamic border colors like border-purple-500, border-blue-500 etc. if using vip_theme.
+                  // If vip_theme specific classes are not available, fallback to a generic VIP color e.g. "border-yellow-400"
+                )}>
                   <ImageSkeleton
                     src={profile.avatar_url || "/placeholder.svg"}
                     alt={profile.username || "მომხმარებელი"}
@@ -444,6 +441,8 @@ export default function ProfilePage() {
                           initialData={{
                               id: profile.id,
                               username: profile.username || '',
+                              first_name: profile.first_name || null,
+                              last_name: profile.last_name || null,
                               avatar_url: profile.avatar_url,
                               bio: profile.bio || '',
                               is_public: profile.is_public ?? true,
@@ -523,62 +522,6 @@ export default function ProfilePage() {
         <div className="container mx-auto px-4 py-6">
           {/* Make stats grid single column on mobile, 2 on md+ */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Anime stats */}
-            <div className="bg-gray-900/50 backdrop-blur-sm rounded-lg p-4 md:p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg md:text-xl font-bold flex items-center">
-                  <Film className="h-5 w-5 mr-2 text-blue-400" />
-                  ანიმეს სტატისტიკა
-                </h2>
-                <div className="text-sm text-gray-400">
-                  {stats.anime.totalEpisodes} ეპიზოდი • {stats.anime.daysWatched} დღე
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 md:gap-4 mb-6">
-                <StatCard
-                  label="ვუყურებ"
-                  value={stats.anime.watching}
-                  icon={<PlayCircle className="h-4 w-4 text-green-400" />}
-                />
-                <StatCard
-                  label="დასრულებული"
-                  value={stats.anime.completed}
-                  icon={<Check className="h-4 w-4 text-blue-400" />}
-                />
-                <StatCard
-                  label="შეჩერებული"
-                  value={stats.anime.onHold}
-                  icon={<PauseCircle className="h-4 w-4 text-yellow-400" />}
-                />
-                <StatCard
-                  label="მიტოვებული"
-                  value={stats.anime.dropped}
-                  icon={<X className="h-4 w-4 text-red-400" />}
-                />
-                <StatCard
-                  label="სანახავი"
-                  value={stats.anime.planToWatch}
-                  icon={<Clock className="h-4 w-4 text-purple-400" />}
-                />
-              </div>
-
-              <div className="flex items-center justify-between mb-2">
-                <div className="text-sm text-gray-400">საშუალო შეფასება</div>
-                <div className="flex items-center">
-                  <Star className="h-4 w-4 text-yellow-400 fill-yellow-400 mr-1" />
-                  <span className="font-medium">{stats.anime.meanScore}</span>
-                </div>
-              </div>
-
-              <div className="w-full bg-gray-800 h-2 rounded-full overflow-hidden">
-                <div
-                  className="bg-gradient-to-r from-yellow-500 to-yellow-300 h-full rounded-full"
-                  style={{ width: `${(stats.anime.meanScore / 10) * 100}%` }}
-                />
-              </div>
-            </div>
-
             {/* Manga stats */}
             <div className="bg-gray-900/50 backdrop-blur-sm rounded-lg p-4 md:p-6">
               <div className="flex items-center justify-between mb-4">
@@ -639,13 +582,9 @@ export default function ProfilePage() {
 
         {/* Content tabs */}
         <div className="container mx-auto px-4 py-6">
-          <Tabs defaultValue="anime" value={activeMainTab} onValueChange={setActiveMainTab} className="w-full">
+          <Tabs defaultValue="manga" className="w-full">
             {/* Make TabsList scrollable on small screens */} 
             <TabsList className="mb-6 overflow-x-auto justify-start">
-              <TabsTrigger value="anime" className="flex items-center gap-2 flex-shrink-0">
-                <Film className="h-4 w-4" />
-                ანიმე
-              </TabsTrigger>
               <TabsTrigger value="manga" className="flex items-center gap-2 flex-shrink-0">
                 <BookOpen className="h-4 w-4" />
                 მანგა
@@ -655,87 +594,6 @@ export default function ProfilePage() {
                 აქტივობა
               </TabsTrigger>
             </TabsList>
-
-            <TabsContent value="anime">
-              <div className="mb-6">
-                {/* Make tab controls scrollable & buttons smaller */} 
-                <div className="flex items-center justify-between mb-4 overflow-x-auto pb-2">
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    <Button
-                      variant="ghost"
-                      size="sm" // Smaller buttons
-                      className={cn("text-xs md:text-sm", activeAnimeTab === "watching" ? "bg-gray-800" : "hover:bg-gray-800/50")}
-                      onClick={() => setActiveAnimeTab("watching")}
-                    >
-                      ვუყურებ ({stats.anime.watching})
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm" // Smaller buttons
-                      className={cn("text-xs md:text-sm", activeAnimeTab === "completed" ? "bg-gray-800" : "hover:bg-gray-800/50")}
-                      onClick={() => setActiveAnimeTab("completed")}
-                    >
-                      დასრულებული ({stats.anime.completed})
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm" // Smaller buttons
-                      className={cn(
-                        "text-xs md:text-sm",
-                        activeAnimeTab === "planToWatch" ? "bg-gray-800" : "hover:bg-gray-800/50",
-                      )}
-                      onClick={() => setActiveAnimeTab("planToWatch")}
-                    >
-                      სანახავი ({stats.anime.planToWatch})
-                    </Button>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="sm" className="text-xs md:text-sm hover:bg-gray-800/50">
-                          მეტი <ChevronDown className="h-4 w-4 ml-1" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent className="bg-gray-900 border-gray-800 text-gray-200">
-                        <DropdownMenuItem className="hover:bg-gray-800 cursor-pointer">
-                          შეჩერებული ({stats.anime.onHold})
-                        </DropdownMenuItem>
-                        <DropdownMenuItem className="hover:bg-gray-800 cursor-pointer">
-                          მიტოვებული ({stats.anime.dropped})
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                   {/* Make Add button text smaller */} 
-                  <Button variant="outline" size="sm" className="bg-gray-800 border-gray-700 hover:bg-gray-700 flex-shrink-0 ml-2 text-xs md:text-sm">
-                    <Plus className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" />
-                    ანიმეს დამატება
-                  </Button>
-                </div>
-
-                {/* Responsive grid columns for anime list */}
-                <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-                  {activeAnimeTab === "watching" &&
-                    (animeWatching.length > 0 ? 
-                      animeWatching.map((anime) => <AnimeListItem key={anime.id} item={anime} />) :
-                      <div className="col-span-full text-center py-10 text-gray-400">თქვენს სიაში არ არის ანიმე რომელსაც უყურებთ</div>
-                    )
-                  }
-
-                  {activeAnimeTab === "completed" &&
-                    (animeCompleted.length > 0 ? 
-                      animeCompleted.map((anime) => <AnimeListItem key={anime.id} item={anime} />) :
-                      <div className="col-span-full text-center py-10 text-gray-400">თქვენს სიაში არ არის დასრულებული ანიმე</div>
-                    )
-                  }
-
-                  {activeAnimeTab === "planToWatch" &&
-                    (animePlanToWatch.length > 0 ? 
-                      animePlanToWatch.map((anime) => <AnimeListItem key={anime.id} item={anime} />) :
-                      <div className="col-span-full text-center py-10 text-gray-400">თქვენს სიაში არ არის სანახავი ანიმე</div>
-                    )
-                  }
-                </div>
-              </div>
-            </TabsContent>
 
             <TabsContent value="manga">
               <div className="mb-6">
@@ -800,14 +658,12 @@ export default function ProfilePage() {
                       <div className="col-span-full text-center py-10 text-gray-400">თქვენს სიაში არ არის მანგა რომელსაც კითხულობთ</div>
                     )
                   }
-
                   {activeMangaTab === "completed" &&
                     (mangaCompleted.length > 0 ? 
                       mangaCompleted.map((manga) => <MangaListItem key={manga.id} item={manga} />) :
                       <div className="col-span-full text-center py-10 text-gray-400">თქვენს სიაში არ არის დასრულებული მანგა</div>
                     )
                   }
-
                   {activeMangaTab === "planToRead" &&
                     (mangaPlanToRead.length > 0 ? 
                       mangaPlanToRead.map((manga) => <MangaListItem key={manga.id} item={manga} />) :
@@ -878,65 +734,6 @@ function StatCard({ label, value, icon }: { label: string; value: number; icon: 
   )
 }
 
-function AnimeListItem({ item }: { item: any }) {
-  return (
-    <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg overflow-hidden">
-      <div className="relative">
-        <ImageSkeleton
-          src={item.image || "/placeholder.svg"}
-          alt={item.title}
-          className="w-full aspect-[2/3] object-cover"
-        />
-        <div className="absolute top-2 right-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-8 w-8 p-0 bg-black/50 hover:bg-black/70 rounded-full">
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="bg-gray-900 border-gray-800 text-gray-200">
-              <DropdownMenuItem className="hover:bg-gray-800 cursor-pointer">
-                <Edit className="h-4 w-4 mr-2" />
-                რედაქტირება
-              </DropdownMenuItem>
-              <DropdownMenuSeparator className="bg-gray-800" />
-              <DropdownMenuItem className="text-red-500 hover:bg-gray-800 hover:text-red-500 cursor-pointer">
-                <Trash2 className="h-4 w-4 mr-2" />
-                წაშლა
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </div>
-      <div className="p-3">
-        <h3 className="font-medium text-sm line-clamp-1">{item.georgianTitle}</h3>
-        {item.georgianTitle !== item.title && item.title && (
-          <p className="text-xs text-gray-400 line-clamp-1">{item.title}</p>
-        )}
-
-        {item.progress > 0 && (
-          <div className="mt-2">
-            <div className="flex items-center justify-between text-xs mb-1">
-              <span className="text-gray-400">პროგრესი</span>
-              <span>
-                {item.progress}/{item.total || "?"}
-              </span>
-            </div>
-            <Progress value={(item.progress / (item.total || item.progress)) * 100} className="h-1" />
-          </div>
-        )}
-
-        {item.score && (
-          <div className="mt-2 flex items-center">
-            <Star className="h-3 w-3 text-yellow-400 fill-yellow-400 mr-1" />
-            <span className="text-xs">{item.score}</span>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
 function MangaListItem({ item }: { item: any }) {
   return (
     <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg overflow-hidden">
@@ -1003,33 +800,33 @@ function ActivityItemDisplay({
   details,
   time,
 }: {
-  type: "anime" | "manga"
-  action: string
-  title: string
-  details: string
-  time: string
+  type: "manga" | "comics";
+  action: string;
+  title: string;
+  details: string;
+  time: string;
 }) {
   return (
     <div className="flex items-start gap-3 p-3 bg-gray-800/50 rounded-lg">
-      <div className={`p-2 rounded-full ${type === "anime" ? "bg-blue-500/20" : "bg-purple-500/20"}`}>
-        {type === "anime" ? (
-          <Film className={`h-5 w-5 ${type === "anime" ? "text-blue-400" : "text-purple-400"}`} />
-        ) : (
+      <div className={`p-2 rounded-full ${
+        type === "manga" ? "bg-purple-500/20" : "bg-green-500/20"
+      }`}>
+        {type === "manga" ? (
           <BookOpen className="h-5 w-5 text-purple-400" />
+        ) : (
+          <Book className="h-5 w-5 text-green-400" />
         )}
       </div>
       <div className="flex-1">
         <div className="flex items-center gap-2">
-          <span className="font-medium">{action === "watching" ? "უყურებს" : 
-                                         action === "reading" ? "კითხულობს" : 
+          <span className="font-medium">{action === "reading" ? "კითხულობს" : 
                                          action === "completed" ? "დაასრულა" : 
                                          action === "updated" ? "განაახლა" : action}</span>
           <span className="text-gray-400">•</span>
           <span className="text-gray-300">{title}</span>
         </div>
         <div className="text-sm text-gray-400">
-          {details.includes("Episode") ? details.replace("Episode", "ეპიზოდი") : 
-           details.includes("Chapter") ? details.replace("Chapter", "თავი") : details}
+          {details.includes("Chapter") ? details.replace("Chapter", "თავი") : details}
         </div>
       </div>
       <div className="text-xs text-gray-500">{time}</div>

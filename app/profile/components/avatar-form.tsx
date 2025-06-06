@@ -9,7 +9,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { FileUpload } from '@/components/ui/file-upload'
 import { uploadFile, deleteFile } from '@/lib/upload'
-import { supabase } from '@/lib/supabase/client'
+import { supabase } from '@/lib/supabase'
 import { Loader2 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 
@@ -79,12 +79,14 @@ export function AvatarForm({ currentAvatarUrl }: { currentAvatarUrl?: string }) 
           </p>
           
           <FileUpload
-            currentImageUrl={currentAvatarUrl}
-            onFileChange={handleSubmit}
-            maxSize={2}
+            previewUrl={currentAvatarUrl}
+            onFileUpload={handleSubmit}
+            maxSizeMB={2}
             allowedTypes={['image/jpeg', 'image/png', 'image/webp']}
             buttonText={isLoading ? 'იტვირთება...' : 'ავატარის განახლება'}
             className="mt-4"
+            showPreview={true}
+            isLoading={isLoading}
           />
           
           {isLoading && (

@@ -89,7 +89,47 @@ const STATUS_CONFIG = {
       color: "text-red-400",
       bgColor: "bg-red-900/20"
     }
+  },
+  comics: {
+    reading: {
+      icon: <BookOpen className="h-4 w-4" />,
+      label: "ვკითხულობ",
+      color: "text-green-400",
+      bgColor: "bg-green-900/20"
+    },
+    plan_to_read: {
+      icon: <Bookmark className="h-4 w-4" />,
+      label: "წასაკითხი",
+      color: "text-purple-400",
+      bgColor: "bg-purple-900/20"
+    },
+    completed: {
+      icon: <CheckCheck className="h-4 w-4" />,
+      label: "დასრულებული",
+      color: "text-blue-400",
+      bgColor: "bg-blue-900/20"
+    },
+    on_hold: {
+      icon: <PauseCircle className="h-4 w-4" />,
+      label: "შეჩერებული",
+      color: "text-yellow-400",
+      bgColor: "bg-yellow-900/20"
+    },
+    dropped: {
+      icon: <X className="h-4 w-4" />,
+      label: "მიტოვებული",
+      color: "text-red-400",
+      bgColor: "bg-red-900/20"
+    }
   }
+};
+
+// Define a type for individual status configurations
+type StatusConfigItem = {
+  icon: JSX.Element;
+  label: string;
+  color: string;
+  bgColor: string;
 };
 
 // Default status info when no status is selected
@@ -183,18 +223,17 @@ export function StatusSelector({
         onStatusChange(status);
       }
       
-      // Translate success toast
-      toast({
-        title: "სტატუსი განახლდა",
-        description: `"${mediaTitle}" მონიშნულია როგორც '${STATUS_CONFIG[mediaType][status].label}'`,
+      // Use statusInfo for label to handle potential null status
+      const displayStatusLabel = status ? STATUS_CONFIG[mediaType][status].label : "Added to Library";
+
+      toast.success("სტატუსი განახლდა", {
+        description: `"${mediaTitle}" მონიშნულია როგორც '${displayStatusLabel}'`,
         duration: 3000,
       });
     } catch (error) {
       console.error("Error updating status:", error);
-      toast({
-        title: "შეცდომა",
+      toast.error("შეცდომა", {
         description: "სტატუსის განახლება ვერ მოხერხდა.",
-        variant: "destructive",
       });
     } finally {
       setIsUpdating(false);
@@ -222,14 +261,15 @@ export function StatusSelector({
       <DropdownMenuContent className="w-48 bg-gray-900/95 backdrop-blur-md border-white/10">
         {Object.entries(STATUS_CONFIG[mediaType]).map(([key, value]) => {
           const status = key as MediaStatus;
+          const configItem = value as StatusConfigItem; // Type assertion for value
           return (
             <DropdownMenuItem 
               key={status}
-              className={currentStatus === status ? value.bgColor + " " + value.color : ""}
+              className={currentStatus === status ? configItem.bgColor + " " + configItem.color : ""}
               onClick={() => handleStatusChange(status)}
             >
-              {value.icon}
-              <span className="ml-2">{value.label}</span>
+              {configItem.icon}
+              <span className="ml-2">{configItem.label}</span>
             </DropdownMenuItem>
           );
         })}

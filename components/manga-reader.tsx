@@ -685,7 +685,7 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
               </motion.button>
               
               <div className="text-center text-sm text-gray-300 truncate hidden md:block">
-                 {mangaTitle} - თავი {chapter.number}: {chapter.title}
+                 {mangaTitle} - {chapter.title}
               </div>
               
               <motion.button
@@ -937,7 +937,7 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
                         whileTap={{ scale: 0.98 }}
                         layout
                       >
-                        <span className="truncate text-sm">თავი {item.number}: {item.title}</span>
+                        <span className="truncate text-sm">{item.title}</span>
                         {chapter.number === item.number && (
                           <motion.div 
                             layoutId="currentChapterIndicator"

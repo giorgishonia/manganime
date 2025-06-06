@@ -59,48 +59,52 @@ export function BannerSelector({ selectedBanner, onSelectBanner }: BannerSelecto
       
       <TabsContent value="anime" className="mt-2">
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          {ANIME_BANNERS.map((banner) => (
+          {ANIME_BANNERS.map((banner) => {
+            const animeBanner = banner as Extract<BannerOption, { type: 'anime' }>; // Type assertion
+            return (
             <div 
-              key={banner.id}
-              onClick={() => onSelectBanner({ type: 'anime', id: banner.id })}
+              key={animeBanner.id}
+              onClick={() => onSelectBanner({ type: 'anime', id: animeBanner.id })}
               className={cn(
                 "relative h-16 rounded-md overflow-hidden cursor-pointer border-2",
-                isSelected('anime', banner.id) ? "border-primary" : "border-transparent hover:border-muted-foreground/50"
+                isSelected('anime', animeBanner.id) ? "border-primary" : "border-transparent hover:border-muted-foreground/50"
               )}
             >
               <div 
                 className="w-full h-full bg-cover bg-center"
-                style={{ backgroundImage: `url(${banner.src})` }}
+                style={{ backgroundImage: `url(${animeBanner.src})` }}
               />
-              {isSelected('anime', banner.id) && (
+              {isSelected('anime', animeBanner.id) && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/20">
                   <CheckIcon className="h-5 w-5 text-white" />
                 </div>
               )}
             </div>
-          ))}
+          )})}
         </div>
       </TabsContent>
 
       <TabsContent value="color" className="mt-2">
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          {COLOR_BANNERS.map((banner) => (
+          {COLOR_BANNERS.map((banner) => {
+            const colorBanner = banner as Extract<BannerOption, { type: 'color' }>; // Type assertion
+            return (
             <div 
-              key={banner.id}
-              onClick={() => onSelectBanner({ type: 'color', id: banner.id })}
+              key={colorBanner.id}
+              onClick={() => onSelectBanner({ type: 'color', id: colorBanner.id })}
               className={cn(
                 "relative h-16 rounded-md overflow-hidden cursor-pointer border-2",
-                isSelected('color', banner.id) ? "border-primary" : "border-transparent hover:border-muted-foreground/50"
+                isSelected('color', colorBanner.id) ? "border-primary" : "border-transparent hover:border-muted-foreground/50"
               )}
             >
-              <div className={cn("w-full h-full", banner.class)} />
-              {isSelected('color', banner.id) && (
+              <div className={cn("w-full h-full", colorBanner.class)} />
+              {isSelected('color', colorBanner.id) && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/20">
                   <CheckIcon className="h-5 w-5 text-white" />
                 </div>
               )}
             </div>
-          ))}
+          )})}
         </div>
       </TabsContent>
     </Tabs>

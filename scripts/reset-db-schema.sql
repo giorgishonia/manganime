@@ -6,7 +6,7 @@ CREATE TABLE content (
   title TEXT NOT NULL,
   alternative_titles TEXT[] DEFAULT NULL,
   description TEXT NOT NULL,
-  type TEXT NOT NULL CHECK (type IN ('anime', 'manga')),
+  type TEXT NOT NULL CHECK (type IN ('manga', 'comics')),
   status TEXT NOT NULL CHECK (status IN ('ongoing', 'completed', 'hiatus')),
   thumbnail TEXT NOT NULL,
   banner_image TEXT DEFAULT NULL,
@@ -18,23 +18,6 @@ CREATE TABLE content (
   mal_id TEXT DEFAULT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- Reset episodes table
-DROP TABLE IF EXISTS episodes CASCADE;
-
-CREATE TABLE episodes (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  content_id UUID REFERENCES content(id) ON DELETE CASCADE,
-  number INTEGER NOT NULL,
-  title TEXT NOT NULL,
-  description TEXT DEFAULT NULL,
-  thumbnail TEXT DEFAULT NULL,
-  video_url TEXT NOT NULL,
-  duration INTEGER DEFAULT NULL,
-  release_date TIMESTAMP WITH TIME ZONE DEFAULT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  UNIQUE(content_id, number)
 );
 
 -- Reset chapters table
@@ -55,5 +38,50 @@ CREATE TABLE chapters (
 -- Create indexes for better performance
 CREATE INDEX content_type_idx ON content(type);
 CREATE INDEX content_genres_idx ON content USING GIN(genres);
-CREATE INDEX episodes_content_id_idx ON episodes(content_id);
-CREATE INDEX chapters_content_id_idx ON chapters(content_id); 
+CREATE INDEX chapters_content_id_idx ON chapters(content_id);
+
+-- Remove Episodes table
+-- CREATE TABLE episodes (
+-- id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+-- content_id UUID REFERENCES content(id) ON DELETE CASCADE,
+-- number INTEGER NOT NULL,
+-- title TEXT,
+-- air_date DATE,
+-- duration INTEGER,
+-- thumbnail_url TEXT,
+-- video_url TEXT,
+-- created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+-- );
+
+CREATE TABLE watchlist (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    content_id UUID REFERENCES content(id) ON DELETE CASCADE,
+    content_type TEXT NOT NULL CHECK (content_type IN ('manga', 'comics')),
+    status TEXT,
+    progress INTEGER,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE comments (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    content_id UUID REFERENCES content(id) ON DELETE CASCADE,
+    content_type TEXT NOT NULL CHECK (content_type IN ('manga', 'comics')),
+    parent_comment_id UUID REFERENCES comments(id) ON DELETE CASCADE NULLABLE,
+    text TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE feedback (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    content_id UUID REFERENCES content(id) ON DELETE CASCADE,
+    content_type TEXT NOT NULL CHECK (content_type IN ('manga', 'comics', 'sticker', 'gif')),
+    feedback_type TEXT,
+    description TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+); 

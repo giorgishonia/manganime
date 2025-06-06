@@ -261,7 +261,6 @@ export default function AdManagementPage() {
       case 'homepage': return 'Home Page'
       case 'profile': return 'Profile Page'
       case 'manga': return 'Manga Details'
-      case 'anime': return 'Anime Details'
       case 'sidebar': return 'Sidebar'
       default: return placement
     }
@@ -476,7 +475,6 @@ export default function AdManagementPage() {
                 <option value="homepage">Home Page</option>
                 <option value="profile">Profile Page</option>
                 <option value="manga">Manga Details</option>
-                <option value="anime">Anime Details</option>
                 <option value="sidebar">Sidebar</option>
               </select>
             </div>
@@ -606,7 +604,6 @@ export default function AdManagementPage() {
                 <option value="homepage">Home Page</option>
                 <option value="profile">Profile Page</option>
                 <option value="manga">Manga Details</option>
-                <option value="anime">Anime Details</option>
                 <option value="sidebar">Sidebar</option>
               </select>
             </div>

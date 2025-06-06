@@ -2,13 +2,12 @@
 
 import { useState, useEffect } from "react"
 import { motion as m, AnimatePresence } from "framer-motion"
-import { ChevronRight, Search, Play, Plus, Star, CalendarDays, Clock, Info, ArrowRight, TrendingUp, BookOpen, Calendar, Heart, Book } from "lucide-react"
+import { ChevronRight, Search, Play, Plus, Star, CalendarDays, Clock, Info, ArrowRight, TrendingUp, BookOpen, Calendar, Heart, Book, Eye } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { AppSidebar } from "@/components/app-sidebar"
 import { ContentCardHover } from "@/components/content-card-hover"
 import { TypewriterText } from "@/components/typewriter-text"
 import { MangaView } from "@/components/manga-view"
-import { AnimeView } from "@/components/anime-view"
 import { getAllContent } from "@/lib/content"
 import { BannerSkeleton, CategorySkeleton, CarouselSkeleton } from "@/components/ui/skeleton"
 import { ImageSkeleton } from "@/components/image-skeleton"
@@ -23,13 +22,31 @@ interface ContentData {
   rating?: number
   status: string
   genres: string[]
-  type: 'anime' | 'manga' | 'comics'
+  type: 'manga' | 'comics'
   release_year?: number
   season?: string
   georgian_title?: string
   chapters_count?: number // Added for manga
-  episodes_count?: number // Added for anime
   publisher?: string      // Added for comics
+  view_count?: number     // Added for view count
+}
+
+// Define interface for featured content data
+interface FeaturedContentData {
+  id: string;
+  title: string;
+  englishTitle?: string | null;
+  bannerImage: string;
+  thumbnail: string;
+  type: 'manga' | 'comics';
+  chaptersDisplay: string;
+  totalChapters: number;
+  rating: number;
+  status: string;
+  genres: string[];
+  view_count: number;
+  description: string;
+  release_year?: number;
 }
 
 // Animation variants for page transitions
@@ -53,7 +70,7 @@ const contentVariants = {
 };
 
 // Add a helper function to check if content is favorited
-function isContentFavorited(id: string, type: 'anime' | 'manga' | 'comics'): boolean {
+function isContentFavorited(id: string, type: 'manga' | 'comics'): boolean {
   if (typeof window === 'undefined') return false;
   try {
     const favorites = JSON.parse(localStorage.getItem('favorites') || '{}');
@@ -68,7 +85,7 @@ function isContentFavorited(id: string, type: 'anime' | 'manga' | 'comics'): boo
 // Add a helper function to toggle favorite status
 function toggleContentFavorite(
   id: string, 
-  type: 'anime' | 'manga' | 'comics', 
+  type: 'manga' | 'comics', 
   title: string, 
   image: string
 ): boolean {
@@ -101,16 +118,15 @@ function toggleContentFavorite(
 }
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<"anime" | "manga" | "comics">("anime")
+  const [activeTab, setActiveTab] = useState<"manga" | "comics">("manga") // Default to manga
   const [currentFeatured, setCurrentFeatured] = useState(0)
   const [isChanging, setIsChanging] = useState(false)
   const [selectedCategory, setSelectedCategory] = useState("ყველა")
   const [hoveredCard, setHoveredCard] = useState<string | null>(null) // Use string ID for hover
   const [isLoading, setIsLoading] = useState(true) // Main loading for initial data fetch
   const [isTabLoading, setIsTabLoading] = useState(false) // Loading state for tab transitions
-  const [hoveredContentType, setHoveredContentType] = useState<"ANIME" | "MANGA" | "COMICS">("ANIME")
-  const [featuredAnime, setFeaturedAnime] = useState<any[]>([])
-  const [availableAnime, setAvailableAnime] = useState<any[]>([])
+  const [hoveredContentType, setHoveredContentType] = useState<"MANGA" | "COMICS">("MANGA") // Default to MANGA
+  const [featuredContent, setFeaturedContent] = useState<FeaturedContentData[]>([]) // Combined featured content
   const [availableManga, setAvailableManga] = useState<any[]>([])
   const [availableComics, setAvailableComics] = useState<any[]>([])
   const [isFeaturedFavorite, setIsFeaturedFavorite] = useState(false)
@@ -129,46 +145,17 @@ export default function Home() {
     async function fetchData() {
       setIsLoading(true);
       try {
-        // Fetch all available anime
-        const animeResponse = await getAllContent('anime', 20);
-        
         // Fetch all available manga
         const mangaResponse = await getAllContent('manga', 20);
         
         // Fetch all available comics
         const comicsResponse = await getAllContent('comics', 20);
         
-        let transformedAnime: any[] = [];
-        
-        if (animeResponse.success && animeResponse.content) {
-          transformedAnime = animeResponse.content.map((content: ContentData) => {
-            // --- DEBUG: Log raw values before transformation
-            console.log(`[page.tsx anime map] ID: ${content.id}, Raw Banner: ${content.bannerImage}, Raw Thumb: ${content.thumbnail}`);
-            return {
-              id: content.id,
-              title: content.georgian_title || content.title,
-              englishTitle: content.georgian_title ? content.title : null,
-              description: content.description || "აღწერა არ არის ხელმისაწვდომი",
-              image: (content.bannerImage && content.bannerImage.trim() !== '') ? content.bannerImage : content.thumbnail,
-              thumbnail: content.thumbnail, // Keep thumbnail for cards
-              rating: content.rating || 0,
-              status: content.status,
-              episodes: content.episodes_count ? `${content.episodes_count} ეპიზოდი` : "?", // Use actual episode count
-              genres: content.genres,
-              type: 'anime'
-            }
-          }).filter((content: {image?: string}) => content.image);
-          
-          setAvailableAnime(transformedAnime);
-          
-          // Use the first few anime for featured content if available
-          if (transformedAnime.length > 0) {
-            setFeaturedAnime(transformedAnime.slice(0, 5));
-          }
-        }
+        let transformedManga: any[] = [];
+        let transformedComics: any[] = [];
         
         if (mangaResponse.success && mangaResponse.content) {
-          const transformedManga = mangaResponse.content.map((content: ContentData) => {
+          transformedManga = mangaResponse.content.map((content: ContentData) => {
             // --- DEBUG: Log raw values before transformation
             console.log(`[page.tsx manga map] ID: ${content.id}, Raw Banner: ${content.bannerImage}, Raw Thumb: ${content.thumbnail}`);
             
@@ -209,31 +196,21 @@ export default function Home() {
               thumbnail: content.thumbnail,
               rating: content.rating || 0,
               status: content.status,
-              chapters: chapterCount > 0 ? `${chapterCount} თავი` : "0 თავი", // Display string with count
-              totalChapters: chapterCount, // Numeric value for calculations
+              chaptersDisplay: chapterCount > 0 ? `${chapterCount} თავი` : "0 თავი",
+              totalChapters: chapterCount,
               genres: content.genres,
-              type: 'manga'
+              type: 'manga',
+              view_count: content.view_count ?? 0,
+              release_year: content.release_year
             }
           }).filter((content: {image?: string}) => content.image);
           
           setAvailableManga(transformedManga);
-          
-          // Add available manga to featured content
-          if (transformedManga.length > 0) {
-            const mangaForFeatured = transformedManga.slice(0, 3);
-            if (transformedAnime.length > 0) {
-              // Combine anime and manga for featured
-              setFeaturedAnime([...transformedAnime.slice(0, 2), ...mangaForFeatured]);
-            } else {
-              // Use manga only for featured if no anime available
-              setFeaturedAnime(mangaForFeatured);
-            }
-          }
         }
 
         // Handle comics content
         if (comicsResponse.success && comicsResponse.content) {
-          const transformedComics = comicsResponse.content.map((content: ContentData) => {
+          transformedComics = comicsResponse.content.map((content: ContentData) => {
             console.log(`[page.tsx comics map] ID: ${content.id}, Raw Banner: ${content.bannerImage}, Raw Thumb: ${content.thumbnail}`);
             
             // Extract chapter count for comics - similar to manga
@@ -269,92 +246,90 @@ export default function Home() {
               thumbnail: content.thumbnail,
               rating: content.rating || 0,
               status: content.status,
-              chapters: chapterCount > 0 ? `${chapterCount} თავი` : "0 თავი", // Display string with count
-              totalChapters: chapterCount, // Numeric value for calculations
+              chaptersDisplay: chapterCount > 0 ? `${chapterCount} თავი` : "0 თავი",
+              totalChapters: chapterCount,
               genres: content.genres,
               type: 'comics',
-              publisher: content.publisher || ''
+              publisher: content.publisher || '',
+              view_count: content.view_count ?? 0,
+              release_year: content.release_year
             }
           }).filter((content: {image?: string}) => content.image);
           
           setAvailableComics(transformedComics);
-          
-          // Add comics to featured content if needed
-          if (transformedComics.length > 0 && featuredAnime.length < 5) {
-            const comicsForFeatured = transformedComics.slice(0, 2);
-            setFeaturedAnime(prev => [...prev, ...comicsForFeatured].slice(0, 5));
-          }
         }
 
-        // ---- DEBUG LOGGING START ----
-        console.log("--- app/page.tsx Data Fetch --- ");
-        console.log("Raw Anime Response Content (sample):");
-        console.log(animeResponse.success ? animeResponse.content?.slice(0, 2) : "Failed or no anime content");
-        console.log("Transformed Anime (sample):");
-        console.log(transformedAnime.slice(0, 2));
-        console.log("Raw Manga Response Content (sample):");
-        console.log(mangaResponse.success ? mangaResponse.content?.slice(0, 2) : "Failed or no manga content");
-        console.log("Raw Comics Response Content (sample):");
-        console.log(comicsResponse.success ? comicsResponse.content?.slice(0, 2) : "Failed or no comics content");
-        console.log("Final Featured Anime State (sample):");
-        // Safely construct the sample for logging
-        const mangaSampleForFeatured = (mangaResponse.success && mangaResponse.content) ? mangaResponse.content.slice(0, 3) : [];
-        const comicsSampleForFeatured = (comicsResponse.success && comicsResponse.content) ? comicsResponse.content.slice(0, 2) : [];
-        const finalFeaturedSample = (transformedAnime.length > 0) 
-            ? [...transformedAnime.slice(0, 2), ...mangaSampleForFeatured, ...comicsSampleForFeatured].slice(0, 5)
-            : (transformedAnime.length > 0 ? transformedAnime.slice(0, 5) : 
-              [...mangaSampleForFeatured, ...comicsSampleForFeatured].slice(0, 5));
-        console.log(finalFeaturedSample.map((item: any) => ({
-          id: item.id,
-          title: item.title,
-          banner: item.bannerImage,
-          thumb: item.thumbnail,
-          image_prop: item.image,
-          type: item.type,
-        })));
-        console.log("-----------------------------");
-        // ---- DEBUG LOGGING END ----
+        // FEATURED CONTENT MAPPING
+        if (transformedManga.length > 0 || transformedComics.length > 0) {
+          const combinedFeaturedSource = [...transformedManga.slice(0, 3), ...transformedComics.slice(0, 2)].slice(0,5);
+          if (combinedFeaturedSource.length > 0) {
+             setFeaturedContent(combinedFeaturedSource.map(content => ({
+               id: content.id,
+               title: content.title, 
+               englishTitle: content.englishTitle,
+               bannerImage: content.image, 
+               thumbnail: content.thumbnail,
+               type: content.type as 'manga' | 'comics',
+               chaptersDisplay: content.chaptersDisplay, 
+               totalChapters: content.totalChapters,
+               rating: content.rating,
+               status: content.status,
+               genres: content.genres,
+               view_count: content.view_count,
+               description: content.description,
+               release_year: content.release_year
+             })));
+
+            // Moved console.log inside the block where combinedFeaturedSource is defined
+            console.log("Sample of combinedFeaturedSource before setting state (first item):");
+            console.log(combinedFeaturedSource.length > 0 ? combinedFeaturedSource[0] : 'No items in combinedFeaturedSource');
+            console.log("--- End of featured content processing log ---");
+
+          }
+        } else {
+          setFeaturedContent([]);
+        }
 
       } catch (error) {
-        console.error("Error fetching content data:", error);
+        console.error("Error fetching initial data:", error);
+        // Set empty arrays on error to prevent crashes, but log the error
+        setFeaturedContent([]);
+        setAvailableManga([]);
+        setAvailableComics([]);
       } finally {
-        // Small delay before removing loading state for smoother transition
-        setTimeout(() => {
-          setIsLoading(false);
-        }, 500);
+        setIsLoading(false);
+        // Remove console.log for combinedFeaturedSource from here if it was duplicated
       }
     }
 
     fetchData();
-  }, []);
+  }, []); // Removed activeTab from dependency array to prevent re-fetch on tab change
 
   // Change featured content every 7 seconds
   useEffect(() => {
-    if (featuredAnime.length <= 1) return; // Don't cycle if only one item
+    if (featuredContent.length <= 1) return; // Don't cycle if only one item
     
     const interval = setInterval(() => {
       setIsChanging(true)
       // Preload the next image briefly before transition
-      if (featuredAnime.length > 0) {
-        const nextIndex = (currentFeatured + 1) % featuredAnime.length;
+      if (featuredContent.length > 0) {
+        const nextIndex = (currentFeatured + 1) % featuredContent.length;
         const img = new Image();
-        img.src = featuredAnime[nextIndex].image;
+        img.src = featuredContent[nextIndex].bannerImage;
       }
       
       setTimeout(() => {
-        setCurrentFeatured((prev) => (prev + 1) % featuredAnime.length)
+        setCurrentFeatured((prev) => (prev + 1) % featuredContent.length)
         setIsChanging(false)
       }, 400) // Slightly faster transition
     }, 7000)
 
     return () => clearInterval(interval)
-  }, [featuredAnime, currentFeatured])
+  }, [featuredContent, currentFeatured])
 
   // Update content type based on active tab
   useEffect(() => {
-    if (activeTab === "anime") {
-      setHoveredContentType("ANIME")
-    } else if (activeTab === "manga") {
+    if (activeTab === "manga") {
       setHoveredContentType("MANGA")
     } else if (activeTab === "comics") {
       setHoveredContentType("COMICS")
@@ -362,7 +337,7 @@ export default function Home() {
   }, [activeTab])
 
   // Handle tab changes with smooth transitions
-  const handleTabChange = (tab: "anime" | "manga" | "comics") => {
+  const handleTabChange = (tab: "manga" | "comics") => {
     if (tab === activeTab) return;
     
     setIsTabLoading(true);
@@ -377,16 +352,9 @@ export default function Home() {
     }, 300); 
   };
 
-  const featured = featuredAnime[currentFeatured];
+  const featured = featuredContent[currentFeatured];
 
   // Prepare categories dynamically based on available content
-  const animeCategories = availableAnime.reduce((acc, anime) => {
-    anime.genres?.forEach((genre: string) => {
-      if (!acc.includes(genre)) acc.push(genre);
-    });
-    return acc;
-  }, [] as string[]);
-  
   const mangaCategories = availableManga.reduce((acc, manga) => {
     manga.genres?.forEach((genre: string) => {
       if (!acc.includes(genre)) acc.push(genre);
@@ -411,8 +379,7 @@ export default function Home() {
         id: featured.id,
         type: featured.type,
         title: featured.title,
-        chapters: featured.chapters,
-        episodes: featured.episodes
+        chapters: featured.chaptersDisplay,
       });
     }
   }, [featured]);
@@ -425,7 +392,7 @@ export default function Home() {
       featured.id, 
       featured.type, 
       featured.title, 
-      featured.thumbnail || featured.image
+      featured.bannerImage
     );
     
     setIsFeaturedFavorite(newStatus);
@@ -437,9 +404,9 @@ export default function Home() {
 
       <main className="flex-1 overflow-x-hidden">
         {/* Featured Content */} 
-        <section className="relative w-full h-[350px] md:h-[400px] px-4 pt-16 md:px-0 md:pt-0">
+        <section className="relative w-full h-[300px] md:h-[330px] px-4 pt-16 md:px-0 md:pt-0">
           {/* --- DEBUG LOG --- */}
-          {(() => { console.log("[app/page.tsx] Rendering Banner. featured.image:", featured?.image); return null; })()}
+          {(() => { console.log("[app/page.tsx] Rendering Banner. featured.image:", featured?.bannerImage); return null; })()}
           <AnimatePresence mode="wait">
             {isLoading || !featured ? (
               <m.div
@@ -463,7 +430,7 @@ export default function Home() {
                 <div
                   className="absolute inset-0 bg-cover bg-center transition-all duration-500 ease-in-out"
                   style={{
-                    backgroundImage: `url(${featured.image})`,
+                    backgroundImage: `url(${featured.bannerImage})`,
                     filter: isChanging ? "brightness(0.4)" : "brightness(0.6)", // Slightly darker
                   }}
                 />
@@ -471,7 +438,7 @@ export default function Home() {
                 {/* Simplified gradient overlay */}
                 <div className="absolute inset-0 bg-gradient-to-t from-[#070707] to-transparent opacity-100" />
                 {/* Light left gradient for text contrast */}
-                <div className="absolute inset-0 bg-gradient-to-r from-[#070707] to-transparent opacity-50" /> 
+                <div className="absolute inset-0 bg-gradient-to-r from-[#070707] to-transparent opacity-0" /> 
                 {/* Subtle noise texture */}
                 <div className="absolute inset-0 bg-[url('/noise-texture.png')] opacity-[0.03]"></div>
               </m.div>
@@ -479,7 +446,7 @@ export default function Home() {
           </AnimatePresence>
 
           {/* Content positioned correctly with padding */} 
-          <div className="absolute top-16 left-0 right-0 pb-24 md:pb-12 px-4 md:px-8 lg:px-12 z-10 mt-0">
+          <div className="absolute top-16 left-0 right-0 pb-18 md:pb-0 px-4 md:px-8 lg:px-12 z-10 mt-0">
             <AnimatePresence mode="wait">
               {isLoading || !featured ? (
                 <div className="space-y-4 mt-[-100px]"> {/* Adjust spacing for skeleton */} 
@@ -558,21 +525,22 @@ export default function Home() {
                       className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-4 text-xs md:text-sm"
                       variants={heroVariants}
                     >
-                      {featured.type === 'anime' ? (
-                        <div className="flex items-center gap-1.5 text-gray-300">
-                          <Play className="h-3.5 w-3.5 text-purple-400" />
-                          <span>{featured.episodes || "0 ეპიზოდი"}</span>
-                        </div>
-                      ) : (
+                      {featured.type === 'manga' || featured.type === 'comics' ? ( // Combined condition
                         <div className="flex items-center gap-1.5 text-gray-300">
                           <BookOpen className="h-3.5 w-3.5 text-purple-400" />
-                          <span>{featured.chapters || "0 თავი"}</span>
+                          <span>{featured.chaptersDisplay}</span>
                         </div>
-                      )}
+                      ) : null}
                       <div className="flex items-center gap-1.5 text-gray-300">
                         <Calendar className="h-3.5 w-3.5 text-purple-400" />
                         <span>{featured.status}</span>
                       </div>
+                      {featured.view_count !== undefined && (
+                        <div className="flex items-center gap-1.5 text-gray-300">
+                          <Eye className="h-3.5 w-3.5 text-purple-400" />
+                          <span>{featured.view_count.toLocaleString()} ნახვა</span>
+                        </div>
+                      )}
                       {featured.release_year && (
                         <div className="flex items-center gap-1.5 text-gray-300">
                           <CalendarDays className="h-3.5 w-3.5 text-purple-400" />
@@ -624,9 +592,8 @@ export default function Home() {
               transition={{ duration: 0.5, delay: 1.5 }}
             >
               {[ 
-                { label: "ანიმე", value: "anime" },
                 { label: "მანგა", value: "manga" },
-                { label: "კომიქსები", value: "comics" }
+                { label: "კომიქსი", value: "comics" }
               ].map((tab) => (
                 <m.button
                   key={tab.value}
@@ -644,15 +611,15 @@ export default function Home() {
           </m.div>
           
           {/* Featured content pagination dots */} 
-          {featuredAnime.length > 1 && (
-            <div className="absolute bottom-[30px] left-0 right-0 flex justify-center z-20">
+          {featuredContent.length > 1 && (
+            <div className="absolute bottom-[20px] md:bottom-[30px] left-0 right-0 flex justify-center z-20">
               <m.div 
                 className="flex gap-2"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ duration: 0.5 }}
               >
-                {featuredAnime.map((_, index) => (
+                {featuredContent.map((_, index) => (
                   <m.button
                     key={`dot-${index}`}
                     className={`rounded-full ${
@@ -676,7 +643,7 @@ export default function Home() {
         </section>
 
         {/* Content based on active tab - Simplified layout */}
-        <div className="px-4 py-8 min-h-[500px] pt-24 pl-[100px]">
+        <div className="px-4 py-8 min-h-[500px] pt-20 md:pl-[100px]">
           <AnimatePresence mode="wait">
             {isTabLoading ? (
               <m.div
@@ -699,17 +666,6 @@ export default function Home() {
                 exit="exit"
                 className=" mx-auto"
               >
-                {activeTab === "anime" && (
-                  <AnimeView
-                    selectedCategory={selectedCategory}
-                    setSelectedCategory={setSelectedCategory}
-                    categories={[...animeCategories]}
-                    hoveredCard={hoveredCard}
-                    setHoveredCard={setHoveredCard}
-                    animeData={availableAnime}
-                  />
-                )}
-
                 {activeTab === "manga" && (
                   <MangaView
                     selectedCategory={selectedCategory}
@@ -717,18 +673,20 @@ export default function Home() {
                     categories={[...mangaCategories]}
                     hoveredCard={hoveredCard}
                     setHoveredCard={setHoveredCard}
-                    mangaData={availableManga}
+                    contentData={availableManga}
+                    contentType='manga'
                   />
                 )}
                 
                 {activeTab === "comics" && (
-                  <MangaView // Reuse MangaView for comics since the structure is the same
+                  <MangaView
                     selectedCategory={selectedCategory}
                     setSelectedCategory={setSelectedCategory}
                     categories={[...comicsCategories]}
                     hoveredCard={hoveredCard}
                     setHoveredCard={setHoveredCard}
-                    mangaData={availableComics}
+                    contentData={availableComics}
+                    contentType='comics'
                   />
                 )}
               </m.div>

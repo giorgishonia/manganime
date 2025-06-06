@@ -9,6 +9,25 @@ const config = {
     "./src/**/*.{ts,tsx}",
     "*.{js,ts,jsx,tsx,mdx}",
   ],
+  safelist: [
+    // Patterns for VIP themes
+    // Example: border-purple-500, ring-blue-500, to-green-900/30
+    {
+      pattern: /^(border-(?:purple|blue|green|amber|red|yellow)-(?:400|500|600))$/,
+    },
+    {
+      pattern: /^(ring-(?:purple|blue|green|amber|red|yellow)-(?:400|500|600))$/,
+    },
+    {
+      pattern: /^(to-(?:purple|blue|green|amber|red|yellow)-(?:900\/30|500\/10|500\/15|500\/20|500\/25|500\/30|500\/40|500\/60))$/,
+    },
+    {
+      pattern: /^(from-black\/50)$/,
+    },
+    {
+      pattern: /^(bg-gradient-to-r)$/,
+    }
+  ],
   prefix: "",
   theme: {
     fontFamily: {

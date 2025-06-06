@@ -13,9 +13,11 @@ type AuthContextType = {
   profile: UserProfile | null
   isLoading: boolean
   isProfileLoading: boolean
+  isAdmin: boolean
   signIn: (email: string, password: string) => Promise<{ error: any; success: boolean }>
   signUp: (email: string, password: string, username: string) => Promise<{ error: any; success: boolean }>
   signOut: () => Promise<void>
+  refreshUserProfile: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -26,127 +28,190 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isProfileLoading, setIsProfileLoading] = useState(true)
+  const [isAdmin, setIsAdmin] = useState(false)
   const router = useRouter()
   const pathname = usePathname()
 
   // Function to sync profile data after auth state changes
   const syncUserProfile = async (currentUser: User | null) => {
-    if (currentUser) {
+    if (currentUser && typeof currentUser.id === 'string') {
       setIsProfileLoading(true)
+      let effectiveUserProfile: UserProfile | null = null
       try {
-        // Sync user data (optional, might already be done by syncUserAfterLogin if needed)
-        // await syncUserAfterLogin(currentUser.id);
+        const result = await getProfileForUser(currentUser.id)
+
+        if (result && typeof result === 'object' && 'success' in result) {
+          if (result.success) {
+            if ((result as unknown as { profile?: UserProfile | null }).profile) {
+              effectiveUserProfile = (result as unknown as { profile: UserProfile }).profile;
+            } else { // Profile fetch was successful, but no profile exists
+              console.warn(`No profile found for user ${currentUser.id} during sync. Attempting to create one.`)
+              try {
+                const profileDataToCreate = {
+                  id: currentUser.id,
+                  email: currentUser.email || '',
+                  username: currentUser.email?.split('@')[0] || `user_${currentUser.id.substring(0, 8)}`,
+                  avatar_url: currentUser.user_metadata?.avatar_url || '',
+                  has_completed_onboarding: false
+                }
+                
+                const { data: newProfileData, error: insertError } = await supabase
+                  .from('profiles')
+                  .insert(profileDataToCreate)
+                  .select()
+                  .single()
+
+                if (insertError) {
+                  console.error('Error creating fallback profile during sync:', insertError)
+                } else {
+                  console.log('Fallback profile created successfully:', newProfileData)
+                  effectiveUserProfile = newProfileData as UserProfile
+                }
+              } catch (creationError) {
+                console.error('Unexpected error during fallback profile creation:', creationError)
+              }
+            }
+          } else { // result.success is false
+            console.error("Error fetching user profile in AuthProvider:", (result as unknown as { error?: any }).error)
+          }
+        } else if (result) {
+            // This case implies result might be UserProfile directly, or an unexpected shape.
+            // Log this situation, as it might indicate an issue with getProfileForUser's return type consistency.
+            console.warn("getProfileForUser returned an unexpected shape or UserProfile directly in syncUserProfile:", result);
+            // Assuming if result is not the expected {success, profile} object, we treat it as no profile found or an error.
+            effectiveUserProfile = null; 
+        } else {
+          console.error("getProfileForUser returned null or undefined in syncUserProfile");
+        }
         
-        // Fetch the full profile
-        const userProfile = await getProfileForUser(currentUser.id)
-        setProfile(userProfile)
-        console.log("Profile fetched/updated in AuthProvider:", userProfile)
+        setProfile(effectiveUserProfile)
+        setIsAdmin(effectiveUserProfile ? (effectiveUserProfile as UserProfile & { role?: string })?.role === 'admin' : false)
+        
+        if (effectiveUserProfile) {
+          console.log("Profile fetched/updated in AuthProvider:", effectiveUserProfile)
+        } else {
+          console.log("Profile remains null after fetch/creation attempt for user:", currentUser.id)
+        }
+
       } catch (error) {
-        console.error("Error fetching/syncing user profile in AuthProvider:", error)
-        setProfile(null) // Clear profile on error
+        console.error("Error in syncUserProfile try block:", error)
+        setProfile(null)
+        setIsAdmin(false)
       } finally {
-        setIsProfileLoading(false) // Finish loading profile
+        setIsProfileLoading(false)
       }
     } else {
-      // Clear profile if user logs out
       setProfile(null)
+      setIsAdmin(false)
       setIsProfileLoading(false)
+      if (!currentUser) console.log("syncUserProfile: No current user to sync profile for.")
+      if (currentUser && typeof currentUser.id !== 'string') console.warn("syncUserProfile: currentUser.id is not a string.")
+    }
+  }
+
+  // Function to refresh user profile data manually
+  const refreshUserProfile = async () => {
+    if (user && typeof user.id === 'string') {
+      console.log("Manually refreshing user profile...")
+      await syncUserProfile(user)
+      console.log("User profile refresh attempt complete.")
+    } else {
+      console.log("No user to refresh profile for or user.id is invalid.")
     }
   }
 
   // Initialize the auth state and listen for changes
   useEffect(() => {
-    console.log("=== Initializing AuthProvider and setting up auth state listeners ===");
+    console.log("=== Initializing AuthProvider and setting up auth state listeners ===")
     
-    // Check initial session
-    supabase.auth.getSession().then(({ data: { session: activeSession } }) => {
+    supabase.auth.getSession().then(async ({ data: { session: activeSession } }) => {
       setSession(activeSession)
       const currentUser = activeSession?.user || null
       setUser(currentUser)
-      console.log("Initial session check:", currentUser ? `User ${currentUser.id} is logged in` : "No active session");
+      console.log("Initial session check:", currentUser ? `User ${currentUser.id} is logged in` : "No active session")
       
-      syncUserProfile(currentUser).finally(() => {
-        setIsLoading(false) // Mark auth as loaded AFTER initial profile fetch attempt
-        console.log("Initial auth state loading completed");
-      })
+      if (currentUser && typeof currentUser.id === 'string') {
+        await syncUserProfile(currentUser)
+      }
+      setIsLoading(false)
+      console.log("Initial auth state loading completed")
     })
 
-    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, newSession) => {
-         console.log(`Auth state changed: ${_event}`, newSession ? `User: ${newSession.user.id}` : "No session");
+         console.log(`Auth state changed: ${_event}`, newSession ? `User: ${newSession.user.id}` : "No session")
          setSession(newSession)
          const currentUser = newSession?.user || null
          setUser(currentUser)
-         // Fetch/Sync profile whenever user state changes
-         await syncUserProfile(currentUser)
          
-         // Check if user needs to be redirected to onboarding
-         if (currentUser && _event !== 'SIGNED_OUT') {
-           const userProfile = await getProfileForUser(currentUser.id)
-           console.log(`Auth state change (${_event}): onboarding status:`, userProfile?.has_completed_onboarding);
-           console.log(`Current path: ${pathname}`);
+         if (currentUser && typeof currentUser.id === 'string') {
+           await syncUserProfile(currentUser)
            
-           if (userProfile && userProfile.has_completed_onboarding === false && 
-               !['/login', '/signup', '/onboarding', '/api/auth/callback', '/auth/callback'].includes(pathname)) {
-             console.log(`Redirecting user on auth change to /onboarding: ${currentUser.id}`)
-             
-             // Prevent immediate redirection if we just redirected
-             const lastRedirectTime = sessionStorage.getItem('lastRedirectTime');
-             const currentTime = Date.now();
-             const isRecentRedirect = lastRedirectTime && (currentTime - parseInt(lastRedirectTime)) < 3000;
-             
-             if (!isRecentRedirect) {
-               console.log("No recent redirection, redirecting to onboarding now");
-               sessionStorage.setItem('lastRedirectTime', currentTime.toString());
-               router.push('/onboarding')
+           if (_event !== 'SIGNED_OUT') {
+             const result = await getProfileForUser(currentUser.id)
+             let userProfileForRedirect: UserProfile | null = null;
+             if (result && typeof result === 'object' && 'success' in result) {
+                userProfileForRedirect = result.success ? (result as unknown as { profile?: UserProfile | null }).profile || null : null;
+             } else if (result) {
+                // Handle cases where result might be UserProfile directly or unexpected shape
+                console.warn("getProfileForUser returned an unexpected shape or UserProfile directly in onAuthStateChange:", result);
              } else {
-               console.log("Skipping redirection due to recent redirect");
+                console.error("getProfileForUser returned null or undefined in onAuthStateChange");
+             }
+
+             console.log(`Auth state change (${_event}): onboarding status:`, userProfileForRedirect?.has_completed_onboarding)
+             console.log(`Current path: ${pathname}`)
+             
+             if (userProfileForRedirect && userProfileForRedirect.has_completed_onboarding === false && 
+                 pathname && !['/login', '/signup', '/onboarding', '/api/auth/callback', '/auth/callback'].includes(pathname)) {
+               console.log(`Redirecting user on auth change to /onboarding: ${currentUser.id}`)
+               
+               const lastRedirectTime = sessionStorage.getItem('lastRedirectTime')
+               const currentTime = Date.now()
+               const isRecentRedirect = lastRedirectTime && (currentTime - parseInt(lastRedirectTime)) < 3000
+               
+               if (!isRecentRedirect) {
+                 console.log("No recent redirection, redirecting to onboarding now")
+                 sessionStorage.setItem('lastRedirectTime', currentTime.toString())
+                 router.push('/onboarding')
+               } else {
+                 console.log("Skipping redirection due to recent redirect")
+               }
              }
            }
          }
          
-         // Ensure loading is false after potential profile fetch
          if (isLoading) setIsLoading(false)
       }
     )
 
-    // Cleanup subscription
     return () => {
-      console.log("=== Cleaning up AuthProvider auth state listeners ===");
+      console.log("=== Cleaning up AuthProvider auth state listeners ===")
       subscription.unsubscribe()
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []) // Run only once on mount
+  }, [pathname, router, isLoading])
 
   // Effect for handling redirection based on onboarding status
   useEffect(() => {
-    // Skip redirection logic if still loading or if on allowed paths
-    if (isLoading || isProfileLoading) return;
+    if (isLoading || isProfileLoading) return
 
-    // Define paths allowed before onboarding is complete
     const allowedPaths = ['/login', '/signup', '/onboarding', '/api/auth/callback', '/auth/callback']
 
-    // Check if user is logged in but hasn't completed onboarding
-    // Treat both false and null/undefined values as not having completed onboarding
-    const needsOnboarding = user && profile && profile.has_completed_onboarding !== true;
-    const isNotOnAllowedPath = !allowedPaths.includes(pathname);
+    const needsOnboarding = user && profile && profile.has_completed_onboarding !== true
+    const isNotOnAllowedPath = pathname && !allowedPaths.includes(pathname)
     
-    // Add timestamp check to prevent rapid redirection loops
-    const lastRedirectTime = sessionStorage.getItem('lastRedirectTime');
-    const currentTime = Date.now();
-    const isRecentRedirect = lastRedirectTime && (currentTime - parseInt(lastRedirectTime)) < 3000; // 3 second cooldown
+    const lastRedirectTime = sessionStorage.getItem('lastRedirectTime')
+    const currentTime = Date.now()
+    const isRecentRedirect = lastRedirectTime && (currentTime - parseInt(lastRedirectTime)) < 3000
     
-    console.log(`Auth redirection check: needsOnboarding=${needsOnboarding}, isNotOnAllowedPath=${isNotOnAllowedPath}, pathname=${pathname}, isRecentRedirect=${isRecentRedirect}`);
+    console.log(`Auth redirection check: needsOnboarding=${needsOnboarding}, isNotOnAllowedPath=${isNotOnAllowedPath}, pathname=${pathname}, isRecentRedirect=${isRecentRedirect}`)
 
-    // Redirect to onboarding if needed and not redirected recently
-    if (needsOnboarding && isNotOnAllowedPath && !isRecentRedirect) {
-      console.log(`Redirecting user ${user.id} to /onboarding because profile is not complete.`);
-      // Set timestamp to prevent redirect loops
-      sessionStorage.setItem('lastRedirectTime', currentTime.toString());
-      router.push('/onboarding');
+    if (needsOnboarding && isNotOnAllowedPath && !isRecentRedirect && user && typeof user.id === 'string') {
+      console.log(`Redirecting user ${user.id} to /onboarding because profile is not complete.`)
+      sessionStorage.setItem('lastRedirectTime', currentTime.toString())
+      router.push('/onboarding')
     }
-  }, [user, profile, isLoading, isProfileLoading, pathname, router]);
+  }, [user, profile, isLoading, isProfileLoading, pathname, router])
 
   // Sign in with email and password
   const signIn = async (email: string, password: string) => {
@@ -164,18 +229,22 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
       setUser(data.user)
       setSession(data.session)
       
-      // Sync profile data after successful sign in
-      if (data.user) {
+      if (data.user && typeof data.user.id === 'string') {
         await syncUserProfile(data.user)
         
-        // Check if user has completed onboarding
-        const userProfile = await getProfileForUser(data.user.id)
+        const result = await getProfileForUser(data.user.id)
+        let userProfileForSignIn: UserProfile | null = null;
+        if (result && typeof result === 'object' && 'success' in result) {
+            userProfileForSignIn = result.success ? (result as unknown as { profile?: UserProfile | null }).profile || null : null;
+        } else if (result) {
+            console.warn("getProfileForUser returned an unexpected shape or UserProfile directly in signIn:", result);
+        } else {
+            console.error("getProfileForUser returned null or undefined in signIn");
+        }
         
-        // If the user hasn't completed onboarding, redirect them to the onboarding page
-        if (userProfile && userProfile.has_completed_onboarding !== true) {
+        if (userProfileForSignIn && userProfileForSignIn.has_completed_onboarding !== true) {
           router.push('/onboarding')
         } else {
-          // Otherwise, redirect to the main page
           router.push('/')
         }
       }
@@ -190,7 +259,6 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
   // Sign up with email and password
   const signUp = async (email: string, password: string, username: string) => {
     try {
-      // First, create the auth user
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
@@ -201,8 +269,7 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
         return { error, success: false }
       }
 
-      if (data.user) {
-        // Then, create the user profile
+      if (data.user && typeof data.user.id === 'string') {
         const { error: profileError } = await supabase
           .from('profiles')
           .insert({
@@ -210,7 +277,7 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
             email,
             username,
             avatar_url: '',
-            has_completed_onboarding: false, // Mark new users as not having completed onboarding
+            has_completed_onboarding: false,
           })
 
         if (profileError) {
@@ -218,10 +285,8 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
           return { error: profileError, success: false }
         }
         
-        // Sync profile after profile creation
         await syncUserProfile(data.user)
 
-        // Redirect to onboarding page after successful signup
         router.push('/onboarding')
       }
 
@@ -248,9 +313,11 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
     profile,
     isLoading,
     isProfileLoading,
+    isAdmin,
     signIn,
     signUp,
     signOut,
+    refreshUserProfile,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

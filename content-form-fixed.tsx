@@ -54,7 +54,7 @@ const contentFormSchema = z.object({
     message: "სათაური სავალდებულოა",
   }),
   description: z.string().min(1, "აღწერა სავალდებულოა"),
-  type: z.enum(["anime", "manga"], {
+  type: z.enum(["manga", "comics"], {
     required_error: "კონტენტის ტიპი სავალდებულოა",
   }),
   status: z.enum(["ongoing", "completed", "hiatus"], {
@@ -92,7 +92,7 @@ export default function ContentFormFixed({
   } : {
     title: "",
     description: "",
-    type: "anime" as const,
+    type: "manga" as const,
     status: "ongoing" as const,
     thumbnail: "",
     banner_image: "",
@@ -168,8 +168,8 @@ export default function ContentFormFixed({
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="anime">ანიმე</SelectItem>
                       <SelectItem value="manga">მანგა</SelectItem>
+                      <SelectItem value="comics">კომიქსი</SelectItem>
                     </SelectContent>
                   </Select>
                   <FormMessage />

@@ -3,11 +3,10 @@ import { supabase } from './supabase';
 import { toast } from '@/components/ui/use-toast';
 
 // Define the type for media status
-export type MediaStatus = 'reading' | 'completed' | 'on_hold' | 'dropped' | 'plan_to_read' |
-                         'watching' | 'plan_to_watch' | null;
+export type MediaStatus = 'reading' | 'completed' | 'on_hold' | 'dropped' | 'plan_to_read' | null;
 
-// Define the type for media type - ADD 'comics'
-export type MediaType = 'anime' | 'manga' | 'comics';
+// Define the type for media type - REMOVE 'anime'
+export type MediaType = 'manga' | 'comics';
 
 export interface LibraryItem {
   id: string;
@@ -15,8 +14,8 @@ export interface LibraryItem {
   title: string;
   thumbnail: string;
   status: MediaStatus;
-  progress: number; // Chapter or episode number
-  totalItems?: number; // Total chapters or episodes
+  progress: number; // Chapter number
+  totalItems?: number; // Total chapters
   score?: number; // User rating (1-10)
   startDate?: number; // Timestamp
   finishDate?: number; // Timestamp
@@ -64,9 +63,7 @@ export async function getUserLibrary(): Promise<LibraryItem[]> {
       thumbnail: item.content?.thumbnail || '',
       status: mapStatusFromServer(item.status),
       progress: item.progress || 0,
-      totalItems: item.content_type === 'manga' 
-        ? item.content?.chapters_count 
-        : item.content?.episodes_count,
+      totalItems: item.content?.chapters_count, // Only chapters_count is needed now
       score: item.rating,
       startDate: item.started_at ? new Date(item.started_at).getTime() : undefined,
       finishDate: item.finished_at ? new Date(item.finished_at).getTime() : undefined,
@@ -116,41 +113,29 @@ function getLocalLibrary(): LibraryItem[] {
 // Helper function to map status from server format to client format
 function mapStatusFromServer(serverStatus: string): MediaStatus {
   const statusMap: Record<string, MediaStatus> = {
-    'watching': 'watching',
+    // Removed 'watching' and 'plan_to_watch' mappings as they are no longer valid client statuses
     'completed': 'completed',
     'on_hold': 'on_hold',
     'dropped': 'dropped',
-    'plan_to_watch': 'plan_to_watch',
     'reading': 'reading',
     'plan_to_read': 'plan_to_read'
   };
   
+  // Default to 'plan_to_read' if server status is not recognized (e.g., old 'watching' status)
   return statusMap[serverStatus] || 'plan_to_read';
 }
 
 // Helper function to map status from client format to server format
 function mapStatusToServer(status: MediaStatus, type: MediaType): string {
-  if (type === 'anime') {
-    // Use anime-specific terms
-    const animeStatusMap: Record<MediaStatus, string> = {
-      'reading': 'watching', // 'reading' in code maps to 'watching' for anime
-      'completed': 'completed',
-      'on_hold': 'on_hold',
-      'dropped': 'dropped',
-      'plan_to_read': 'plan_to_watch' // 'plan_to_read' in code maps to 'plan_to_watch' for anime
-    };
-    return animeStatusMap[status];
-  } else {
-    // Use manga-specific terms
-    const mangaStatusMap: Record<MediaStatus, string> = {
-      'reading': 'reading',
-      'completed': 'completed',
-      'on_hold': 'on_hold',
-      'dropped': 'dropped',
-      'plan_to_read': 'plan_to_read'
-    };
-    return mangaStatusMap[status];
-  }
+  // No longer need anime-specific mapping
+  const statusMap: Record<MediaStatus, string> = {
+    'reading': 'reading',
+    'completed': 'completed',
+    'on_hold': 'on_hold',
+    'dropped': 'dropped',
+    'plan_to_read': 'plan_to_read'
+  };
+  return statusMap[status];
 }
 
 // Helper function to sync an item from localStorage to server
@@ -383,13 +368,27 @@ export async function getLibraryStats(type: MediaType): Promise<{
 }> {
   const library = await getLibraryItems(type);
   
+  let reading = 0;
+  let completed = 0;
+  let onHold = 0;
+  let dropped = 0;
+  let planToRead = 0;
+  
+  for (const item of library) {
+    if (item.status === 'reading') reading++;
+    else if (item.status === 'completed') completed++;
+    else if (item.status === 'on_hold') onHold++;
+    else if (item.status === 'dropped') dropped++;
+    else if (item.status === 'plan_to_read') planToRead++;
+  }
+  
   return {
     total: library.length,
-    reading: library.filter(item => item.status === 'reading').length,
-    completed: library.filter(item => item.status === 'completed').length,
-    onHold: library.filter(item => item.status === 'on_hold').length,
-    dropped: library.filter(item => item.status === 'dropped').length,
-    planToRead: library.filter(item => item.status === 'plan_to_read').length
+    reading,
+    completed,
+    onHold,
+    dropped,
+    planToRead,
   };
 }
 

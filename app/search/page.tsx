@@ -3,15 +3,17 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { motion as m, AnimatePresence } from 'framer-motion'
-import { Search, X, BookOpen, TrendingUp, Timer, Filter, Grid3X3, Loader2, Bookmark, Star, Play, Clock, Sparkles } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { Search, X, BookOpen, TrendingUp, Timer, Filter, Grid3X3, Loader2, Bookmark, Star, Play, Clock, Sparkles, BookMarked } from 'lucide-react'
+import { cn, translateGenre } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ImageSkeleton } from '@/components/image-skeleton'
 import { AppSidebar } from '@/components/app-sidebar'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
+// @ts-ignore
 import debounce from 'lodash.debounce'
+import { searchContent } from '@/lib/content'
 
 // Animation variants
 const containerVariants = {
@@ -44,24 +46,34 @@ const fadeVariants = {
 
 type SearchResult = {
   id: string;
-  type: 'manga' | 'anime';
+  type: 'manga' | 'comics';
   title: string;
   image: string;
+  thumbnail?: string;
   banner_image?: string;
   status?: string;
   year?: number;
   score?: number;
+  releaseYear?: string | number;
 };
 
 export default function SearchPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const initialQuery = searchParams?.get('q') || ''
+
+  const typeFromParams = searchParams?.get('type');
+  let initialType: 'all' | 'manga' | 'comics';
+  if (typeFromParams === 'manga' || typeFromParams === 'comics') {
+    initialType = typeFromParams;
+  } else {
+    initialType = 'all'; // Default to 'all' if type is invalid, 'anime', or not present
+  }
   
   const [searchQuery, setSearchQuery] = useState(initialQuery)
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [isLoading, setIsLoading] = useState(false)
-  const [activeType, setActiveType] = useState<'all' | 'manga' | 'anime'>('all')
+  const [activeType, setActiveType] = useState<'all' | 'manga' | 'comics'>(initialType)
   const [sortBy, setSortBy] = useState<'relevance' | 'newest' | 'rating'>('relevance')
   const [showFilters, setShowFilters] = useState(false)
   
@@ -85,116 +97,76 @@ export default function SearchPage() {
       setIsLoading(true)
       
       try {
-        // In a real app, this would be an API call.
-        // For now, we'll simulate a search with fake data
+        // Call the search function for all content types if 'all' is selected,
+        // otherwise call with the specific type
+        let results: SearchResult[] = []
         
-        // Simulate network delay
-        await new Promise(resolve => setTimeout(resolve, 600))
-        
-        // Generate fake search results based on query
-        const fakeResults: SearchResult[] = [
-          // Manga results
-          {
-            id: 'manga-1',
-            type: 'manga',
-            title: `One Piece - ${searchQuery}`,
-            image: 'https://m.media-amazon.com/images/I/51oBw4FDkIL._SY445_SX342_.jpg',
-            status: 'Ongoing',
-            year: 1999,
-            score: 9.6
-          },
-          {
-            id: 'manga-2',
-            type: 'manga',
-            title: `Demon Slayer - ${searchQuery}`,
-            image: 'https://m.media-amazon.com/images/I/51j8bRH5sDL._SY445_SX342_.jpg',
-            status: 'Completed',
-            year: 2016,
-            score: 8.9
-          },
-          {
-            id: 'manga-3',
-            type: 'manga',
-            title: `Attack on Titan - ${searchQuery}`,
-            image: 'https://m.media-amazon.com/images/I/91M9VaZWxOL._SY466_.jpg',
-            status: 'Completed',
-            year: 2009,
-            score: 9.4
-          },
-          {
-            id: 'manga-4',
-            type: 'manga',
-            title: `Jujutsu Kaisen - ${searchQuery}`,
-            image: 'https://m.media-amazon.com/images/I/51QQS+xc6RL._SY445_SX342_.jpg',
-            status: 'Ongoing',
-            year: 2018,
-            score: 8.8
-          },
-          // Anime results
-          {
-            id: 'anime-1',
-            type: 'anime',
-            title: `Fullmetal Alchemist: Brotherhood - ${searchQuery}`,
-            image: 'https://flxt.tmsimg.com/assets/p7886595_b_v13_ab.jpg',
-            status: 'Completed',
-            year: 2009,
-            score: 9.7
-          },
-          {
-            id: 'anime-2',
-            type: 'anime',
-            title: `Death Note - ${searchQuery}`,
-            image: 'https://m.media-amazon.com/images/M/MV5BNjRiNmNjMmMtN2U2Yi00ODgxLTk3OTMtMmI1MTI1NjYyZTEzXkEyXkFqcGdeQXVyNjAwNDUxODI@._V1_FMjpg_UX1000_.jpg',
-            status: 'Completed',
-            year: 2006,
-            score: 9.0
-          },
-          {
-            id: 'anime-3',
-            type: 'anime',
-            title: `Steins;Gate - ${searchQuery}`,
-            image: 'https://m.media-amazon.com/images/M/MV5BMjUxMzE4ZDctODNjMS00MzIwLThjNDktODkwYjc5YWU0MDc0XkEyXkFqcGdeQXVyNjc3OTE4Nzk@._V1_FMjpg_UX1000_.jpg',
-            status: 'Completed',
-            year: 2011,
-            score: 9.2
-          },
-          {
-            id: 'anime-4',
-            type: 'anime',
-            title: `My Hero Academia - ${searchQuery}`,
-            image: 'https://flxt.tmsimg.com/assets/p12220111_b_v13_be.jpg',
-            status: 'Ongoing',
-            year: 2016,
-            score: 8.7
+        if (activeType === 'all') {
+          // Search for each content type and combine results
+          const [mangaResponse, comicsResponse] = await Promise.all([
+            searchContent(searchQuery, 'manga'),
+            searchContent(searchQuery, 'comics')
+          ])
+          
+          // Combine results from all content types
+          if (mangaResponse.success && mangaResponse.content) {
+            results = [...results, ...mapContentToSearchResults(mangaResponse.content)]
           }
-        ]
-        
-        // Filter by type if needed
-        let filteredResults = fakeResults
-        if (activeType !== 'all') {
-          filteredResults = fakeResults.filter(item => item.type === activeType)
+          
+          if (comicsResponse.success && comicsResponse.content) {
+            results = [...results, ...mapContentToSearchResults(comicsResponse.content)]
+          }
+        } else {
+          // Search for specific content type (manga or comics)
+          const response = await searchContent(searchQuery, activeType)
+          
+          if (response.success && response.content) {
+            results = mapContentToSearchResults(response.content)
+          }
         }
         
-        // Sort results
+        // Sort results based on user selection
         switch (sortBy) {
           case 'newest':
-            filteredResults.sort((a, b) => (b.year || 0) - (a.year || 0))
+            results.sort((a, b) => {
+              const yearA = a.year || parseInt(String(a.releaseYear || 0))
+              const yearB = b.year || parseInt(String(b.releaseYear || 0))
+              return yearB - yearA
+            })
             break
+            
           case 'rating':
-            filteredResults.sort((a, b) => (b.score || 0) - (a.score || 0))
+            results.sort((a, b) => (b.score || 0) - (a.score || 0))
             break
+            
           case 'relevance':
           default:
-            // Already sorted by relevance (in a real app)
+            // Already sorted by relevance from the API
             break
         }
         
-        setSearchResults(filteredResults)
+        setSearchResults(results)
       } catch (error) {
         console.error('Search error:', error)
       } finally {
         setIsLoading(false)
       }
+    }
+    
+    // Function to map content from API to our SearchResult type
+    function mapContentToSearchResults(content: any[]): SearchResult[] {
+      return content.map(item => ({
+        id: item.id,
+        type: item.type,
+        title: item.title,
+        image: item.thumbnail || item.image || '',
+        thumbnail: item.thumbnail || '',
+        banner_image: item.banner_image || '',
+        status: item.status || 'Unknown',
+        year: item.releaseYear ? parseInt(item.releaseYear) : undefined,
+        releaseYear: item.releaseYear,
+        score: item.rating
+      }))
     }
     
     // Debounce search to avoid too many requests
@@ -208,12 +180,19 @@ export default function SearchPage() {
   
   // Update URL when search query changes
   useEffect(() => {
+    const params = new URLSearchParams()
+    
     if (searchQuery.trim()) {
-      router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}`, { scroll: false })
-    } else {
-      router.push('/search', { scroll: false })
+      params.set('q', searchQuery.trim())
     }
-  }, [searchQuery, router])
+    
+    if (activeType !== 'all') {
+      params.set('type', activeType)
+    }
+    
+    const queryString = params.toString()
+    router.push(`/search${queryString ? `?${queryString}` : ''}`, { scroll: false })
+  }, [searchQuery, activeType, router])
   
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchQuery(e.target.value)
@@ -241,7 +220,7 @@ export default function SearchPage() {
       <main className="flex-1 overflow-x-hidden pl-0 md:pl-[77px] pb-20">
         {/* Hero / Search Header */}
         <m.div 
-          className="relative w-full bg-gradient-to-b from-black/40 to-transparent"
+          className="relative w-full"
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
@@ -363,16 +342,16 @@ export default function SearchPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => setActiveType('anime')}
+                            onClick={() => setActiveType('comics')}
                             className={cn(
                               "rounded-lg border",
-                              activeType === 'anime'
+                              activeType === 'comics'
                                 ? "bg-gradient-to-r from-purple-600 to-indigo-600 text-white border-transparent"
                                 : "bg-black/30 text-white/70 border-white/10 hover:bg-black/50 hover:text-white"
                             )}
                           >
-                            <Play className="h-4 w-4 mr-2" />
-                            ანიმე
+                            <BookMarked className="h-4 w-4 mr-2" />
+                            კომიქსი
                           </Button>
                         </div>
                       </div>
@@ -472,7 +451,7 @@ export default function SearchPage() {
                   <img src="/images/mascot/no-search.png" alt="No search results mascot" className="mx-auto w-40 h-40" />
                 </m.div>
                 <h3 className="text-xl md:text-2xl font-medium text-white mb-2">
-                  ვერაფერი მოიძებნა
+                  შედეგები ვერ მოიძებნა
                 </h3>
                 <p className="text-white/60 max-w-md mx-auto mb-8">
                   სამწუხაროდ, თქვენი ძიებით არაფერი მოიძებნა. სცადეთ სხვა საძიებო სიტყვების გამოყენება ან შეამოწმეთ მართლწერა.
@@ -571,7 +550,7 @@ export default function SearchPage() {
                 </div>
                 
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-6">
-                  {searchResults.map((result, index) => (
+                  {searchResults.map((result) => (
                     <m.div 
                       key={`${result.type}-${result.id}`}
                       variants={itemVariants}
@@ -596,10 +575,12 @@ export default function SearchPage() {
                           className={`absolute top-2 left-2 backdrop-blur-sm px-2 py-0.5 rounded-md text-xs font-medium border shadow-lg
                             ${result.type === 'manga' 
                               ? 'bg-purple-900/40 text-purple-200 border-purple-500/30 shadow-purple-900/20' 
+                              : result.type === 'comics'
+                              ? 'bg-yellow-900/40 text-yellow-200 border-yellow-500/30 shadow-yellow-900/20'
                               : 'bg-indigo-900/40 text-indigo-200 border-indigo-500/30 shadow-indigo-900/20'}`}
                           whileHover={{ scale: 1.05 }}
                         >
-                          {result.type === 'manga' ? 'მანგა' : 'ანიმე'}
+                          {result.type === 'manga' ? 'მანგა' : result.type === 'comics' ? 'კომიქსი' : ''}
                         </m.div>
                         
                         {/* Rating badge */}
@@ -611,20 +592,22 @@ export default function SearchPage() {
                         )}
                         
                         {/* Year badge */}
-                        {result.year && (
+                        {(result.year || result.releaseYear) && (
                           <div className="absolute bottom-2 right-2 bg-black/60 backdrop-blur-sm px-2 py-0.5 rounded-md text-xs font-medium text-white/80 border border-white/10">
-                            {result.year}
+                            {result.year || result.releaseYear}
                           </div>
                         )}
                         
                         {/* Status badge */}
                         {result.status && (
                           <div className={`absolute bottom-2 left-2 backdrop-blur-sm px-2 py-0.5 rounded-md text-xs font-medium border
-                            ${result.status === 'Ongoing' 
+                            ${result.status.toLowerCase().includes('ongoing') || result.status.toLowerCase().includes('მიმდინარე') 
                               ? 'bg-green-900/40 text-green-200 border-green-500/30' 
                               : 'bg-blue-900/40 text-blue-200 border-blue-500/30'}`}
                           >
-                            {result.status === 'Ongoing' ? 'მიმდინარე' : 'დასრულებული'}
+                            {result.status.toLowerCase().includes('ongoing') || result.status.toLowerCase().includes('მიმდინარე') 
+                              ? 'მიმდინარე' 
+                              : 'დასრულებული'}
                           </div>
                         )}
                       </div>

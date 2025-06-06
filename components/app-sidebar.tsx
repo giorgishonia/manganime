@@ -21,7 +21,10 @@ import {
   X,
   Loader2,
   RefreshCw,
-  Heart
+  Heart,
+  MessageSquare,
+  Film,
+  Plus
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { motion as m, AnimatePresence } from "framer-motion"
@@ -40,6 +43,7 @@ import {
   getUnreadNotificationCount,
   markNotificationsAsRead
 } from "@/lib/notifications"
+import { ka } from "date-fns/locale"
 
 // Interface for sidebar items
 interface SidebarItemProps {
@@ -144,7 +148,7 @@ export function AppSidebar() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [isMangaReaderOpen, setIsMangaReaderOpen] = useState(false);
-  const { user, signOut: supabaseSignOut } = useAuth();
+  const { user, profile, signOut: supabaseSignOut } = useAuth();
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -290,7 +294,15 @@ export function AppSidebar() {
           }, 2000);
         }
       } else {
-        console.error("Failed to load notifications:", error || "Unknown error");
+        // Improved error logging
+        console.error("Failed to load notifications. Raw error:")
+        console.error(error); // Log the raw error object
+        console.error("Stringified error:")
+        console.error(String(error)); // Log the string representation
+        if (error && typeof error === 'object' && 'message' in error) {
+          console.error("Error message:")
+          console.error(error.message);
+        }
         setNotifLoadError(true);
         
         // Don't show error toast for cached responses
@@ -418,12 +430,6 @@ export function AppSidebar() {
               isActive={pathname === "/"}
             />
             <SidebarItem
-              icon={<Play className="stroke-[1.5px]" />}
-              label="ყურება"
-              href="/watch"
-              isActive={pathname === "/watch"}
-            />
-            <SidebarItem
               icon={<BookOpen className="stroke-[1.5px]" />}
               label="კითხვა"
               href="/manga"
@@ -501,13 +507,21 @@ export function AppSidebar() {
                     )}
                     title="პროფილი"
                   >
-                    <Avatar className="h-7 w-7 ring-1 ring-white/10" key={user.user_metadata?.avatar_url}>
+                    <Avatar 
+                      className={cn(
+                        "h-7 w-7 ring-1", 
+                        profile?.vip_status 
+                          ? (profile.vip_theme ? `ring-${profile.vip_theme}-500 ring-2` : "ring-yellow-400 ring-2") 
+                          : "ring-white/10"
+                      )}
+                      key={profile?.avatar_url || user?.user_metadata?.avatar_url}
+                    >
                       <AvatarImage 
-                        src={`${user.user_metadata?.avatar_url || 'https://api.dicebear.com/7.x/pixel-art/svg?seed=' + user.id}${user.user_metadata?.avatar_url ? `?_t=${Date.now()}` : ''}`} 
-                        alt="პროფილი" 
+                        src={`${profile?.avatar_url || user?.user_metadata?.avatar_url || 'https://api.dicebear.com/7.x/pixel-art/svg?seed=' + user.id}${(profile?.avatar_url || user?.user_metadata?.avatar_url) ? `?_t=${Date.now()}` : ''}`} 
+                        alt={profile?.username || user?.email || "User"} 
                       />
                       <AvatarFallback>
-                        {user.email?.charAt(0).toUpperCase() || 'U'}
+                        {profile?.username?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase() || 'U'}
                       </AvatarFallback>
                     </Avatar>
                     {pathname === "/profile" && (
@@ -602,50 +616,130 @@ export function AppSidebar() {
                   </div>
                 ) : notifications.length === 0 ? (
                   <div className="text-center py-8">
-                    <img src="/images/mascot/no-notifications.png" alt="No notifications mascot" className="mx-auto w-32 h-32 mb-3" />
                     <p className="text-white/70">არ გაქვთ შეტყობინებები</p>
                     <p className="text-sm text-white/50 mt-1">როდესაც მიიღებთ შეტყობინებებს, ისინი აქ გამოჩნდება</p>
+                    <img src="/images/mascot/no-notifications.png" alt="No notifications mascot" className="mx-auto w-32 h-32 mt-4" />
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {notifications.map((notif) => (
-                      <div 
-                        key={notif.id}
-                        className={cn(
-                          "flex items-center p-3 rounded-lg transition-colors",
-                          !notif.is_read ? "bg-purple-500/10 hover:bg-purple-500/20" : "bg-white/5 hover:bg-white/10"
-                        )}
-                      >
-                        {/* Display sender avatar if available */} 
-                        {notif.sender_profile?.avatar_url && (
-                           <Avatar className="h-8 w-8 mr-3 flex-shrink-0">
-                              <AvatarImage src={notif.sender_profile.avatar_url} alt={notif.sender_profile.username} />
-                              <AvatarFallback>{notif.sender_profile.username?.[0]?.toUpperCase() || 'მ'}</AvatarFallback>
-                           </Avatar>
-                        )}
-                        {/* If no sender profile, maybe show a default icon? */} 
-                        {!notif.sender_profile && (
-                          <div className="h-8 w-8 mr-3 flex-shrink-0 flex items-center justify-center bg-gray-700 rounded-full">
-                            <Bell className="h-4 w-4 text-gray-400" /> 
+                    {notifications.map((notif) => {
+                      // --- Determine Icon based on notification type ---
+                      let IconComponent;
+                      switch (notif.type) {
+                        case 'comment_like':
+                          IconComponent = <Heart className="h-5 w-5 text-red-400" />;
+                          break;
+                        case 'comment_reply':
+                          IconComponent = <MessageSquare className="h-5 w-5 text-blue-400" />;
+                          break;
+                        case 'new_chapter':
+                          IconComponent = <BookOpen className="h-5 w-5 text-green-400" />;
+                          break;
+                        case 'new_content':
+                          IconComponent = <Plus className="h-5 w-5 text-yellow-400" />;
+                          break;
+                        default:
+                          IconComponent = <Bell className="h-5 w-5 text-gray-400" />;
+                      }
+
+                      // --- Helper to generate link (assuming future fields)
+                      const generateNotificationLink = (n: Notification): string => {
+                        const type = (n as any).content_type || ''; // Default to empty if not present
+                        const contentId = (n as any).content_id || '';
+                        const commentId = (n as any).comment_id || null;
+                        if (!type || !contentId) return '#'; // Cannot link without type/id
+                        // Link to the specific comment if comment_id is present
+                        if (commentId) {
+                          return `/${type}/${contentId}#comment-${commentId}`;
+                        }
+                        return `/${type}/${contentId}`;
+                      };
+
+                      const link = generateNotificationLink(notif);
+
+                      return (
+                        <Link 
+                          key={notif.id}
+                          href={link}
+                          onClick={closeNotifications} // Close panel on click
+                          className={cn(
+                            "flex items-start p-3 rounded-lg transition-colors cursor-pointer", // Added cursor-pointer, items-start
+                            !notif.is_read ? "bg-purple-500/10 hover:bg-purple-500/20" : "bg-white/5 hover:bg-white/10"
+                          )}
+                        >
+                          {/* Avatar/Icon */} 
+                          <div className="mr-3 flex-shrink-0 pt-0.5"> {/* Added padding-top */}
+                            {notif.sender_profile?.avatar_url && notif.type.startsWith('comment_') ? (
+                              <Avatar className="h-8 w-8">
+                                  <AvatarImage src={notif.sender_profile.avatar_url} alt={notif.sender_profile.username || ''} />
+                                  <AvatarFallback>{notif.sender_profile.username?.[0]?.toUpperCase() || '?'}</AvatarFallback>
+                              </Avatar>
+                            ) : (
+                              <div className="h-8 w-8 flex items-center justify-center bg-gray-700/50 rounded-full">
+                                {IconComponent} 
+                              </div>
+                            )}
                           </div>
-                        )}
-                        <div className="flex-1">
-                          <p className="text-sm mb-1">
-                            {/* Use sender_profile.username if available */} 
-                            {notif.sender_profile?.username && <span className="font-medium">{notif.sender_profile.username} </span>}
-                            {notif.message} 
-                          </p>
-                          <p className="text-xs text-gray-400">
-                            {formatDistanceToNow(new Date(notif.created_at), { addSuffix: true })}
-                          </p>
-                        </div>
-                        {/* TODO: Add link based on type/ids */} 
-                      </div>
-                    ))}
+                          {/* Text content */}
+                          <div className="flex-1">
+                            <p className="text-sm mb-1 text-white/90">
+                              {notif.message} {/* Use direct message from notification */}
+                            </p>
+                            <p className="text-xs text-gray-400">
+                              {formatDistanceToNow(new Date(notif.created_at), { addSuffix: true, locale: ka })} {/* Use Georgian locale */}
+                            </p>
+                          </div>
+                          {/* Read indicator */}
+                          {!notif.is_read && (
+                            <div className="w-2 h-2 bg-purple-400 rounded-full ml-2 mt-1 flex-shrink-0"></div>
+                          )}
+                        </Link>
+                      );
+                    })}
                   </div>
                 )}
               </div>
-              {/* Footer (Optional: Mark all read button) */} 
+              {/* Footer: Mark all read button */} 
+              {notifications.length > 0 && !isLoadingNotifs && !notifLoadError && (
+                <div className="p-3 border-t border-white/10 mt-auto">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="w-full"
+                    onClick={async () => {
+                      const unreadIds = notifications.filter(n => !n.is_read).map(n => n.id);
+                      if (unreadIds.length === 0) {
+                        toast.info("ყველა შეტყობინება უკვე წაკითხულია.");
+                        return;
+                      }
+                      if (!user) {
+                        toast.error("მოქმედების შესასრულებლად საჭიროა ავტორიზაცია.");
+                        return;
+                      }
+                      try {
+                        toast.promise(
+                          markNotificationsAsRead(user.id, unreadIds),
+                          {
+                            loading: 'მიმდინარეობს წაკითხულად მონიშვნა...',
+                            success: () => {
+                              // Update local state immediately
+                              setNotifications(prev => prev.map(n => unreadIds.includes(n.id) ? { ...n, is_read: true } : n));
+                              setUnreadCount(0);
+                              return 'ყველა მონიშნულია წაკითხულად.';
+                            },
+                            error: 'წაკითხულად მონიშვნა ვერ მოხერხდა.',
+                          }
+                        );
+                      } catch (error) {
+                        console.error("Failed to mark all as read:")
+                      }
+                    }}
+                    disabled={unreadCount === 0} // Disable if no unread messages
+                  >
+                    ყველას წაკითხულად მონიშვნა ({unreadCount})
+                  </Button>
+                </div>
+              )}
             </m.div>
           </>
         )}
@@ -680,6 +774,8 @@ function MobileSidebarContent({
   notifications: Notification[];
   isLoadingNotifs: boolean;
 }) {
+  const { profile: authProfile } = useAuth(); // Renamed to avoid conflict with a potential prop named 'profile'
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between mb-5">
@@ -700,15 +796,23 @@ function MobileSidebarContent({
       
       {user ? (
         <div className="flex items-center gap-3 p-3 mb-5 rounded-xl bg-white/5 backdrop-blur-md border border-white/5">
-          <Avatar className="h-10 w-10 ring-2 ring-white/10" key={user.user_metadata?.avatar_url}>
+          <Avatar 
+            className={cn(
+              "h-10 w-10 ring-2", 
+              authProfile?.vip_status 
+                ? (authProfile.vip_theme ? `ring-${authProfile.vip_theme}-500` : "ring-yellow-400") 
+                : "ring-white/10"
+            )}
+            key={authProfile?.avatar_url || user?.user_metadata?.avatar_url}
+          >
             <AvatarImage 
-              src={`${user.user_metadata?.avatar_url || 'https://api.dicebear.com/7.x/pixel-art/svg?seed=' + user.id}${user.user_metadata?.avatar_url ? `?_t=${Date.now()}` : ''}`} 
-              alt="პროფილი" 
+              src={`${authProfile?.avatar_url || user?.user_metadata?.avatar_url || 'https://api.dicebear.com/7.x/pixel-art/svg?seed=' + user.id}${(authProfile?.avatar_url || user?.user_metadata?.avatar_url) ? `?_t=${Date.now()}` : ''}`} 
+              alt={authProfile?.username || user?.email || "User"} 
             />
-            <AvatarFallback>{user.email?.charAt(0).toUpperCase() || 'მ'}</AvatarFallback>
+            <AvatarFallback>{authProfile?.username?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase() || 'მ'}</AvatarFallback>
           </Avatar>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium truncate">{user.user_metadata?.name || user.email}</p>
+            <p className="text-sm font-medium truncate">{authProfile?.username || user?.user_metadata?.name || user?.email}</p>
             <p className="text-xs text-gray-400 truncate">წევრი</p>
           </div>
         </div>
@@ -750,20 +854,6 @@ function MobileSidebarContent({
               <Search className="h-5 w-5 mr-3 stroke-[1.5px]" />
               <span>ძიება</span>
             </button>
-            <Link 
-              href="/watch" 
-              className={cn(
-                "flex items-center px-3 py-3 rounded-xl transition-colors",
-                pathname === "/watch" 
-                  ? "bg-white/10 text-white relative" 
-                  : "text-white/70 hover:text-white hover:bg-white/5"
-              )}
-              onClick={onClose}
-            >
-              {pathname === "/watch" && <div className="absolute left-0 top-0 bottom-0 w-1 bg-[hsl(var(--primary))] rounded-r-full" />}
-              <Play className={cn("h-5 w-5 mr-3 stroke-[1.5px]", pathname === "/watch" && "text-[hsl(var(--primary))]")} />
-              <span>ყურება</span>
-            </Link>
             <Link 
               href="/manga" 
               className={cn(

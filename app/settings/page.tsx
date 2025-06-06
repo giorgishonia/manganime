@@ -6,82 +6,24 @@ import { Loader2, User, ShieldCheck, Palette, Bell } from 'lucide-react';
 import { AppSidebar } from '@/components/app-sidebar';
 import { useAuth } from '@/components/supabase-auth-provider';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ProfileForm } from '@/components/settings/profile-form'; // We'll create this next
+import { ProfileForm } from '@/components/settings/profile-form';
+import { AppearanceSettings } from '../../components/settings/appearance-settings';
 import { toast } from 'sonner';
-
-// --- Placeholder Functions (replace with actual implementations in lib/users.ts) --- 
-
-// Adjust UserProfile type if needed
-interface UserProfile {
-  id: string;
-  username: string;
-  avatar_url: string | null;
-  bio: string | null;
-  created_at: string; 
-}
-
-async function getProfileForUser(userId: string): Promise<UserProfile | null> {
-  console.log(`SettingsPage: Fetching profile for user ID: ${userId}`);
-  // TODO: Implement actual Supabase query using userId
-  // const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).single();
-  // if(error) { console.error('Error fetching profile:', error); return null; }
-  // return data;
-
-  // Placeholder:
-  await new Promise(resolve => setTimeout(resolve, 300)); // Simulate fetch
-  // Simulate not finding profile (shouldn't happen for logged-in user ideally)
-  // if (userId === 'nonexistent') return null;
-  return {
-      id: userId,
-      username: 'current_user_placeholder', // Replace with actual fetched username
-      avatar_url: null,
-      bio: 'This is the current user bio placeholder.',
-      created_at: new Date().toISOString(),
-  };
-}
-
-// Note: updateUserProfile placeholder moved inside ProfileForm for simplicity, 
-// but ideally lives in lib/users.ts
-
-// --- End Placeholder Functions --- 
 
 export default function SettingsPage() {
   const router = useRouter();
-  const { user, isLoading: authLoading, session } = useAuth();
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
+  const { user, profile, isLoading: isAuthLoading, session } = useAuth();
 
   useEffect(() => {
-    // Redirect if not logged in after auth check
-    if (!authLoading && !user) {
+    // Redirect if not logged in after auth check is complete
+    if (!isAuthLoading && !user) {
       toast.error("Please log in to access settings.");
       router.push('/login');
-      return;
     }
+  }, [user, isAuthLoading, router]);
 
-    // Fetch profile data if user is logged in
-    if (user) {
-      setIsLoadingProfile(true);
-      getProfileForUser(user.id)
-        .then(data => {
-          if (data) {
-            setProfile(data);
-          } else {
-            toast.error("Could not load your profile data.");
-            // Handle case where profile might be missing? Maybe redirect or show error state.
-          }
-        })
-        .catch(err => {
-          console.error("Error fetching profile in SettingsPage:", err);
-          toast.error("Failed to load profile data.");
-        })
-        .finally(() => {
-          setIsLoadingProfile(false);
-        });
-    }
-  }, [user, authLoading, router]);
-
-  if (authLoading || (user && isLoadingProfile)) {
+  // Show loading spinner if auth/profile data is still loading
+  if (isAuthLoading) {
     return (
       <>
         <AppSidebar />
@@ -92,28 +34,31 @@ export default function SettingsPage() {
     );
   }
   
-  // If user is null after loading, redirect should have happened, but double-check
+  // If user is null after loading (and not redirected yet, though useEffect should handle it)
   if (!user) {
-     return null; // Or a redirect component
+     return null; // Or a redirect component / explicit redirect
   }
 
-  // Handle profile load error state more gracefully
-  if (!profile && !isLoadingProfile) {
+  // Handle case where user is loaded, but profile is still null (e.g., error during sync in AuthProvider)
+  if (!profile) {
      return (
        <>
          <AppSidebar />
          <div className="container mx-auto px-4 py-8 md:pl-24">
-           <p className='text-red-500'>Error: Could not load profile data. Please try refreshing.</p>
+            <h1 className="text-3xl font-bold mb-8">Settings</h1>
+            <p className='text-red-500'>Error: Could not load your profile data. Please try refreshing the page or re-logging in.</p>
          </div>
        </>
      );
   }
 
-  const handleProfileUpdate = (updatedProfileData: Partial<UserProfile>) => {
-    // Update local state optimistically or after confirmation
-    setProfile(prev => prev ? { ...prev, ...updatedProfileData } : null);
-    // Optionally, re-fetch user from useAuth if username affects it?
+  const handleProfileUpdate = (updatedProfileData: Partial<typeof profile>) => {
+    // The profile in useAuth context should update automatically if ProfileForm calls updateUserProfile
+    // which then triggers a re-sync or state update in SupabaseAuthProvider.
+    // For now, just a toast message here is fine.
     toast.success("Profile updated successfully!");
+    // Potentially, could force a refresh of the profile from useAuth if needed:
+    // refreshAuthProfile(); // Assuming useAuth exposes such a function
   };
 
   return (
@@ -130,7 +75,7 @@ export default function SettingsPage() {
             <TabsTrigger value="account" disabled>
               <ShieldCheck className="h-4 w-4 mr-2" /> Account
             </TabsTrigger>
-            <TabsTrigger value="appearance" disabled>
+            <TabsTrigger value="appearance">
               <Palette className="h-4 w-4 mr-2" /> Appearance
             </TabsTrigger>
             <TabsTrigger value="notifications" disabled>
@@ -139,24 +84,28 @@ export default function SettingsPage() {
           </TabsList>
 
           <TabsContent value="profile">
-            {profile ? (
-              <ProfileForm 
-                initialData={profile} 
-                userId={user.id} 
-                onSuccess={handleProfileUpdate} // Pass callback
-              />
-            ) : (
-              // This should ideally not be reached due to earlier checks
-              <p>Loading profile form...</p> 
-            )}
+            <ProfileForm 
+              initialData={{
+                id: profile.id,
+                username: profile.username || '', // Fallback for null username
+                first_name: profile.first_name || null,
+                last_name: profile.last_name || null,
+                avatar_url: profile.avatar_url || null,
+                bio: profile.bio || null,
+                is_public: profile.is_public ?? true, // Fallback for undefined is_public
+              }} 
+              userId={user.id} 
+              onSuccess={handleProfileUpdate}
+            />
           </TabsContent>
           
-          {/* Add TabsContent for other sections later */}
           <TabsContent value="account">
             <p>Account settings coming soon.</p>
           </TabsContent>
           <TabsContent value="appearance">
-            <p>Appearance settings coming soon.</p>
+            {profile && user && (
+              <AppearanceSettings currentProfile={profile} userId={user.id} />
+            )}
           </TabsContent>
            <TabsContent value="notifications">
             <p>Notification settings coming soon.</p>

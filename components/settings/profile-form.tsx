@@ -14,11 +14,14 @@ import { toast } from 'sonner';
 import { Switch } from "@/components/ui/switch";
 import { Controller } from 'react-hook-form';
 import { updateUserProfile } from '@/lib/users'; // Import the actual update function
+import { AvatarUploader } from './avatar-uploader'; // Import the new component
 
 // Define Zod schema for validation
 const profileSchema = z.object({
-  username: z.string().min(3, "მომხმარებლის სახელი უნდა იყოს მინიმუმ 3 სიმბოლო").max(50, "მომხმარებლის სახელი უნდა იყოს მაქსიმუმ 50 სიმბოლო"), // Updated messages
-  bio: z.string().max(300, "ბიო უნდა იყოს მაქსიმუმ 300 სიმბოლო").optional().nullable(), // Updated messages
+  first_name: z.string().max(50, "სახელი უნდა იყოს მაქსიმუმ 50 სიმბოლო").optional().nullable(),
+  last_name: z.string().max(50, "გვარი უნდა იყოს მაქსიმუმ 50 სიმბოლო").optional().nullable(),
+  username: z.string().min(3, "მომხმარებლის სახელი უნდა იყოს მინიმუმ 3 სიმბოლო").max(50, "მომხმარებლის სახელი უნდა იყოს მაქსიმუმ 50 სიმბოლო"),
+  bio: z.string().max(300, "ბიო უნდა იყოს მაქსიმუმ 300 სიმბოლო").optional().nullable(),
   is_public: z.boolean().default(true),
 });
 
@@ -28,6 +31,8 @@ interface ProfileFormProps {
   initialData: {
     id: string;
     username: string;
+    first_name: string | null;
+    last_name: string | null;
     avatar_url: string | null;
     bio: string | null;
     is_public: boolean;
@@ -38,6 +43,7 @@ interface ProfileFormProps {
 
 export function ProfileForm({ initialData, userId, onSuccess }: ProfileFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [currentAvatarUrl, setCurrentAvatarUrl] = useState(initialData.avatar_url);
 
   const {
     register,
@@ -48,6 +54,8 @@ export function ProfileForm({ initialData, userId, onSuccess }: ProfileFormProps
   } = useForm<ProfileFormData>({
     resolver: zodResolver(profileSchema),
     defaultValues: {
+      first_name: initialData.first_name || '',
+      last_name: initialData.last_name || '',
       username: initialData.username || '',
       bio: initialData.bio || '',
       is_public: initialData.is_public ?? true,
@@ -56,26 +64,54 @@ export function ProfileForm({ initialData, userId, onSuccess }: ProfileFormProps
 
   // Reset form if initialData changes (e.g., after a successful save)
   useEffect(() => {
+    setCurrentAvatarUrl(initialData.avatar_url);
     reset({
+      first_name: initialData.first_name || '',
+      last_name: initialData.last_name || '',
       username: initialData.username || '',
       bio: initialData.bio || '',
       is_public: initialData.is_public ?? true,
     });
   }, [initialData, reset]);
 
+  const handleAvatarUpdate = (newAvatarUrl: string) => {
+    setCurrentAvatarUrl(newAvatarUrl);
+    // Optionally, trigger a save of just the avatar, or let the main form save it.
+    // For now, we just update the display and the main form will save everything if other fields are dirty.
+    // If we want to save avatar immediately, we'd call updateUserProfile here.
+    // We also need to make the form dirty if only avatar changed and user wants to save that.
+    // A simple way: call reset with the new avatar url if we consider it part of the form data for dirtiness.
+    // Or, handle avatar saving entirely within the AvatarUploaderComponent.
+    toast.info("Avatar preview updated. Save changes to apply.");
+  };
+
   const onSubmit: SubmitHandler<ProfileFormData> = async (data) => {
     setIsSubmitting(true);
     try {
-      // Make sure boolean value is sent correctly
-      const dataToSend = { ...data, is_public: !!data.is_public };
+      // The avatar_url is now updated directly by AvatarUploader calling updateUserProfile.
+      // So, we don't strictly need to send currentAvatarUrl from here unless we change that logic.
+      // However, sending all fields from the form is fine.
+      const dataToSend = { 
+        ...data, 
+        is_public: !!data.is_public,
+        // If AvatarUploader only updates its preview and expects this form to save:
+        // avatar_url: currentAvatarUrl 
+      };
+      
+      // If AvatarUploader already saved the avatar, this call will just update other fields.
+      // If only avatar changed and was saved by uploader, isDirty might be false here.
+      // We need to ensure this save button becomes active if avatar changed.
+      // For now, assume if other fields are dirty, they get saved.
+      // If only avatar changed, AvatarUploader already saved it.
+
       const { success, error } = await updateUserProfile(userId, dataToSend);
 
       if (success) {
         toast.success("პროფილი წარმატებით განახლდა!");
         if (onSuccess) {
-          onSuccess(dataToSend); // Pass updated data back to parent
+          onSuccess(dataToSend);
         }
-        reset(dataToSend); // Reset form to new default values, clearing dirty state
+        reset(dataToSend);
       } else {
         toast.error(error?.message || "პროფილის განახლება ვერ შესრულდა.");
       }
@@ -88,18 +124,40 @@ export function ProfileForm({ initialData, userId, onSuccess }: ProfileFormProps
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 max-w-2xl">
-      {/* Avatar Display (Upload functionality to be added later) */}
-      <div className="flex items-center space-x-4">
-        <Avatar className="h-20 w-20 ring-2 ring-purple-500/30">
-          <AvatarImage src={initialData.avatar_url || ''} alt={initialData.username} />
-          <AvatarFallback className="text-3xl bg-gray-800">
-            {initialData.username?.[0]?.toUpperCase() || '?'}
-          </AvatarFallback>
-        </Avatar>
-        <div>
-           <p className="text-sm text-gray-400">ავატარის შეცვლა მალე იქნება შესაძლებელი.</p>
-           {/* <Button type="button" variant="outline" size="sm" disabled>Change Avatar</Button> */}
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-8 max-w-2xl">
+      <div className="space-y-2">
+        <Label>პროფილის სურათი</Label>
+        <AvatarUploader 
+            userId={userId} 
+            currentAvatarUrl={currentAvatarUrl} 
+            onAvatarUpdate={handleAvatarUpdate} 
+            usernameInitial={initialData.username?.[0]?.toUpperCase() || '?'}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* First Name */}
+        <div className="space-y-2">
+          <Label htmlFor="first_name">სახელი</Label>
+          <Input 
+            id="first_name"
+            {...register("first_name")}
+            className="bg-black/30 border-white/10" 
+            placeholder="მაგ: გიორგი"
+          />
+          {errors.first_name && <p className="text-sm text-red-500">{errors.first_name.message}</p>}
+        </div>
+
+        {/* Last Name */} 
+        <div className="space-y-2">
+          <Label htmlFor="last_name">გვარი</Label>
+          <Input 
+            id="last_name"
+            {...register("last_name")}
+            className="bg-black/30 border-white/10" 
+            placeholder="მაგ: ბერიძე"
+          />
+          {errors.last_name && <p className="text-sm text-red-500">{errors.last_name.message}</p>}
         </div>
       </div>
 

@@ -40,7 +40,6 @@ interface VIPUser {
   username: string
   email: string
   vip_status: boolean
-  vip_tier: string
   vip_theme: string
   started_at?: string
   expires_at?: string | null
@@ -58,7 +57,6 @@ export default function VIPManagementPage() {
   
   // New VIP user form state
   const [selectedUserId, setSelectedUserId] = useState('')
-  const [selectedTier, setSelectedTier] = useState('basic')
   const [selectedTheme, setSelectedTheme] = useState('purple')
   const [expiryDate, setExpiryDate] = useState('')
   
@@ -83,7 +81,6 @@ export default function VIPManagementPage() {
             username,
             email,
             vip_status,
-            vip_tier,
             vip_theme,
             user_memberships (
               started_at,
@@ -101,7 +98,6 @@ export default function VIPManagementPage() {
           username: user.username,
           email: user.email,
           vip_status: user.vip_status,
-          vip_tier: user.vip_tier,
           vip_theme: user.vip_theme,
           started_at: user.user_memberships?.[0]?.started_at,
           expires_at: user.user_memberships?.[0]?.expires_at
@@ -152,7 +148,6 @@ export default function VIPManagementPage() {
         .from('profiles')
         .update({
           vip_status: true,
-          vip_tier: selectedTier,
           vip_theme: selectedTheme
         })
         .eq('id', selectedUserId)
@@ -162,7 +157,6 @@ export default function VIPManagementPage() {
       // Create or update membership record
       const membershipData = {
         id: selectedUserId,
-        tier: selectedTier,
         started_at: new Date().toISOString(),
         expires_at: expiryDate ? new Date(expiryDate).toISOString() : null,
         vip_theme: selectedTheme
@@ -185,7 +179,6 @@ export default function VIPManagementPage() {
           username,
           email,
           vip_status,
-          vip_tier,
           vip_theme,
           user_memberships (
             started_at,
@@ -201,7 +194,6 @@ export default function VIPManagementPage() {
         username: user.username,
         email: user.email,
         vip_status: user.vip_status,
-        vip_tier: user.vip_tier,
         vip_theme: user.vip_theme,
         started_at: user.user_memberships?.[0]?.started_at,
         expires_at: user.user_memberships?.[0]?.expires_at
@@ -224,7 +216,6 @@ export default function VIPManagementPage() {
       const { error: profileError } = await supabase
         .from('profiles')
         .update({
-          vip_tier: selectedTier,
           vip_theme: selectedTheme
         })
         .eq('id', selectedUser.id)
@@ -234,7 +225,6 @@ export default function VIPManagementPage() {
       // Update membership record
       const membershipData = {
         id: selectedUser.id,
-        tier: selectedTier,
         expires_at: expiryDate ? new Date(expiryDate).toISOString() : null,
         vip_theme: selectedTheme
       }
@@ -255,7 +245,6 @@ export default function VIPManagementPage() {
           user.id === selectedUser.id 
             ? {
                 ...user,
-                vip_tier: selectedTier,
                 vip_theme: selectedTheme,
                 expires_at: expiryDate ? new Date(expiryDate).toISOString() : null
               }
@@ -300,7 +289,6 @@ export default function VIPManagementPage() {
   // Handle edit click
   const handleEditClick = (user: VIPUser) => {
     setSelectedUser(user)
-    setSelectedTier(user.vip_tier || 'basic')
     setSelectedTheme(user.vip_theme || 'purple')
     setExpiryDate(user.expires_at ? new Date(user.expires_at).toISOString().split('T')[0] : '')
     setShowEditDialog(true)
@@ -330,7 +318,6 @@ export default function VIPManagementPage() {
               <TableRow>
                 <TableHead>Username</TableHead>
                 <TableHead>Email</TableHead>
-                <TableHead>VIP Tier</TableHead>
                 <TableHead>Theme</TableHead>
                 <TableHead>Started</TableHead>
                 <TableHead>Expires</TableHead>
@@ -340,7 +327,7 @@ export default function VIPManagementPage() {
             <TableBody>
               {vipUsers.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-4 text-gray-400">
+                  <TableCell colSpan={6} className="text-center py-4 text-gray-400">
                     No VIP users found
                   </TableCell>
                 </TableRow>
@@ -349,9 +336,6 @@ export default function VIPManagementPage() {
                   <TableRow key={user.id} className="border-t border-white/5">
                     <TableCell>{user.username}</TableCell>
                     <TableCell>{user.email}</TableCell>
-                    <TableCell>
-                      <VIPBadge tier={user.vip_tier || 'basic'} size="sm" />
-                    </TableCell>
                     <TableCell>
                       <div className={`h-4 w-4 rounded-full bg-${user.vip_theme || 'purple'}-500`}></div>
                     </TableCell>
@@ -448,21 +432,7 @@ export default function VIPManagementPage() {
             
             {/* VIP Settings */}
             <div className="space-y-4 pt-4 border-t border-white/10">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>VIP Tier</Label>
-                  <Select value={selectedTier} onValueChange={setSelectedTier}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select tier" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="basic">Basic</SelectItem>
-                      <SelectItem value="silver">Silver</SelectItem>
-                      <SelectItem value="gold">Gold</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                
+              <div className="grid grid-cols-1 gap-4">
                 <div className="space-y-2">
                   <Label>Theme Color</Label>
                   <Select value={selectedTheme} onValueChange={setSelectedTheme}>
@@ -516,21 +486,7 @@ export default function VIPManagementPage() {
           </DialogHeader>
           
           <div className="space-y-4 mt-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>VIP Tier</Label>
-                <Select value={selectedTier} onValueChange={setSelectedTier}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select tier" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="basic">Basic</SelectItem>
-                    <SelectItem value="silver">Silver</SelectItem>
-                    <SelectItem value="gold">Gold</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              
+            <div className="grid grid-cols-1 gap-4">
               <div className="space-y-2">
                 <Label>Theme Color</Label>
                 <Select value={selectedTheme} onValueChange={setSelectedTheme}>

@@ -318,7 +318,7 @@ export async function getUserProfile(userId: string) {
         success: false, 
         error: { 
           message: supabaseError instanceof Error ? supabaseError.message : 'Database connection error',
-          code: supabaseError.code || 'UNKNOWN'
+          code: (typeof supabaseError === 'object' && supabaseError !== null && 'code' in supabaseError) ? (supabaseError as any).code : 'UNKNOWN'
         } 
       };
     }
@@ -531,7 +531,7 @@ export async function getUserWatchlist(userId: string, contentType?: 'anime' | '
         success: false, 
         error: { 
           message: supabaseError.message || 'Database connection error',
-          code: supabaseError.code || 'UNKNOWN',
+          code: (typeof supabaseError === 'object' && supabaseError !== null && 'code' in supabaseError) ? (supabaseError as any).code : 'UNKNOWN',
           details: supabaseError.details || 'Check your internet connection and try refreshing the page.'
         } 
       };
@@ -686,4 +686,23 @@ export async function syncUserAfterLogin(userId: string) {
     console.error("Error syncing user after login:", error);
     return { success: false, error };
   }
+}
+
+export interface UserProfile {
+  id: string;
+  username: string | null;
+  avatar_url: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  bio?: string | null;
+  website?: string | null;
+  created_at?: string; 
+  vip_status?: boolean; 
+  vip_theme?: string; 
+  banner_url?: string;
+  comment_background_url?: string | null;
+  is_public?: boolean;
+  birth_date?: string | null;
+  location?: string | null;
+  // Add any other fields you expect from your profiles table
 } 

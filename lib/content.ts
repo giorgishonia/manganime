@@ -1,39 +1,34 @@
 import { supabase } from './supabase'
-import { Content, Episode, Chapter } from './supabase'
+import { Chapter } from './supabase' // Removed Episode and Content import
 
-// Content metadata interface with consistent chapter/episode tracking
+// Content metadata interface with consistent chapter tracking (episodes removed)
 export interface ContentMetadata {
   id: string
   title: string
   description: string
-  type: 'anime' | 'manga' | 'comics'
+  type: 'manga' | 'comics'
   status: string
   thumbnail: string
   bannerImage?: string
   rating?: number
   genres: string[]
   chapters_count?: number  // For manga/comics
-  episodes_count?: number  // For anime
   georgian_title?: string
   release_year?: number
+  view_count?: number
   chapter_data?: {        // More detailed chapter info
-    total: number
-    latest: number
-    lastUpdated: string
-  }
-  episode_data?: {        // More detailed episode info
     total: number
     latest: number
     lastUpdated: string
   }
 }
 
-// Get all content (anime, manga or comics)
-export async function getAllContent(type: 'anime' | 'manga' | 'comics', limit = 20, page = 0) {
+// Get all content (manga or comics)
+export async function getAllContent(type: 'manga' | 'comics', limit = 20, page = 0) {
   try {
     const { data, error, count } = await supabase
       .from('content')
-      .select('*', { count: 'exact' })
+      .select('*, view_count', { count: 'exact' })
       .eq('type', type)
       .order('created_at', { ascending: false })
       .range(page * limit, (page + 1) * limit - 1)
@@ -65,28 +60,6 @@ export async function getAllContent(type: 'anime' | 'manga' | 'comics', limit = 
           }
         }));
       }
-      
-      // For anime, get episode counts
-      if (type === 'anime') {
-        await Promise.all(data.map(async (item) => {
-          try {
-            const { data: episodes, error: episodesError } = await supabase
-              .from('episodes')
-              .select('id, number', { count: 'exact' })
-              .eq('content_id', item.id)
-              .order('number', { ascending: false })
-              .limit(1);
-              
-            if (!episodesError && episodes && episodes.length > 0) {
-              item.episodes_count = episodes[0].number;
-            } else if (!item.episodes_count) {
-              item.episodes_count = 0;
-            }
-          } catch (err) {
-            console.error(`Error fetching episodes for ${item.id}:`, err);
-          }
-        }));
-      }
     }
 
     // --- DEBUG: Log raw data from Supabase in getAllContent ---
@@ -94,7 +67,7 @@ export async function getAllContent(type: 'anime' | 'manga' | 'comics', limit = 
       id: d.id, 
       title: d.title, 
       chapters_count: d.chapters_count,
-      episodes_count: d.episodes_count
+      view_count: d.view_count
     })) || 'No data');
     // -------------------------------------------------------
 
@@ -111,12 +84,12 @@ export async function getAllContent(type: 'anime' | 'manga' | 'comics', limit = 
   }
 }
 
-// Get content by ID
-export async function getContentById(id: string) {
+// Get content by ID (manga or comics)
+export async function getContentById(id: string): Promise<{ success: boolean; content: ContentMetadata | null; error?: any }> {
   try {
     const { data, error } = await supabase
       .from('content')
-      .select('*')
+      .select('*, view_count')
       .eq('id', id)
       .single()
 
@@ -216,8 +189,8 @@ export async function getContentById(id: string) {
       data.characters = []; // Set empty array if no alternative_titles
     }
     
-    // Fetch chapters or episodes based on content type
-    if (data.type === 'manga' || data.type === 'comics') {
+    // Fetch chapters based on content type (episodes removed)
+    if (data && (data.type === 'manga' || data.type === 'comics')) {
       // Get chapters count from chapters table
       const { data: chapters, error: chaptersError } = await supabase
         .from('chapters')
@@ -245,35 +218,6 @@ export async function getContentById(id: string) {
         }
       }
     }
-    
-    if (data.type === 'anime') {
-      // Get episodes count from episodes table
-      const { data: episodes, error: episodesError } = await supabase
-        .from('episodes')
-        .select('id, number', { count: 'exact' })
-        .eq('content_id', id)
-        .order('number', { ascending: false })
-        .limit(1); // Just get the latest episode
-        
-      if (!episodesError && episodes && episodes.length > 0) {
-        // Set the counts consistently
-        data.episodes_count = episodes[0].number;
-        
-        // Add more detailed episode data
-        data.episode_data = {
-          total: episodes[0].number,
-          latest: episodes[0].number,
-          lastUpdated: new Date().toISOString()
-        };
-        
-        console.log(`Found ${data.episodes_count} episodes for ${data.title}`);
-      } else {
-        // Fallback - check if episodes_count is already set from before
-        if (!data.episodes_count) {
-          data.episodes_count = 0;
-        }
-      }
-    }
 
     // --- DEBUG: Log raw data from Supabase in getContentById ---
     console.log(`[getContentById - ${id}] Raw Supabase data:`, data ? { 
@@ -281,19 +225,19 @@ export async function getContentById(id: string) {
       title: data.title,
       type: data.type,
       chapters_count: data.chapters_count,
-      episodes_count: data.episodes_count
+      view_count: data.view_count
     } : 'No data');
     // -------------------------------------------------------
 
     return { success: true, content: data }
   } catch (error) {
     console.error('Get content error:', error)
-    return { success: false, error }
+    return { success: false, error, content: null }
   }
 }
 
-// Get content by genre
-export async function getContentByGenre(genre: string, type?: 'anime' | 'manga' | 'comics', limit = 20) {
+// Get content by genre (manga or comics)
+export async function getContentByGenre(genre: string, type?: 'manga' | 'comics', limit = 20) {
   try {
     let query = supabase
       .from('content')
@@ -319,13 +263,13 @@ export async function getContentByGenre(genre: string, type?: 'anime' | 'manga' 
   }
 }
 
-// Get trending content
-export async function getTrendingContent(type?: 'anime' | 'manga' | 'comics', limit = 10) {
+// Get trending content (manga or comics)
+export async function getTrendingContent(type?: 'manga' | 'comics', limit = 10) {
   try {
     let query = supabase
       .from('content')
-      .select('*')
-      .order('rating', { ascending: false })
+      .select('*, view_count')
+      .order('view_count', { ascending: false })
       .limit(limit)
     
     if (type) {
@@ -345,7 +289,7 @@ export async function getTrendingContent(type?: 'anime' | 'manga' | 'comics', li
   }
 }
 
-// Create new content (admin only)
+// Create new content (manga or comics)
 export async function createContent(contentData: any) {
   console.log("Creating content with data:", contentData);
   
@@ -422,14 +366,17 @@ export async function createContent(contentData: any) {
     }
     
     // Prepare final database content object
-    const dbContent = {
+    const dbContent: any = {
       title: contentData.title,
       description: contentData.description || "",
-      type: contentData.type || 'anime',
+      type: contentData.type || 'manga',
       status: contentData.status || 'ongoing',
       thumbnail: contentData.thumbnail,
-      bannerImage: contentData.bannerImage || null,
+      bannerImage: contentData.bannerImage || contentData.thumbnail, 
       genres: contentData.genres || [],
+      release_year: contentData.release_year ? parseInt(contentData.release_year.toString(), 10) : null,
+      chapters_count: contentData.type === 'manga' || contentData.type === 'comics' ? 
+                      (parseInt(contentData.chapters_count?.toString() || '0', 10) || 0) : 0,
       alternative_titles: alternative_titles,
       rating: contentData.rating,
       season: contentData.season,
@@ -437,11 +384,6 @@ export async function createContent(contentData: any) {
       mal_id: contentData.mal_id,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-      // Explicitly include chapter and episode counts
-      chapters_count: contentData.type === 'manga' || contentData.type === 'comics' ? 
-                     (parseInt(contentData.chapters_count?.toString() || '0', 10) || 0) : 0,
-      episodes_count: contentData.type === 'anime' ? 
-                     (parseInt(contentData.episodes_count?.toString() || '0', 10) || 0) : 0
     };
 
     // Log the prepared data
@@ -665,15 +607,6 @@ export async function updateContent(id: string, contentData: any) {
       if (contentData.chapters_count !== undefined) {
         dbContent.chapters_count = parseInt(contentData.chapters_count.toString(), 10) || 0;
         console.log(`[updateContent] Setting chapters_count to ${dbContent.chapters_count}`);
-        // Reset episodes count for manga/comics
-        dbContent.episodes_count = 0;
-      }
-    } else if (contentData.type === 'anime') {
-      if (contentData.episodes_count !== undefined) {
-        dbContent.episodes_count = parseInt(contentData.episodes_count.toString(), 10) || 0;
-        console.log(`[updateContent] Setting episodes_count to ${dbContent.episodes_count}`);
-        // Reset chapters count for anime
-        dbContent.chapters_count = 0;
       }
     }
     
@@ -734,79 +667,6 @@ export async function deleteContent(id: string) {
     return { success: true }
   } catch (error) {
     console.error('Delete content error:', error)
-    return { success: false, error }
-  }
-}
-
-// Get episodes for anime
-export async function getEpisodes(contentId: string) {
-  try {
-    const { data, error } = await supabase
-      .from('episodes')
-      .select('*')
-      .eq('content_id', contentId)
-      .order('number', { ascending: true })
-
-    if (error) {
-      throw error
-    }
-
-    return { success: true, episodes: data }
-  } catch (error) {
-    console.error('Get episodes error:', error)
-    return { success: false, error }
-  }
-}
-
-// Get episode by number
-export async function getEpisodeByNumber(contentId: string, episodeNumber: number) {
-  try {
-    const { data, error } = await supabase
-      .from('episodes')
-      .select('*')
-      .eq('content_id', contentId)
-      .eq('number', episodeNumber)
-      .single()
-
-    if (error) {
-      throw error
-    }
-
-    return { success: true, episode: data }
-  } catch (error) {
-    console.error('Get episode error:', error)
-    return { success: false, error }
-  }
-}
-
-// Add episode (admin only)
-export async function addEpisode(episodeData: Omit<Episode, 'id' | 'created_at'>) {
-  try {
-    const { data, error } = await supabase
-      .from('episodes')
-      .insert({
-        ...episodeData,
-        created_at: new Date().toISOString()
-      })
-      .select()
-
-    if (error) {
-      throw error
-    }
-    
-    // Update the content episode count after adding an episode
-    if (data && data.length > 0) {
-      const contentId = data[0].content_id;
-      const contentType = 'anime'; // Episodes are for anime
-      
-      // Update the content with the latest episode count
-      await updateContentCounts(contentId, contentType);
-      console.log(`Updated anime episode counts after adding episode ${data[0].number}`);
-    }
-
-    return { success: true, episode: data }
-  } catch (error) {
-    console.error('Add episode error:', error)
     return { success: false, error }
   }
 }
@@ -904,20 +764,20 @@ export async function addChapter(chapterData: Omit<Chapter, 'id' | 'created_at'>
   }
 }
 
-// Search content
-export async function searchContent(query: string, type?: 'anime' | 'manga' | 'comics', limit = 20) {
+// Search content (manga or comics)
+export async function searchContent(query: string, type?: 'manga' | 'comics', limit = 20) {
   try {
-    let supabaseQuery = supabase
+    let contentQuery = supabase
       .from('content')
-      .select('*')
+      .select('*, view_count')
       .or(`title.ilike.%${query}%, description.ilike.%${query}%`)
       .limit(limit)
     
     if (type) {
-      supabaseQuery = supabaseQuery.eq('type', type)
+      contentQuery = contentQuery.eq('type', type)
     }
     
-    const { data, error } = await supabaseQuery
+    const { data, error } = await contentQuery
 
     if (error) {
       throw error
@@ -930,8 +790,8 @@ export async function searchContent(query: string, type?: 'anime' | 'manga' | 'c
   }
 }
 
-// Update content chapter or episode counts
-export async function updateContentCounts(id: string, type: 'anime' | 'manga' | 'comics'): Promise<boolean> {
+// Update content chapter/episode counts
+export async function updateContentCounts(id: string, type: 'manga' | 'comics'): Promise<boolean> {
   try {
     let updates: any = {
       updated_at: new Date().toISOString()
@@ -950,22 +810,10 @@ export async function updateContentCounts(id: string, type: 'anime' | 'manga' | 
       if (!chaptersError && chapters && chapters.length > 0) {
         updates.chapters_count = chapters[0].number;
       }
-    } else if (type === 'anime') {
-      // Get latest episode info
-      const { data: episodes, error: episodesError } = await supabase
-        .from('episodes')
-        .select('id, number', { count: 'exact' })
-        .eq('content_id', id)
-        .order('number', { ascending: false })
-        .limit(1);
-        
-      if (!episodesError && episodes && episodes.length > 0) {
-        updates.episodes_count = episodes[0].number;
-      }
     }
     
     // Only update if we have something to update
-    if ((updates.chapters_count !== undefined) || (updates.episodes_count !== undefined)) {
+    if ((updates.chapters_count !== undefined)) {
       const { error } = await supabase
         .from('content')
         .update(updates)
@@ -977,8 +825,7 @@ export async function updateContentCounts(id: string, type: 'anime' | 'manga' | 
       }
       
       console.log(`Updated content counts for ${id}:`, 
-        updates.chapters_count !== undefined ? `chapters: ${updates.chapters_count}` : 
-        updates.episodes_count !== undefined ? `episodes: ${updates.episodes_count}` : 'no updates');
+        updates.chapters_count !== undefined ? `chapters: ${updates.chapters_count}` : 'no updates');
       return true;
     }
     
@@ -987,4 +834,30 @@ export async function updateContentCounts(id: string, type: 'anime' | 'manga' | 
     console.error(`Error in updateContentCounts for ${id}:`, error);
     return false;
   }
-} 
+}
+
+// --- NEW FUNCTION ---
+// Increment the view count for a specific content item
+export async function incrementContentView(contentId: string): Promise<{ success: boolean; error?: any }> {
+  try {
+    const response = await fetch('/api/content/view', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ contentId }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+    }
+    
+    console.log(`View count incremented for ${contentId}`);
+    return { success: true };
+  } catch (error) {
+    console.error('Error incrementing view count:', error);
+    return { success: false, error };
+  }
+}
+// --- END NEW FUNCTION --- 

@@ -69,18 +69,16 @@ interface ContentItem {
 // Wrapper function to get all content for admin use
 async function getAllContentForAdmin() {
   try {
-    // Get anime, manga, and comics content and combine them
-    const animeResult = await getAllContent('anime', 100, 0);
+    // Get manga, and comics content and combine them
     const mangaResult = await getAllContent('manga', 100, 0);
     const comicsResult = await getAllContent('comics', 100, 0);
     
     // Extract content arrays or use empty arrays
-    const animeContent = animeResult?.success ? animeResult.content || [] : [];
     const mangaContent = mangaResult?.success ? mangaResult.content || [] : [];
     const comicsContent = comicsResult?.success ? comicsResult.content || [] : [];
     
     // Combine all content types
-    return [...animeContent, ...mangaContent, ...comicsContent];
+    return [...mangaContent, ...comicsContent];
   } catch (error) {
     console.error("Failed to fetch all content:", error);
     return [];
@@ -91,8 +89,8 @@ export default function AdminContentPage() {
   const router = useRouter();
   const { user, isLoading: authLoading } = useAuth();
   const searchParams = useSearchParams();
-  const contentId = searchParams.get("id");
-  const isNew = searchParams.get("new") === "true";
+  const contentId = searchParams ? searchParams.get("id") : null;
+  const isNew = searchParams ? searchParams.get("new") === "true" : false;
   
   const [contentList, setContentList] = useState<any[]>([]);
   const [singleContent, setSingleContent] = useState<ContentItem | null>(null);

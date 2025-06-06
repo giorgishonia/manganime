@@ -113,14 +113,22 @@ export function getCurrentUsername(nextAuthSession: any, supabaseUser: any): str
  * @returns The avatar URL or null if not found
  */
 export function getCurrentAvatarUrl(nextAuthSession: any, supabaseUser: any): string | null {
-  // Try NextAuth first
-  if (nextAuthSession?.user?.image) {
-    return nextAuthSession.user.image;
-  }
-  
-  // Then try Supabase
+  // Prioritize Supabase avatars first - check profile via user metadata
   if (supabaseUser?.user_metadata?.avatar_url) {
     return supabaseUser.user_metadata.avatar_url;
+  }
+  
+  // For users authenticated via Supabase but without avatar in metadata,
+  // attempt to construct the Supabase storage URL if possible
+  if (supabaseUser?.id) {
+    // Try to use the public Supabase storage URL for avatars
+    const supabaseAvatarUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/avatars/${supabaseUser.id}`;
+    return supabaseAvatarUrl;
+  }
+  
+  // Only use NextAuth image as a last resort
+  if (nextAuthSession?.user?.image) {
+    return nextAuthSession.user.image;
   }
   
   return null;

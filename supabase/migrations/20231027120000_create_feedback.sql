@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS suggestions (
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   title TEXT NOT NULL,
   description TEXT NOT NULL,
-  type TEXT NOT NULL CHECK (type IN ('anime', 'manga', 'sticker', 'gif')),
+  type TEXT NOT NULL CHECK (type IN ('manga', 'sticker', 'gif', 'comics')),
   image_url TEXT,
   vote_count INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -147,4 +147,16 @@ EXECUTE PROCEDURE update_modified_column();
 CREATE TRIGGER update_comments_timestamp
 BEFORE UPDATE ON comments
 FOR EACH ROW
-EXECUTE PROCEDURE update_modified_column(); 
+EXECUTE PROCEDURE update_modified_column();
+
+CREATE TABLE feedback (
+    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+    created_at timestamp WITH time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    type TEXT NOT NULL CHECK (type IN ('manga', 'sticker', 'gif', 'comics')),
+    image_url TEXT,
+    vote_count INTEGER NOT NULL DEFAULT 0,
+    updated_at timestamp with time zone default now()
+); 

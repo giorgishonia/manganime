@@ -39,6 +39,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import Image from "next/image"
 import Link from "next/link"
 import { hasMangaBeenRead, getMangaProgress, getRecentlyRead, getLatestChapterRead, calculateMangaProgressByChapter } from "@/lib/reading-history"
+import { MangaView } from "@/components/manga-view"
 
 // Define interface for comics data
 interface ComicsData {
@@ -54,6 +55,7 @@ interface ComicsData {
   genres: string[]
   release_year?: number
   totalChapters?: number
+  view_count?: number
 }
 
 // Animation variants
@@ -121,160 +123,6 @@ function toggleComicsFavorite(comics: ComicsData): boolean {
   }
 }
 
-// Comics grid card component
-const ComicsCard = ({ comics, index }: { comics: ComicsData, index: number }) => {
-  const router = useRouter()
-  const hasBeenRead = hasMangaBeenRead(comics.id) // Reuse manga reading history functions
-  // const progress = getMangaProgress(comics.id); // This might be redundant
-  const [isFavorite, setIsFavorite] = useState(false)
-  
-  // Check favorite status on mount
-  useEffect(() => {
-    setIsFavorite(isComicsFavorited(comics.id));
-  }, [comics.id]);
-  
-  // Get the latest chapter read
-  const latestChapterRead = getLatestChapterRead(comics.id) // Reuse manga function
-  
-  // Use the pre-calculated totalChapters from ComicsData
-  const totalChapters = comics.totalChapters || 0;
-  
-  // Calculate overall comics progress based on chapters
-  const progressPercentage = calculateMangaProgressByChapter(latestChapterRead, totalChapters) // Reuse manga function
-  
-  // Handle favorite button click
-  const handleFavoriteClick = (e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent card click
-    const newStatus = toggleComicsFavorite(comics);
-    setIsFavorite(newStatus);
-  };
-  
-  return (
-    <m.div
-      variants={cardVariants} // Assuming cardVariants are defined appropriately
-      initial="initial"
-      animate="animate"
-      exit="exit" // Ensure exit is defined if used with AnimatePresence
-      transition={{ delay: index * 0.05 }}
-      className="group cursor-pointer flex flex-col h-full" // Added flex flex-col and h-full
-      onClick={() => router.push(`/comics/${comics.id}`)}
-    >
-      <div className="relative overflow-hidden rounded-xl bg-transparent transition-all duration-300 group-hover:border-purple-500/70 group-hover:shadow-2xl group-hover:shadow-purple-500/20 flex flex-col flex-grow">
-        <div className="aspect-[2/3] relative overflow-hidden">
-          <m.div // Consider if this motion div is needed or if Image itself handles motion
-            transition={{ duration: 0.4 }}
-            className="h-full w-full"
-          >
-            <Image 
-              src={comics.thumbnail || "/placeholder.svg"} 
-              alt={comics.title}
-              fill
-              className="object-cover transition-transform duration-300 ease-in-out group-hover:scale-110"
-              sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-            />
-          </m.div>
-          
-          <div className="absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-black/90 via-black/70 to-transparent pointer-events-none"></div>
-
-          {/* BookOpen icon overlay on hover (assuming comics are read like manga) */}
-          <div className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-            <BookOpen className="w-12 h-12 text-white/90 drop-shadow-lg" />
-          </div>
-
-          {/* Favorite button - Top Right */}
-          <button 
-            onClick={handleFavoriteClick}
-            className={cn(
-              "absolute top-2.5 right-2.5 z-20 p-2 rounded-full transition-all duration-300 backdrop-blur-md border",
-              isFavorite 
-                ? "bg-red-500/30 border-red-500/50 text-red-400" 
-                : "bg-black/50 border-white/20 text-white/80 hover:bg-red-500/20 hover:text-red-400 hover:border-red-500/40",
-              "opacity-0 group-hover:opacity-100"
-            )}
-            aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
-          >
-            <m.div
-              initial={{ scale: 1 }}
-              animate={{ scale: isFavorite ? 1.1 : 1 }}
-              whileTap={{ scale: 0.9 }}
-              transition={{ type: "spring", stiffness: 400, damping: 12 }}
-            >
-              <Heart className={cn("w-4 h-4", isFavorite && "fill-current")} />
-            </m.div>
-          </button>
-          
-          {/* Rating badge - Top Left */}
-          {comics.rating > 0 && (
-            <div className="absolute top-2.5 left-2.5 bg-black/70 backdrop-blur-sm px-2.5 py-1 rounded-lg flex items-center gap-1 text-xs text-yellow-400 border border-yellow-500/30 shadow-md">
-              <Star className="w-3.5 h-3.5 fill-current" />
-              <span className="font-semibold">{comics.rating.toFixed(1)}</span>
-            </div>
-          )}
-          
-          {/* Reading progress indicator bar */}
-          {hasBeenRead && (
-            <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-gray-700/50">
-              <m.div 
-                className="h-full bg-gradient-to-r from-purple-500 to-indigo-500 shadow-lg" 
-                style={{ width: `${progressPercentage}%` }}
-                initial={{ width: 0 }}
-                animate={{ width: `${progressPercentage}%` }}
-                transition={{ duration: 0.5, ease: "easeOut" }}
-              />
-            </div>
-          )}
-
-          {/* Progress Percentage Text Badge - Bottom Left on Image */}
-          {hasBeenRead && (
-            <div className="absolute bottom-2.5 left-2.5 mb-0.5 bg-black/70 backdrop-blur-sm text-white px-2 py-0.5 rounded-md text-xs font-medium flex items-center gap-1 border border-purple-500/30 shadow-md">
-              <span className="text-purple-300">{progressPercentage}% წაკითხულია</span>
-            </div>
-          )}
-          
-          {/* Genre pills - show first one - Bottom Right on Image */}
-          <div className="absolute bottom-2.5 right-2.5 flex flex-wrap gap-1.5 max-w-[calc(100%-80px)]">
-            {comics.genres?.slice(0, 1).map((genre, idx) => (
-              <div key={idx} className="text-xs px-2.5 py-1 bg-black/70 backdrop-blur-sm rounded-lg truncate max-w-full border border-white/20 shadow-md">
-                {genre}
-              </div>
-            ))}
-          </div>
-        </div>
-        
-        <div className="p-3.5 space-y-1.5 mt-auto"> {/* mt-auto pushes content to bottom */}
-          <h3 className="text-base font-semibold text-white line-clamp-1 group-hover:text-purple-400 transition-colors duration-200" title={comics.title}>
-            {comics.title}
-          </h3>
-          {comics.englishTitle && comics.englishTitle !== comics.title && (
-            <p className="text-xs text-gray-400 line-clamp-1 mt-0.5" title={comics.englishTitle}>
-              {comics.englishTitle}
-            </p>
-          )}
-          
-          <div className="flex items-center gap-3 pt-1 text-xs text-gray-400">
-            {comics.status && (
-              <div className="flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5 text-gray-500" />
-                <span>{comics.status}</span>
-              </div>
-            )}
-            <div className="flex items-center gap-1.5">
-              <BookOpen className="w-3.5 h-3.5 text-gray-500" />
-              <span>{comics.chapters}</span>
-            </div>
-            {comics.release_year && (
-              <div className="flex items-center gap-1.5">
-                <CalendarDays className="w-3.5 h-3.5 text-gray-500" />
-                <span>{comics.release_year}</span>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    </m.div>
-  )
-} 
-
 export default function ComicsPage() {
   // State
   const [featuredComics, setFeaturedComics] = useState<ComicsData[]>([])
@@ -322,7 +170,8 @@ export default function ComicsPage() {
               chapters: chapterCount > 0 ? `${chapterCount} თავი` : "0 თავი",
               totalChapters: chapterCount,
               genres: content.genres || [],
-              release_year: content.release_year
+              release_year: content.release_year,
+              view_count: content.view_count ?? 0
             }
           }).filter((content: {image?: string}) => content.image);
           
@@ -882,60 +731,27 @@ export default function ComicsPage() {
               </div>
             </div>
             
-            {/* Comics grid/list - Adjust grid columns */}
+            {/* USE MangaView component here */}
             <AnimatePresence mode="wait">
               {isLoading ? (
                 <CategorySkeleton count={12} />
               ) : (
-                <m.div
-                  key={`view-${viewMode}-sort-${sortBy}-filter-${selectedGenres.join()}-search-${searchQuery}`}
-                  variants={contentVariants}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  className={cn(
-                    viewMode === "grid" 
-                      ? "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 md:gap-4" // Responsive columns
-                      : "flex flex-col gap-3"
-                  )}
-                >
-                  {filteredComics.length > 0 ? (
-                    viewMode === "grid" ? (
-                      filteredComics.map((comic, index) => (
-                        <ComicsCard 
-                          key={comic.id} 
-                          comics={comic} 
-                          index={index}
-                        />
-                      ))
-                    ) : (
-                      <div className="text-center py-12">
-                        <p className="text-gray-400">სია ცარიელია</p>
-                      </div>
-                    )
-                  ) : (
-                    <div className="col-span-full py-12 text-center">
-                      <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-800/50 mb-4">
-                        <Search className="h-6 w-6 text-gray-400" />
-                      </div>
-                      <h3 className="text-lg font-medium mb-2">კომიქსი ვერ მოიძებნა</h3>
-                      <p className="text-gray-400 max-w-md mx-auto mb-4">
-                        ვერ ვიპოვეთ კომიქსი, რომელიც შეესაბამება თქვენს ფილტრებს. სცადეთ ძიების ან ფილტრის პარამეტრების შეცვლა.
-                      </p>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setSearchQuery("");
-                          setSelectedGenres([]);
-                          setSortBy("popular");
-                        }}
-                      >
-                        ყველა ფილტრის გასუფთავება
-                      </Button>
-                    </div>
-                  )}
-                </m.div>
+                <MangaView 
+                  key={`view-${viewMode}-sort-${sortBy}-filter-${selectedGenres.join()}-search-${searchQuery}`} // Key to force re-render
+                  contentData={filteredComics.map(c => ({ ...c, type: 'comics' }))} // Pass filtered data with type
+                  categories={availableGenres} // Pass available genres
+                  selectedCategory={selectedGenres[0] || 'ყველა'} // Pass first selected or 'ყველა'
+                  setSelectedCategory={(category) => { // Handle category selection
+                    if (category === 'ყველა') {
+                      setSelectedGenres([]);
+                    } else {
+                      setSelectedGenres([category]);
+                    }
+                  }}
+                  contentType='comics' // Specify content type
+                  hoveredCard={null} // Assuming MangaView manages hover internally
+                  setHoveredCard={() => {}} // Dummy function
+                />
               )}
             </AnimatePresence>
           </m.div>

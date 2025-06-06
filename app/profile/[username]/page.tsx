@@ -96,7 +96,7 @@ interface ActivityItem {
 export default function ProfilePage() {
   // Get params using the hook
   const params = useParams();
-  const targetUsername = params.username as string; // Get username and cast to string
+  const targetUsername = params?.username as string; // Get username and cast to string, with optional chaining
   
   // State for the profile being viewed
   const [targetProfile, setTargetProfile] = useState<UserProfile | null>(null);
@@ -302,9 +302,8 @@ export default function ProfilePage() {
         if (isOwnProfile && loggedInUser) {
           try {
             // Get local items in parallel
-            const [localMangaItems, localAnimeItems] = await Promise.all([
+            const [localMangaItems] = await Promise.all([
               getLibraryItems('manga'),
-              getLibraryItems('anime')
             ]);
             
             // Process local items if needed
@@ -436,7 +435,7 @@ export default function ProfilePage() {
   }
   
   // Calculate age using target profile's birth date
-  const age = calculateAge(targetProfile.birth_date);
+  const age = calculateAge(targetProfile.birth_date ?? null);
 
   // Main component render using targetProfile data
   return (
@@ -526,6 +525,8 @@ export default function ProfilePage() {
                           initialData={{
                               id: loggedInUserProfile.id,
                               username: loggedInUserProfile.username || '',
+                              first_name: loggedInUserProfile.first_name || null,
+                              last_name: loggedInUserProfile.last_name || null,
                               avatar_url: loggedInUserProfile.avatar_url,
                               bio: loggedInUserProfile.bio || '',
                               is_public: loggedInUserProfile.is_public ?? true,

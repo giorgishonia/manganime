@@ -3,18 +3,21 @@ import { supabase } from './supabase';
 // Type for profile data, ensure it matches your schema
 export interface UserProfile {
   id: string;
-  username: string;
+  username: string | null;
+  avatar_url: string | null;
   first_name: string | null;
   last_name: string | null;
-  avatar_url: string | null;
   bio: string | null;
-  interests: string[] | null;
-  location: string | null;
-  birth_date: string | null; // Store as ISO string or yyyy-mm-dd
-  created_at: string;
-  updated_at?: string;
-  has_completed_onboarding: boolean;
+  website: string | null;
+  created_at?: string; 
+  vip_status?: boolean;
+  vip_theme?: string;
+  banner_url?: string;
+  comment_background_url?: string | null; // Added for comment backgrounds
   is_public?: boolean;
+  birth_date?: string | null; // Added from profile page
+  location?: string | null;   // Added from profile page
+  has_completed_onboarding?: boolean;
 }
 
 // --- User Profile Functions --- 

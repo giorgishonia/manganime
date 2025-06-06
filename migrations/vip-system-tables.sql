@@ -1,7 +1,6 @@
 -- VIP membership table
 CREATE TABLE IF NOT EXISTS user_memberships (
   id UUID PRIMARY KEY REFERENCES auth.users(id),
-  tier VARCHAR(20) NOT NULL DEFAULT 'basic',  -- 'basic', 'silver', 'gold'
   started_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
   expires_at TIMESTAMP WITH TIME ZONE,
   is_recurring BOOLEAN DEFAULT FALSE,
@@ -62,13 +61,26 @@ BEGIN
     ALTER TABLE profiles ADD COLUMN vip_status BOOLEAN DEFAULT FALSE;
   END IF;
 
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
-                 WHERE table_name = 'profiles' AND column_name = 'vip_tier') THEN
-    ALTER TABLE profiles ADD COLUMN vip_tier VARCHAR(20) DEFAULT 'basic';
+  -- Remove vip_tier from profiles if it exists
+  IF EXISTS (SELECT 1 FROM information_schema.columns 
+             WHERE table_name = 'profiles' AND column_name = 'vip_tier') THEN
+    ALTER TABLE profiles DROP COLUMN vip_tier;
   END IF;
   
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
                  WHERE table_name = 'profiles' AND column_name = 'vip_theme') THEN
     ALTER TABLE profiles ADD COLUMN vip_theme VARCHAR(20) DEFAULT 'purple';
+  END IF;
+
+  -- Add is_public column to profiles if it doesn't exist
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                 WHERE table_name = 'profiles' AND column_name = 'is_public') THEN
+    ALTER TABLE profiles ADD COLUMN is_public BOOLEAN DEFAULT true;
+  END IF;
+
+  -- Add comment_background_url column to profiles if it doesn't exist
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                 WHERE table_name = 'profiles' AND column_name = 'comment_background_url') THEN
+    ALTER TABLE profiles ADD COLUMN comment_background_url TEXT;
   END IF;
 END$$; 

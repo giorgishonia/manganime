@@ -15,7 +15,7 @@ export interface Database {
           user_id: string
           title: string
           description: string
-          type: 'anime' | 'manga' | 'sticker' | 'gif'
+          type: "sticker" | "gif" | "manga"
           image_url: string | null
           vote_count: number
           created_at: string
@@ -26,7 +26,7 @@ export interface Database {
           user_id: string
           title: string
           description: string
-          type: 'anime' | 'manga' | 'sticker' | 'gif'
+          type: "sticker" | "gif" | "manga"
           image_url?: string | null
           vote_count?: number
           created_at?: string
@@ -37,7 +37,7 @@ export interface Database {
           user_id?: string
           title?: string
           description?: string
-          type?: 'anime' | 'manga' | 'sticker' | 'gif'
+          type?: "sticker" | "gif" | "manga"
           image_url?: string | null
           vote_count?: number
           created_at?: string

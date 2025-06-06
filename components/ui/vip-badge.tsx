@@ -1,20 +1,22 @@
 import React from "react";
-import { motion } from "framer-motion";
+import { motion, AnimationDefinition, PanInfo } from "framer-motion";
 import { cn } from "@/lib/utils";
 
-interface VIPBadgeProps extends React.HTMLAttributes<HTMLDivElement> {
-  tier?: 'basic' | 'silver' | 'gold';
+// Props that Framer Motion re-types with its own signatures
+type FramerMotionOverriddenProps = 'onAnimationStart' | 'onAnimationComplete' | 'onDragStart' | 'onDrag' | 'onDragEnd' | 'onHoverStart' | 'onHoverEnd' | 'onTap' | 'onTapStart' | 'onTapCancel';
+
+interface VIPBadgeProps extends Omit<React.HTMLAttributes<HTMLDivElement>, FramerMotionOverriddenProps> {
+  // If you need to expose Framer Motion's specific versions of these handlers, define them here, e.g.:
+  // onAnimationStart?: (definition: AnimationDefinition) => void;
+  // onDrag?: (event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => void;
+
   animated?: boolean;
   size?: 'sm' | 'md' | 'lg';
   showCrown?: boolean;
 }
 
-// Color mappings for different tiers
-const tierColors = {
-  basic: 'from-purple-500 to-purple-300',
-  silver: 'from-slate-400 to-slate-200',
-  gold: 'from-amber-500 to-amber-300',
-};
+// Default color for the badge
+const defaultBadgeColor = 'from-purple-500 to-purple-300';
 
 // Size mappings
 const sizeMappings = {
@@ -24,7 +26,6 @@ const sizeMappings = {
 };
 
 export function VIPBadge({
-  tier = 'basic',
   animated = true,
   size = 'sm',
   showCrown = true,
@@ -36,17 +37,17 @@ export function VIPBadge({
     initial: { scale: 1 },
     hover: animated ? { 
       scale: 1.05, 
-      boxShadow: `0 0 8px rgba(${tier === 'gold' ? '255, 215, 0' : tier === 'silver' ? '192, 192, 192' : '128, 0, 128'}, 0.5)`
+      boxShadow: `0 0 8px rgba(128, 0, 128, 0.5)` // Default purple shadow
     } : {}
   };
   
   return (
     <motion.div
       className={cn(
-        "rounded-full font-bold flex items-center justify-center",
-        `bg-gradient-to-r ${tierColors[tier]}`,
+        "rounded-full ml-2 font-bold flex items-center justify-center",
+        `bg-gradient-to-r ${defaultBadgeColor}`,
         sizeMappings[size],
-        tier === 'basic' ? 'text-white' : 'text-black',
+        'text-white', // Default text color
         className
       )}
       initial="initial"
@@ -62,7 +63,7 @@ export function VIPBadge({
           )} />
         </span>
       )}
-      VIP {tier.charAt(0).toUpperCase() + tier.slice(1)}
+      VIP
     </motion.div>
   );
 }

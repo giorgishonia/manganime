@@ -12,7 +12,7 @@ function Skeleton({
   )
 }
 
-// Card skeleton for anime/manga items
+// Card skeleton for manga/comics items
 function CardSkeleton() {
   return (
     <div className="flex-none w-[160px] sm:w-[180px]">
@@ -51,7 +51,7 @@ function TextBlockSkeleton({ lines = 3 }: { lines?: number }) {
   )
 }
 
-// Episode/chapter item skeleton
+// List item skeleton (generic)
 function ListItemSkeleton() {
   return (
     <div className="flex items-center gap-3 bg-gray-800/50 rounded-md p-3 w-[280px]">
@@ -86,7 +86,7 @@ function CategorySkeleton({ count = 5 }: { count?: number }) {
   )
 }
 
-// Detailed view skeleton for anime/manga detail page
+// Detailed view skeleton for manga/comics detail page
 function DetailViewSkeleton() {
   return (
     <div className="flex flex-col md:flex-row gap-6">
@@ -104,6 +104,19 @@ function DetailViewSkeleton() {
   )
 }
 
+// Chapter item skeleton (episodes removed)
+function ChapterItemSkeleton() {
+  return (
+    <div className="flex items-center gap-3 bg-gray-800/50 rounded-md p-3 w-[280px]">
+      <Skeleton className="w-16 h-16 rounded" />
+      <div className="flex-1 space-y-2">
+        <Skeleton className="h-4 w-3/4" />
+        <Skeleton className="h-3 w-1/2" />
+      </div>
+    </div>
+  )
+}
+
 export { 
   Skeleton, 
   CardSkeleton, 
@@ -112,5 +125,6 @@ export {
   ListItemSkeleton,
   CarouselSkeleton,
   CategorySkeleton,
-  DetailViewSkeleton
+  DetailViewSkeleton,
+  ChapterItemSkeleton
 }

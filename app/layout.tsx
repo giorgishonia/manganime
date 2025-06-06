@@ -51,7 +51,8 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-      <link rel="icon" href="/images/manganimelogo.png" type="image/png" />
+        <meta charSet="UTF-8" />
+        <link rel="icon" href="/images/manganimelogo.png" type="image/png" />
       </head>
       <body className={inter.className} suppressHydrationWarning>
         <NextAuthProvider>

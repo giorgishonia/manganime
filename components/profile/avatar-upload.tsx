@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import { FileUpload } from '@/components/ui/file-upload'
 import { uploadFile, deleteFile, getAvatarUrl } from '@/lib/upload'
-import { useUser } from '@/hooks/use-user'
+import { useAuth } from '@/components/supabase-auth-provider'
 import { updateUserProfile } from '@/lib/users'
 
 interface AvatarUploadProps {
@@ -18,7 +18,7 @@ export function AvatarUpload({
   onAvatarChange,
   className 
 }: AvatarUploadProps) {
-  const { user, refreshUser } = useUser()
+  const { user, profile, refreshUserProfile: refreshUser } = useAuth()
   const [isUploading, setIsUploading] = useState(false)
 
   const handleFileSelect = async (file: File) => {
@@ -67,13 +67,14 @@ export function AvatarUpload({
   return (
     <FileUpload
       previewUrl={currentAvatarUrl || undefined}
-      previewAlt={user?.username || 'User avatar'}
-      onFileSelect={handleFileSelect}
-      accept="image/png,image/jpeg,image/webp"
+      previewAlt={profile?.username || user?.email || 'User avatar'}
+      onFileUpload={handleFileSelect}
+      allowedTypes={["image/png", "image/jpeg", "image/webp"]}
       maxSizeMB={1}
-      label="Profile Photo"
       buttonText={isUploading ? 'Uploading...' : 'Change Photo'}
       className={className}
+      isLoading={isUploading}
+      showPreview={true}
     />
   )
 } 

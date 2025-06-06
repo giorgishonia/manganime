@@ -130,7 +130,7 @@ export default function HistoryPage() {
                   </Link>
                   
                   <p className="text-sm text-gray-300 truncate mb-2">
-                    თავი {item.chapterNumber}: {item.chapterTitle}
+                    {item.chapterTitle}
                   </p>
                   
                   <p className="text-xs text-gray-500 mb-3">

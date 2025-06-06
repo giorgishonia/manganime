@@ -26,11 +26,10 @@ interface SearchResult {
 }
 
 // Function to fetch search results from our database
-async function fetchSearchResults(query: string, type: "anime" | "manga" | "comics"): Promise<SearchResult[]> {
+async function fetchSearchResults(query: string, type: "manga" | "comics"): Promise<SearchResult[]> {
   if (query.length < 2) return [];
-  
   try {
-    const response = await searchContent(query, type);
+    const response = await searchContent(query, type as "manga" | "comics" | undefined);
     
     if (response.success && response.content) {
       return response.content.map((item: any) => ({
@@ -51,7 +50,7 @@ async function fetchSearchResults(query: string, type: "anime" | "manga" | "comi
 
 export function SearchModal({ isOpen, onClose }: SearchModalProps) {
   const [query, setQuery] = useState("")
-  const [searchType, setSearchType] = useState<"anime" | "manga" | "comics">("anime")
+  const [searchType, setSearchType] = useState<"manga" | "comics">("manga")
   const [results, setResults] = useState<SearchResult[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -176,12 +175,6 @@ export function SearchModal({ isOpen, onClose }: SearchModalProps) {
                 <div className="border-t border-white/5 p-3 flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <ToggleButton
-                      active={searchType === "anime"}
-                      onClick={() => setSearchType("anime")}
-                      icon={<Film className="h-4 w-4" />}
-                      label="ანიმე"
-                    />
-                    <ToggleButton
                       active={searchType === "manga"}
                       onClick={() => setSearchType("manga")}
                       icon={<BookOpen className="h-4 w-4" />}
@@ -305,7 +298,7 @@ export function SearchModal({ isOpen, onClose }: SearchModalProps) {
                       exit={{ opacity: 0 }}
                       className="p-8 text-center text-gray-400"
                     >
-                      <p>დაიწყეთ ტექსტის შეყვანა {searchType === "anime" ? "ანიმეს" : "მანგის"} მოსაძებნად</p>
+                      <p>დაიწყეთ ტექსტის შეყვანა {searchType === "manga" ? "მანგის" : "კომიქსის"} მოსაძებნად</p>
                     </m.div>
                   )}
                 </AnimatePresence>

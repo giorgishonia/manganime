@@ -22,7 +22,7 @@ export function BannerUploader({
   isOpen,
   onClose,
 }: BannerUploaderProps) {
-  const [bannerUrl, setBannerUrl] = useState<string | null>(currentBannerUrl);
+  const [bannerUrl, setBannerUrl] = useState<string | null>(currentBannerUrl ?? null);
   const [tempBannerUrl, setTempBannerUrl] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 

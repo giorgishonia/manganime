@@ -52,7 +52,7 @@ export type FavoriteItem = {
   id: string
   user_id: string
   content_id: string
-  content_type: 'anime' | 'manga'
+  content_type: 'manga' | 'comics'
   created_at: string
 }
 
@@ -60,8 +60,8 @@ export type WatchlistItem = {
   id: string
   user_id: string
   content_id: string
-  content_type: 'anime' | 'manga'
-  status: 'watching' | 'completed' | 'plan_to_watch' | 'on_hold' | 'dropped' | 'reading' | 'plan_to_read'
+  content_type: 'manga' | 'comics'
+  status: 'reading' | 'completed' | 'plan_to_read' | 'on_hold' | 'dropped'
   progress: number
   rating: number | null
   created_at: string
@@ -75,26 +75,14 @@ export type Content = {
   description: string
   thumbnail: string
   banner_image: string
-  type: 'anime' | 'manga' | 'comics'
+  type: 'manga' | 'comics'
   status: 'ongoing' | 'completed' | 'upcoming'
   release_year: number
   genres: string[]
-  episodes_count?: number
   chapters_count?: number
   rating: number
   created_at: string
   updated_at: string
-}
-
-export type Episode = {
-  id: string
-  content_id: string
-  number: number
-  title: string
-  thumbnail: string
-  duration: number
-  release_date: string
-  created_at: string
 }
 
 export type Chapter = {

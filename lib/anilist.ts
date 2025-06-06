@@ -2,9 +2,9 @@
 
 const API_URL = 'https://graphql.anilist.co';
 
-// Search AniList for anime or manga
-export async function searchAniList(query: string, type: 'anime' | 'manga') {
-  const mediaType = type.toUpperCase();
+// Search AniList for manga
+export async function searchAniList(query: string) {
+  const mediaType = "MANGA";
   const gqlQuery = `
     query ($search: String) {
       Page(page: 1, perPage: 10) {
@@ -38,46 +38,6 @@ export async function searchAniList(query: string, type: 'anime' | 'manga') {
   return data.Page.media;
 }
 
-// Fetch trending anime
-export async function getTrendingAnime(limit = 10) {
-  const query = `
-    query {
-      Page(page: 1, perPage: ${limit}) {
-        media(sort: TRENDING_DESC, type: ANIME) {
-          id
-          title {
-            romaji
-            english
-          }
-          description
-          coverImage {
-            large
-            extraLarge
-          }
-          bannerImage
-          episodes
-          nextAiringEpisode {
-            episode
-            timeUntilAiring
-            airingAt
-          }
-          status
-          averageScore
-          genres
-          studios {
-            nodes {
-              name
-            }
-          }
-        }
-      }
-    }
-  `;
-
-  const data = await fetchFromAniList(query);
-  return data.Page.media;
-}
-
 // Fetch trending manga
 export async function getTrendingManga(limit = 10) {
   const query = `
@@ -107,154 +67,6 @@ export async function getTrendingManga(limit = 10) {
 
   const data = await fetchFromAniList(query);
   return data.Page.media;
-}
-
-// Fetch anime by ID
-export async function getAnimeById(id: string | number) {
-  try {
-    console.log(`Fetching anime details for ID: ${id}`);
-    const query = `
-      query {
-        Media(id: ${id}, type: ANIME) {
-          id
-          title {
-            romaji
-            english
-            native
-          }
-          description
-          coverImage {
-            large
-            extraLarge
-          }
-          bannerImage
-          episodes
-          status
-          averageScore
-          popularity
-          genres
-          startDate {
-            year
-            month
-            day
-          }
-          endDate {
-            year
-            month
-            day
-          }
-          season
-          seasonYear
-          studios {
-            nodes {
-              name
-            }
-          }
-          nextAiringEpisode {
-            episode
-            timeUntilAiring
-            airingAt
-          }
-          characters(sort: ROLE, page: 1, perPage: 20) {
-            nodes {
-              id
-              name {
-                full
-                native
-              }
-              age
-              gender
-              image {
-                medium
-                large
-              }
-              description
-            }
-            edges {
-              id
-              role
-              node {
-                id
-              }
-            }
-          }
-          relations {
-            edges {
-              relationType
-              node {
-                id
-                title {
-                  romaji
-                }
-                type
-                format
-                coverImage {
-                  medium
-                  large
-                }
-                startDate {
-                  year
-                }
-              }
-            }
-          }
-          recommendations(page: 1, perPage: 6) {
-            nodes {
-              mediaRecommendation {
-                id
-                title {
-                  romaji
-                }
-                coverImage {
-                  medium
-                  large
-                }
-                startDate {
-                  year
-                }
-              }
-            }
-          }
-        }
-      }
-    `;
-
-    const data = await fetchFromAniList(query);
-    
-    if (!data || !data.Media) {
-      console.error(`No anime found with ID: ${id}`);
-      return null;
-    }
-    
-    // Process character data
-    if (data.Media.characters) {
-      // Create a map of node IDs to roles
-      const roleMap = new Map();
-      if (data.Media.characters.edges) {
-        data.Media.characters.edges.forEach((edge: any) => {
-          roleMap.set(edge.node.id, edge.role);
-        });
-      }
-      
-      // Enhance node data with role information
-      if (data.Media.characters.nodes) {
-        data.Media.characters.nodes = data.Media.characters.nodes.map((node: any) => {
-          return {
-            ...node,
-            role: roleMap.get(node.id) || 'SUPPORTING'
-          };
-        });
-      }
-      
-      console.log(`Processed ${data.Media.characters.nodes?.length || 0} characters with roles`);
-    }
-    
-    console.log(`Successfully fetched anime data for ID: ${id}`);
-    return data.Media;
-  } catch (error) {
-    console.error(`Error fetching anime with ID ${id}:`, error);
-    throw error;
-  }
 }
 
 // Fetch manga by ID
@@ -435,35 +247,6 @@ export async function getMangaById(id: string | number) {
     console.error('Error fetching manga by ID:', error);
     return null;
   }
-}
-
-// Fetch anime schedule for current season
-export async function getAnimeSchedule() {
-  const query = `
-    query {
-      Page(page: 1, perPage: 50) {
-        airingSchedules(notYetAired: true) {
-          id
-          airingAt
-          episode
-          media {
-            id
-            title {
-              romaji
-              english
-            }
-            coverImage {
-              medium
-              large
-            }
-          }
-        }
-      }
-    }
-  `;
-
-  const data = await fetchFromAniList(query);
-  return data.Page.airingSchedules;
 }
 
 // Helper function to fetch from AniList API

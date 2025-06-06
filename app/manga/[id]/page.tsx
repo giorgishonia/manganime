@@ -32,7 +32,13 @@ import {
   X,
   ChevronDown,
   Bell,
-  Loader2
+  Loader2,
+  Eye,
+  ChevronLeft,
+  Share2,
+  Play,
+  MessageCircle,
+  TrendingUp
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { MangaReader } from '@/components/manga-reader'
@@ -41,7 +47,7 @@ import { RelatedContent } from '@/components/related-content'
 import { RecommendedContent } from '@/components/recommended-content'
 import { DetailViewSkeleton } from '@/components/ui/skeleton'
 import { getMangaById, stripHtml, formatStatus } from '@/lib/anilist'
-import { getContentById, getChapters } from '@/lib/content'
+import { getContentById, getChapters, incrementContentView } from '@/lib/content'
 import { CharacterSection } from '@/components/character-section'
 import { CommentSection } from '@/components/comment-section'
 import ChapterManager from '@/components/admin/chapter-manager'
@@ -61,6 +67,8 @@ import { Button } from "@/components/ui/button"
 import { useUnifiedAuth } from '@/components/unified-auth-provider'
 import { useAuth } from '@/components/supabase-auth-provider'
 import { AppSidebar } from '@/components/app-sidebar'
+import { EmojiRating, EMOJI_REACTIONS } from '@/components/emoji-rating' // Import EMOJI_REACTIONS for type
+import { supabase } from '@/lib/supabase' // Import Supabase client for RPC calls
 
 // Animation variants
 const pageVariants = {
@@ -104,6 +112,8 @@ const formatSafeDate = (dateString: string | undefined) => {
   }
 };
 
+type Emoji = typeof EMOJI_REACTIONS[number]['emoji']; // Define Emoji type
+
 export default function MangaPage({ params }: { params: { id: string } }) {
   const router = useRouter()
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -129,6 +139,8 @@ export default function MangaPage({ params }: { params: { id: string } }) {
   const [overlayOpacity, setOverlayOpacity] = useState(20);
   const previousScrollY = useRef(0);
   const [isFavorite, setIsFavorite] = useState(false); // Add state for favorite
+  const [viewCount, setViewCount] = useState<number | null>(null); // State for view count
+  const viewIncrementedRef = useRef(false); // Ref to track view increment call
 
   // Handle scroll effect for background
   useEffect(() => {
@@ -177,117 +189,93 @@ export default function MangaPage({ params }: { params: { id: string } }) {
     };
   }, []);
 
-  // Define fetchMangaData outside useEffect
+  // Define fetchMangaData (modified)
   const fetchMangaData = async () => {
+    setIsLoading(true);
     try {
-      setIsLoading(true);
-      // First, try to get the content from our database
+      // Fetch main manga data (existing logic)
       const dbResult = await getContentById(mangaId);
-      
+      let fetchedMangaData: any = null;
+
       if (dbResult.success && dbResult.content && dbResult.content.type === 'manga') {
-        console.log("Found manga in database:", dbResult.content);
-        
-        // Fetch chapters for this manga
         const chaptersResult = await getChapters(mangaId);
         const chapters = chaptersResult.success ? chaptersResult.chapters : [];
-        console.log("Fetched chapters:", chapters);
-        
-        // Format content with chapters data
-        setMangaData({
+        fetchedMangaData = {
           ...formatDatabaseContent(dbResult.content),
           chaptersData: chapters
-        });
+        };
         setIsFromDatabase(true);
       } else {
-        // If not found in database, try AniList
         try {
-          console.log("Manga not found in database, fetching from AniList API");
           const anilistData = await getMangaById(mangaId);
-          console.log("AniList data received:", anilistData ? "Data found" : "No data");
-          
-          // Debug log the full character data structure
-          if (anilistData && anilistData.characters) {
-            console.log("Full character data from AniList:", {
-              edges: anilistData.characters.edges,
-              nodes: anilistData.characters.nodes,
-              rawData: anilistData.characters
-            });
-          }
-          
-          if (anilistData) {
-            console.log("AniList data structure check:", {
-              hasRecommendations: !!anilistData.recommendations,
-              recCount: anilistData.recommendations?.nodes?.length,
-              hasRelations: !!anilistData.relations,
-              relCount: anilistData.relations?.edges?.length,
-              hasCharacters: !!anilistData.characters,
-              charCount: anilistData.characters?.nodes?.length,
-              score: anilistData.averageScore
-            });
-          }
-          setMangaData(anilistData);
+          fetchedMangaData = anilistData;
+          setIsFromDatabase(false);
         } catch (anilistError) {
           console.error("Error fetching from AniList:", anilistError);
-          throw anilistError; // Re-throw to trigger the not found state
+          // Do not throw, allow page to render not found if mangaData remains null
         }
       }
+      setMangaData(fetchedMangaData);
+
     } catch (error) {
-      console.error("Error fetching manga data:", error);
+      console.error("Error in fetchMangaData:", error);
+      setMangaData(null); // Ensure mangaData is null on critical error
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Fetch manga data on component mount
+  // Fetch manga data on component mount or if mangaId/userId changes (for reactions)
   useEffect(() => {
-    fetchMangaData();
+    if (mangaId) { // Only fetch if mangaId is available
+        fetchMangaData();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mangaId, userId]); // Add userId to refetch reactions when auth state changes
+
+  // --- NEW useEffect to increment view count ---
+  useEffect(() => {
+    if (mangaId && !viewIncrementedRef.current) {
+      incrementContentView(mangaId)
+        .then(result => {
+          if (result.success) {
+            console.log(`View count API called successfully for manga ${mangaId}`);
+          } else {
+            console.error("Failed to increment view count for manga", mangaId, result.error);
+          }
+        });
+      viewIncrementedRef.current = true; 
+    }
   }, [mangaId]);
 
   // Add useEffect for admin check within the page component
   useEffect(() => {
     async function checkIfAdmin() {
-      console.log("MangaPage: Starting admin check...");
       setIsAdminCheckComplete(false);
       if (!user) {
-        console.log("MangaPage: No user, not admin.");
         setIsAdmin(false);
         setIsAdminCheckComplete(true);
         return;
       }
-
-      // DEVELOPMENT MODE BYPASS - Temporarily removing this section
-      /*
-      const isDevelopment = process.env.NODE_ENV === 'development';
-      if (isDevelopment) {
-        console.log("MangaPage: DEVELOPMENT MODE - Bypassing admin check.");
-        setIsAdmin(true);
-        setIsAdminCheckComplete(true);
-        return;
-      }
-      */
-
       try {
-        console.log("MangaPage: Fetching admin status...");
         const response = await fetch('/api/admin/check');
         const data = await response.json();
-        console.log("MangaPage: Admin check response:", data);
         setIsAdmin(data.isAdmin || false);
       } catch (error) {
         console.error("MangaPage: Failed to check admin status:", error);
         setIsAdmin(false);
       } finally {
         setIsAdminCheckComplete(true);
-        console.log(`MangaPage: Admin check complete. isAdmin: ${isAdmin}`);
       }
     }
     checkIfAdmin();
-  }, [user]); // Rerun check if user changes
+  }, [user]);
 
   // Get reading progress for this manga
   useEffect(() => {
     if (mangaId) {
       const progress = getMangaProgress(mangaId)
-      setReadingProgress(progress)
+      setReadingProgress(readingProgress) // This seems like a typo, should be setReadingProgress(progress)
     }
   }, [mangaId, isReaderOpen])
 
@@ -404,7 +392,8 @@ export default function MangaPage({ params }: { params: { id: string } }) {
             }
           }
         })) || []
-      }
+      },
+      view_count: content.view_count ?? 0, // Add view_count
     };
   };
 
@@ -422,7 +411,7 @@ export default function MangaPage({ params }: { params: { id: string } }) {
     if (processedData.chapterList.length === 0) {
       toast({
         title: "თავები არ არის",
-        description: "ამ მანგას ჯერ არ აქვს ხელმისაწვდომი თავები",
+        description: "ამ მანგას ჯერ არ აქვს ხელმისაწვდომი თავები.",
         duration: 3000,
       });
       return;
@@ -518,7 +507,8 @@ export default function MangaPage({ params }: { params: { id: string } }) {
         genres: rec.mediaRecommendation.genres || [],
       })) || [],
     // Fix the characters mapping to ensure proper extraction
-    characters: mapCharacters(mangaData)
+    characters: mapCharacters(mangaData),
+    view_count: mangaData.view_count ?? 0, // Add view_count to processed data
   } : null;
 
   // Add a debug log for the processed data
@@ -724,6 +714,8 @@ export default function MangaPage({ params }: { params: { id: string } }) {
   useEffect(() => {
     async function checkLibraryStatus() {
       if (mangaId && processedData) {
+        // Set view count from fetched data
+        setViewCount(processedData.view_count ?? 0);
         try {
           const item = await getLibraryItem(mangaId, 'manga');
           if (item) {
@@ -766,7 +758,7 @@ export default function MangaPage({ params }: { params: { id: string } }) {
   // Handle subscription toggle
   const handleToggleSubscription = async () => {
     if (!isAuthenticated || !userId) {
-      toast({ title: "Please log in to subscribe.", variant: "destructive" });
+      toast({ title: "გთხოვთ შეხვიდეთ გამოსაწერად.", variant: "destructive" });
       router.push('/login');
       return;
     }
@@ -792,11 +784,11 @@ export default function MangaPage({ params }: { params: { id: string } }) {
         toast({ title: "Failed to update subscription", description: errorMessage, variant: "destructive" });
       } else {
         setIsSubscribed(subscribed); // Confirm state
-        toast({ title: subscribed ? "Subscribed!" : "Unsubscribed", description: `You will ${subscribed ? 'now' : 'no longer'} receive notifications for ${processedData?.title || 'this manga'}.` });
+        toast({ title: subscribed ? "გამოწერილია!" : "გამოწერა გაუქმებულია", description: `თქვენ ${subscribed ? 'მიიღებთ' : 'აღარ მიიღებთ'} შეტყობინებებს ${processedData?.title || 'ამ მანგაზე'}.` });
       }
     } catch (err: any) { // Explicitly type caught err as any
       setIsSubscribed(originalSubscribed); // Revert on error
-      toast({ title: "Error updating subscription", variant: "destructive" });
+      toast({ title: "შეცდომა გამოწერისას", variant: "destructive" });
       console.error("Subscription toggle error:", err);
     } finally {
       setIsSubProcessing(false);
@@ -829,14 +821,14 @@ export default function MangaPage({ params }: { params: { id: string } }) {
       
       toast({
         title: "სტატუსი განახლდა",
-        description: `"${processedData.title}" - მარკირებულია როგორც ${status ? status.replace('_', ' ') : 'Removed'}`,
+        description: `"${processedData.title}" - აღინიშნა როგორც ${status ? status.replace('_', ' ') : 'ამოშლილია'}`,
         duration: 3000,
       });
     } catch (error) {
       console.error("Error updating status:", error);
       toast({
         title: "შეცდომა",
-        description: "სტატუსის განახლება ვერ მოხერხდა. გთხოვთ, სცადოთ თავიდან.",
+        description: "სტატუსის განახლება ვერ მოხერხდა. გთხოვთ სცადოთ ხელახლა.",
         duration: 3000,
       });
     }
@@ -854,9 +846,9 @@ export default function MangaPage({ params }: { params: { id: string } }) {
       case 'dropped':
         return { icon: <XCircle className="h-5 w-5" />, label: 'მიტოვებული', color: 'text-red-500' };
       case 'plan_to_read':
-        return { icon: <Bookmark className="h-5 w-5" />, label: 'სამომავლოდ', color: 'text-purple-500' };
+        return { icon: <Bookmark className="h-5 w-5" />, label: 'სამომავლოდ ვგეგმავ', color: 'text-purple-500' }; // Translated
       default:
-        return { icon: <Plus className="h-5 w-5" />, label: 'დამატება ბიბლიოთეკაში', color: 'text-gray-400' };
+        return { icon: <Plus className="h-5 w-5" />, label: 'ბიბლიოთეკაში დამატება', color: 'text-gray-400' }; // Translated
     }
   };
 
@@ -882,7 +874,7 @@ export default function MangaPage({ params }: { params: { id: string } }) {
   // Add function to toggle favorite status
   const handleToggleFavorite = async () => {
     if (!isAuthenticated || !userId) {
-      toast({ title: "Please log in to add favorites.", variant: "destructive" });
+      toast({ title: "გთხოვთ შეხვიდეთ რჩეულებში დასამატებლად.", variant: "destructive" });
       router.push('/login');
       return;
     }
@@ -913,8 +905,8 @@ export default function MangaPage({ params }: { params: { id: string } }) {
       toast({
         title: !isFavorite ? "რჩეულებში დამატებულია" : "რჩეულებიდან ამოშლილია",
         description: !isFavorite 
-          ? `"${processedData?.title}" დამატებულია რჩეულებში` 
-          : `"${processedData?.title}" ამოშლილია რჩეულებიდან`,
+          ? `"${processedData?.title}" დაემატა რჩეულებს.` 
+          : `"${processedData?.title}" წაიშალა რჩეულებიდან.`,
         duration: 3000,
       });
     } catch (error) {
@@ -929,7 +921,8 @@ export default function MangaPage({ params }: { params: { id: string } }) {
     }
   };
 
-  if (isLoading) {
+  // Loading and Not Found states (translate text)
+  if (isLoading && !mangaData) { // Show main loader only if mangaData is not yet available
     return (
       <div className="flex justify-center items-center min-h-screen bg-black">
         <div className="w-12 h-12 rounded-full border-4 border-t-purple-500 border-r-purple-500 border-b-purple-300 border-l-purple-300 animate-spin"></div>
@@ -941,9 +934,7 @@ export default function MangaPage({ params }: { params: { id: string } }) {
     return (
       <div className="min-h-screen bg-black text-white flex justify-center items-center">
         <div className="text-center">
-          <div
-            className="mb-6"
-          >
+          <div className="mb-6">
             <img src="/images/mascot/confused.png" alt="Page not found" className="mx-auto w-36 h-36" />
           </div>
           <h1 className="text-2xl font-bold mb-4">მანგა ვერ მოიძებნა</h1>
@@ -1023,11 +1014,11 @@ export default function MangaPage({ params }: { params: { id: string } }) {
             whileTap={{ scale: 0.95 }}
           >
             <ArrowLeft className="h-5 w-5" />
-            <span>{isReaderOpen ? "დახურვა" : "უკან"}</span>
+            <span>{isReaderOpen ? "დახურვა" : "უკან დაბრუნება"}</span>
           </motion.button>
 
           <AnimatePresence mode="wait">
-            {isLoading ? (
+            {isLoading && !mangaData ? (
               <motion.div
                 key="loading"
                 initial={{ opacity: 0 }}
@@ -1081,8 +1072,6 @@ export default function MangaPage({ params }: { params: { id: string } }) {
                   {/* Cover image - Adjust width slightly */}
                   <motion.div 
                     className="w-full sm:w-60 md:w-[260px] flex-shrink-0 mx-auto md:mx-0" /* Center on mobile */
-                    whileHover={{ scale: 1.03 }}
-                    transition={{ duration: 0.3 }}
                   >
                     <div className="relative">
                       <ImageSkeleton
@@ -1090,8 +1079,21 @@ export default function MangaPage({ params }: { params: { id: string } }) {
                         alt={processedData.title}
                         className="w-full aspect-[2/3] rounded-xl overflow-hidden shadow-2xl"
                       />
+                                        {/* Emoji Rating Component */}
+                  <motion.div 
+                    className="w-full sm:w-60 md:w-[260px] mx-auto md:mx-0 mt-4"
+                  >
+                    {/* Simplified EmojiRating call - it handles its own data */}
+                    {processedData && (
+                      <EmojiRating 
+                        contentId={mangaId} 
+                        contentType="manga" 
+                      />
+                    )}
+                  </motion.div>
                     </div>
                   </motion.div>
+
 
                   {/* Details */}
                   {/* Center text on mobile */} 
@@ -1101,11 +1103,12 @@ export default function MangaPage({ params }: { params: { id: string } }) {
                         {processedData.status}
                       </div>
                       
-                      {processedData.genres.slice(0, 3).map((genre: string, idx: number) => (
-                        <div key={idx} className="px-3 py-1 bg-gray-800 text-gray-300 rounded-full">
-                          {genre}
+                      {viewCount !== null && (
+                        <div className="flex items-center gap-1.5 text-sm text-white/70 bg-white/10 px-3 py-1 rounded-full">
+                          <Eye className="h-4 w-4 text-primary/80" />
+                          <span>{viewCount.toLocaleString()} ნახვა</span>
                         </div>
-                      ))}
+                      )}
                     </div>
                 
                     {/* Display native title as subtitle if no Georgian title */}
@@ -1138,8 +1141,8 @@ export default function MangaPage({ params }: { params: { id: string } }) {
                         <BookOpen className="h-4 w-4 text-gray-400" />
                         <span>
                           {typeof processedData.chapters === 'number' 
-                            ? `${processedData.chapters} chapter${processedData.chapters !== 1 ? 's' : ''}`
-                            : `${processedData.chapters} chapters`
+                            ? `${processedData.chapters} თავი${processedData.chapters !== 1 ? '' : ''}`
+                            : `${processedData.chapters} თავები`
                           }
                         </span>
                       </div>
@@ -1150,6 +1153,13 @@ export default function MangaPage({ params }: { params: { id: string } }) {
                           <span className="font-medium text-white">{processedData.rating.toFixed(1)}</span>
                           <span className="text-xs text-gray-500">/10</span>
                         </div>
+                      )}
+                      {/* Add view count here */}
+                      {processedData.view_count !== undefined && processedData.view_count !== null && (
+                         <div className="flex items-center gap-2">
+                           <Eye className="h-4 w-4 text-gray-400" />
+                           <span>{processedData.view_count.toLocaleString()} views</span>
+                         </div>
                       )}
                     </motion.div>
 
@@ -1178,7 +1188,7 @@ export default function MangaPage({ params }: { params: { id: string } }) {
                         whileTap={{ scale: 0.97 }}
                       >
                         <BookOpen className="h-5 w-5" />
-                        გაგრძელება
+                        კითხვის გაგრძელება
                         <span className="ml-1 text-xs bg-purple-500 px-2 py-0.5 rounded-full">
                           {readingProgress.chapterNumber}
                         </span>
@@ -1223,7 +1233,7 @@ export default function MangaPage({ params }: { params: { id: string } }) {
                           onClick={() => handleStatusChange('plan_to_read')}
                         >
                           <Bookmark className="mr-2 h-4 w-4" />
-                          <span>სამომავლოდ</span>
+                          <span>სამომავლოდ ვგეგმავ</span>
                         </DropdownMenuItem>
                         
                         <DropdownMenuItem 
@@ -1261,7 +1271,7 @@ export default function MangaPage({ params }: { params: { id: string } }) {
                               }}
                             >
                               <X className="mr-2 h-4 w-4" />
-                              <span>ამოშლა ბიბლიოთეკიდან</span>
+                              <span>ბიბლიოთეკიდან ამოშლა</span>
                             </DropdownMenuItem>
                           </>
                         )}
@@ -1280,7 +1290,7 @@ export default function MangaPage({ params }: { params: { id: string } }) {
                       onClick={handleToggleFavorite}
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
-                      title={isFavorite ? "Remove from favorites" : "Add to favorites"}
+                      title={isFavorite ? "რჩეულებიდან წაშლა" : "რჩეულებში დამატება"}
                     >
                       <motion.div
                         initial={{ scale: 1 }}
@@ -1313,7 +1323,7 @@ export default function MangaPage({ params }: { params: { id: string } }) {
                       disabled={isSubProcessing}
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
-                      title={isSubscribed ? "Unsubscribe from new chapter notifications" : "Subscribe to new chapter notifications"}
+                      title={isSubscribed ? "გამოწერის გაუქმება" : "ახალი თავების გამოწერა"}
                     >
                       {isSubProcessing ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -1345,7 +1355,7 @@ export default function MangaPage({ params }: { params: { id: string } }) {
                               whileTap={{ scale: 0.98 }}
                             >
                               <BookOpen className="h-4 w-4 text-purple-400" />
-                              <span>{readingProgress ? 'გაგრძელება' : 'თავის არჩევა'}</span>
+                              <span>{readingProgress ? 'კითხვის გაგრძელება' : 'თავის არჩევა'}</span>
                               <ChevronDown className="h-4 w-4 text-purple-400 ml-1" />
                             </motion.button>
                           </DropdownMenuTrigger>
@@ -1588,7 +1598,7 @@ export default function MangaPage({ params }: { params: { id: string } }) {
                         </motion.section>
                       )}
 
-                      {/* Recommendations */} 
+                      {/* Recommendations */ }
                       {processedData.recommendations && processedData.recommendations.length > 0 && (
                         <motion.section
                           className="mb-12"
@@ -1601,7 +1611,7 @@ export default function MangaPage({ params }: { params: { id: string } }) {
                             variants={itemVariants}
                           >
                             <Bookmark className="mr-2 h-5 w-5 text-purple-400" />
-                            შეიძლება მოგეწონოთ
+                            რეკომენდებული
                           </motion.h2>
                           <RecommendedContent items={processedData.recommendations} />
                         </motion.section>

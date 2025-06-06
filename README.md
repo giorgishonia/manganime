@@ -1,134 +1,138 @@
-# Manganime - Anime & Manga Streaming Platform
+# Manganime - Manga & Comics Platform
 
-A modern anime and manga streaming platform built with Next.js, Supabase, and Framer Motion.
+A modern manga and comics platform built with Next.js, Supabase, and Framer Motion.
 
 ## Features
 
-- 🔐 Authentication with NextAuth (Email/Password, Discord, Google)
-- 📚 Custom anime and manga library
-- 📱 Responsive design for all devices
-- 🎬 Video streaming for anime episodes
-- 📖 Manga reader
-- 👤 User profiles with favorites, watchlists, and progress tracking
-- 🔍 Advanced search functionality
-- ✨ Modern UI with animations and transitions
+- 🖼️ **Beautiful & Modern UI**: Clean, intuitive, and responsive design.
+- 🚀 **Fast & Performant**: Optimized for speed and smooth user experience.
+- 📚 **Custom Manga/Comics Library**: Manage your reading list, track progress, and discover new titles.
+- 📖 **Integrated Reader**: Read manga and comics directly in the app.
+- 💬 **Discussion & Comments**: Engage with other users by commenting on content.
+- 🏆 **Emoji Reactions**: React to content with emojis.
+- 🔍 **Advanced Search & Filtering**: Easily find manga and comics by title, genre, etc.
+- 🌓 **Dark/Light Mode**: Switch between themes for comfortable reading.
+- 👤 **User Authentication**: Secure user accounts with Supabase Auth.
+- ⚙️ **Admin Dashboard**: Manage content, users, and site settings.
+- 📱 **PWA Support**: Installable as a Progressive Web App.
 
 ## Tech Stack
 
-- **Frontend**: Next.js 14, React, TypeScript, Tailwind CSS
-- **Animation**: Framer Motion
-- **Backend**: Supabase (PostgreSQL, Authentication, Storage)
-- **Authentication**: NextAuth.js
-- **Icons**: Lucide Icons
+- **Framework**: Next.js 13 (App Router)
+- **Styling**: Tailwind CSS, Framer Motion
+- **Database**: Supabase (PostgreSQL)
+- **Authentication**: Supabase Auth
+- **State Management**: Zustand, React Context/Hooks
+- **Forms**: React Hook Form, Zod
+- **UI Components**: Shadcn/ui
+- **Icons**: Lucide React
 
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js (v18+)
-- npm or pnpm
-- Supabase account
+- Node.js (v18+ recommended)
+- npm or yarn
+- Supabase account and project
 
-### Environment Setup
+### Installation
 
-1. Clone the repository
-```bash
-git clone <repository-url>
-cd manganime
-```
+1.  **Clone the repository:**
+    ```bash
+    git clone https://github.com/your-username/manganime.git
+    cd manganime
+    ```
 
-2. Install dependencies
-```bash
-npm install
-# or
-pnpm install
-```
+2.  **Install dependencies:**
+    ```bash
+    npm install
+    # or
+    yarn install
+    ```
 
-3. Set up environment variables
-Create a `.env.local` file in the root directory with the following variables:
+3.  **Set up environment variables:**
+    Create a `.env.local` file in the root directory and add your Supabase project URL and anon key:
+    ```env
+    NEXT_PUBLIC_SUPABASE_URL=your-supabase-url
+    NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
+    SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key # If needed for admin actions
+    ```
 
-```
-# Supabase credentials
-NEXT_PUBLIC_SUPABASE_URL=your-project-url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+4.  **Set up Supabase database:**
+    - Go to your Supabase project dashboard.
+    - Use the SQL Editor to run the schema definitions from `supabase/schema.sql` or apply migrations.
+    - Ensure you have tables for `content`, `chapters`, `users`, `comments`, `watchlist`, etc.
 
-# NextAuth configuration
-NEXTAUTH_URL=http://localhost:3000
-NEXTAUTH_SECRET=your-nextauth-secret
-
-# OAuth providers (optional)
-# Discord
-DISCORD_CLIENT_ID=your-discord-client-id
-DISCORD_CLIENT_SECRET=your-discord-client-secret
-
-# Google
-GOOGLE_CLIENT_ID=your-google-client-id
-GOOGLE_CLIENT_SECRET=your-google-client-secret
-```
-
-### Supabase Setup
-
-1. Create a new Supabase project
-2. Set up the database schema:
-   - Navigate to the SQL Editor in your Supabase dashboard
-   - Copy and paste the contents of `supabase/schema.sql`
-   - Run the SQL script to create all required tables and policies
-
-### Running the Development Server
-
-```bash
-npm run dev
-# or
-pnpm dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) in your browser to see the application.
+5.  **Run the development server:**
+    ```bash
+    npm run dev
+    # or
+    yarn dev
+    ```
+    Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ## Project Structure
 
 ```
-├── app/                  # Next.js app router
-│   ├── api/              # API routes
-│   ├── anime/            # Anime pages
-│   ├── manga/            # Manga pages
-│   ├── profile/          # User profile pages
-│   ├── login/            # Authentication pages
-│   └── ...
-├── components/           # React components
-├── lib/                  # Utility functions and API clients
-│   ├── supabase.ts       # Supabase client and types
-│   ├── auth.ts           # Authentication utilities
-│   └── content.ts        # Content management utilities
-├── public/               # Static assets
-├── styles/               # Global styles
-├── types/                # TypeScript type definitions
-└── supabase/             # Supabase configuration and migrations
-    └── schema.sql        # Database schema
+/manganime
+├── app/                    # Next.js App Router (pages, layouts, API routes)
+│   ├── (main)/             # Main app routes (e.g., home, manga, comics)
+│   │   ├── layout.tsx
+│   │   └── page.tsx
+│   ├── comics/[id]/        # Comics detail pages
+│   │   └── page.tsx
+│   ├── manga/[id]/         # Manga detail pages
+│   │   └── page.tsx
+│   ├── admin/              # Admin dashboard pages
+│   └── api/                # API routes
+├── components/             # React components (UI, shared, specific)
+│   ├── ui/                 # Shadcn/ui components
+│   ├── admin/              # Admin-specific components
+│   └── ...                 # Other components (e.g., reader, comment-section)
+├── lib/                    # Helper functions, Supabase client, utilities
+├── public/                 # Static assets (images, fonts, etc.)
+│   ├── images/
+│   └── stickers/
+├── store/                  # Zustand stores (if any)
+├── styles/                 # Global styles, Tailwind CSS config
+├── supabase/               # Supabase schema, migrations, functions
+│   ├── functions/
+│   └── migrations/
+├── types/                  # TypeScript type definitions
+├── .env.local              # Environment variables (local)
+├── next.config.js          # Next.js configuration
+├── postcss.config.js       # PostCSS configuration
+├── tailwind.config.ts      # Tailwind CSS configuration
+├── tsconfig.json           # TypeScript configuration
+└── README.md
 ```
 
-## Content Management
+## Admin Features
 
-### Adding Anime/Manga Content
+To access admin features, a user must have `is_admin` set to `true` in the `profiles` table (or your equivalent user metadata table) in Supabase.
 
-1. Log in as an admin user
-2. Navigate to the admin dashboard
-3. Add new anime or manga content with all required metadata
-4. Upload episode or chapter files
+### Adding Manga/Comics Content
 
-### User Roles
+1.  Log in as an admin user.
+2.  Navigate to the admin dashboard (e.g., `/admin/content`).
+3.  Add new manga or comics content with all required metadata (title, description, genres, chapters, etc.).
+4.  Upload cover images and chapter pages.
 
-- **Regular Users**: Can browse content, maintain watchlists, mark favorites, track progress
-- **Admin Users**: Can add, edit, and delete content, manage episodes and chapters
+## Contributing
+
+Contributions are welcome! Please follow these steps:
+
+1.  Fork the repository.
+2.  Create a new branch (`git checkout -b feature/your-feature`).
+3.  Make your changes.
+4.  Commit your changes (`git commit -m 'Add some feature'`).
+5.  Push to the branch (`git push origin feature/your-feature`).
+6.  Open a pull request.
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
-## Acknowledgements
+---
 
-- [Next.js](https://nextjs.org/)
-- [Supabase](https://supabase.io/)
-- [Framer Motion](https://www.framer.com/motion/)
-- [NextAuth.js](https://next-auth.js.org/)
-- [Tailwind CSS](https://tailwindcss.com/)
-- [Lucide Icons](https://lucide.dev/) 
+*This README is a template and should be updated to reflect the actual state of the project.* 

@@ -39,6 +39,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import Image from "next/image"
 import Link from "next/link"
 import { hasMangaBeenRead, getMangaProgress, getRecentlyRead, getLatestChapterRead, calculateMangaProgressByChapter } from "@/lib/reading-history"
+import { MangaView } from "@/components/manga-view"
 
 // Add custom CSS
 import "./read-page.css"
@@ -57,6 +58,7 @@ interface MangaData {
   genres: string[]
   release_year?: number
   totalChapters?: number
+  view_count?: number
 }
 
 // Animation variants
@@ -137,151 +139,6 @@ function toggleMangaFavorite(manga: MangaData): boolean {
   }
 }
 
-// Manga grid card component
-const MangaCard = ({ manga, index }: { manga: MangaData, index: number }) => {
-  const router = useRouter()
-  const hasBeenRead = hasMangaBeenRead(manga.id)
-  const [isFavorite, setIsFavorite] = useState(false)
-  
-  // Check favorite status on mount
-  useEffect(() => {
-    setIsFavorite(isMangaFavorited(manga.id));
-  }, [manga.id]);
-  
-  // Get the latest chapter read
-  const latestChapterRead = getLatestChapterRead(manga.id)
-  
-  // Use the pre-calculated totalChapters from MangaData
-  const totalChapters = manga.totalChapters || 0;
-  
-  // Calculate overall manga progress based on chapters
-  const progressPercentage = calculateMangaProgressByChapter(latestChapterRead, totalChapters)
-  
-  // Handle favorite button click
-  const handleFavoriteClick = (e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent card click
-    const newStatus = toggleMangaFavorite(manga);
-    setIsFavorite(newStatus);
-  };
-  
-  return (
-    <m.div
-      variants={cardVariants}
-      initial="initial"
-      animate="animate"
-      exit="exit"
-      layout
-      className="relative group cursor-pointer"
-      onClick={() => router.push(`/manga/${manga.id}`)}
-      transition={{ delay: index * 0.05 }}
-    >
-      <m.div
-        className="relative overflow-hidden rounded-xl bg-transparent transition-all duration-300 group-hover:border-purple-500/70 group-hover:shadow-2xl group-hover:shadow-purple-500/20 flex flex-col flex-grow"
-        variants={cardHoverVariants}
-        initial="initial"
-        whileHover="hover"
-      >
-        <div className="aspect-[2/3] relative overflow-hidden">
-          <Image 
-            src={manga.thumbnail || "/placeholder.svg"} 
-            alt={manga.title}
-            fill
-            className="object-cover transition-transform duration-300 ease-in-out group-hover:scale-110"
-            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-          />
-          
-          <div className="absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-black/90 via-black/70 to-transparent pointer-events-none"></div>
-          
-          {/* BookOpen icon overlay on hover */}
-          <div className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-            <BookOpen className="w-12 h-12 text-white/90 drop-shadow-lg" />
-          </div>
-
-          {/* Favorite button - Top Right */}
-          <button 
-            onClick={handleFavoriteClick}
-            className={cn(
-              "absolute top-2.5 right-2.5 z-20 p-2 rounded-full transition-all duration-300 backdrop-blur-md border",
-              isFavorite 
-                ? "bg-red-500/30 border-red-500/50 text-red-400" 
-                : "bg-black/50 border-white/20 text-white/80 hover:bg-red-500/20 hover:text-red-400 hover:border-red-500/40",
-              "opacity-0 group-hover:opacity-100" // Initially hidden, shows on group hover
-            )}
-            aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
-          >
-            <m.div
-              initial={{ scale: 1 }}
-              animate={{ scale: isFavorite ? 1.1 : 1 }}
-              whileTap={{ scale: 0.9 }}
-              transition={{ type: "spring", stiffness: 400, damping: 12 }}
-            >
-              <Heart className={cn("w-4 h-4", isFavorite && "fill-current")} />
-            </m.div>
-          </button>
-
-          {/* Rating badge - Top Left */}
-          {manga.rating > 0 && (
-            <div className="absolute top-2.5 left-2.5 bg-black/70 backdrop-blur-sm px-2.5 py-1 rounded-lg flex items-center gap-1 text-xs text-yellow-400 border border-yellow-500/30 shadow-md">
-              <Star className="w-3.5 h-3.5 fill-current" />
-              <span className="font-semibold">{manga.rating.toFixed(1)}</span>
-            </div>
-          )}
-
-          {/* Chapter Count Badge - Bottom Left on Image */}
-          <div className="absolute bottom-2.5 left-2.5 bg-black/70 backdrop-blur-sm px-2.5 py-1 rounded-lg text-xs text-white/90 border border-white/20 shadow-md">
-             {manga.chapters || "0 თავი"} 
-          </div>
-          
-          {/* Reading progress indicator bar */}
-          {hasBeenRead && (
-            <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-gray-700/50">
-              <m.div 
-                className="h-full bg-gradient-to-r from-purple-500 to-indigo-500 shadow-lg" 
-                style={{ width: `${progressPercentage}%` }}
-                initial={{ width: 0 }}
-                animate={{ width: `${progressPercentage}%` }}
-                transition={{ duration: 0.5, ease: "easeOut" }}
-              />
-            </div>
-          )}
-          
-          {/* Genre pills - show first one - Bottom Right on Image */}
-          {manga.genres && manga.genres.length > 0 && (
-            <div className="absolute bottom-2.5 right-2.5 flex flex-wrap gap-1 max-w-[calc(100%-1rem)]"> 
-              <div className="text-xs px-2.5 py-1 bg-black/70 backdrop-blur-sm rounded-lg truncate max-w-full border border-white/20 shadow-md">
-                {manga.genres[0]}
-              </div>
-            </div>
-          )}
-        </div>
-        
-        <div className="p-3.5 space-y-1.5">
-          <h3 className="text-base font-semibold text-white line-clamp-1 group-hover:text-purple-400 transition-colors duration-200" title={manga.title}>
-            {manga.title}
-          </h3>
-          {manga.englishTitle && manga.englishTitle !== manga.title && (
-            <p className="text-xs text-gray-400 line-clamp-1 mt-0.5" title={manga.englishTitle}>{manga.englishTitle}</p>
-          )}
-          <div className="flex items-center gap-3 pt-1 text-xs text-gray-400">
-            {manga.status && (
-              <div className="flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5 text-gray-500" />
-                <span>{manga.status}</span>
-              </div>
-            )}
-            {manga.release_year && (
-              <div className="flex items-center gap-1.5">
-                <CalendarDays className="w-3.5 h-3.5 text-gray-500" />
-                <span>{manga.release_year}</span>
-              </div>
-            )}
-          </div>
-        </div>
-      </m.div>
-    </m.div>
-  )
-}
-
 export default function ReadPage() {
   // State
   const [featuredMangas, setFeaturedMangas] = useState<MangaData[]>([])
@@ -330,7 +187,8 @@ export default function ReadPage() {
               chapters: chapterCount > 0 ? `${chapterCount} თავი` : "0 თავი", // Display string
               totalChapters: chapterCount, // Numeric value for calculations
               genres: content.genres || [],
-              release_year: content.release_year
+              release_year: content.release_year,
+              view_count: content.view_count ?? 0
             }
           }).filter((content: {image?: string}) => content.image);
           
@@ -468,7 +326,7 @@ export default function ReadPage() {
     <div className="flex min-h-screen bg-[#070707] text-white antialiased">
       <AppSidebar />
 
-      <main className="flex-1 overflow-x-hidden md:pl-[100px]">
+      <main className="flex-1 overflow-x-hidden ">
         {/* Featured Banner */}
         <section className="relative w-full h-[500px] overflow-hidden">
           {/* --- DEBUG LOG --- */}
@@ -519,7 +377,7 @@ export default function ReadPage() {
             )}
           </AnimatePresence>
 
-          <div className="absolute bottom-0 left-0 right-0 md:bottom-12 z-10 p-6 md:p-8">
+          <div className="absolute bottom-0 left-0 right-0 md:bottom-12 z-10 p-6 md:pl-[100px] md:p-8">
             <AnimatePresence mode="wait">
               {isFetching ? (
                 <div className="space-y-4 w-full">
@@ -721,7 +579,7 @@ export default function ReadPage() {
         </section>
 
         {/* Manga Catalog Section */}
-        <section className="px-4 md:px-8 py-8">
+        <section className="px-4 md:px-8 py-8 md:pl-[100px]">
           <m.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -897,123 +755,36 @@ export default function ReadPage() {
               </div>
               
               <div className="text-sm text-gray-400">
-                Sorted by <span className="text-purple-400">
-                  {sortBy === "popular" ? "Popularity" : 
-                   sortBy === "newest" ? "Newest" :
-                   sortBy === "a-z" ? "Title (A-Z)" : "Title (Z-A)"}
+              დალაგებულია: <span className="text-purple-400">
+                  {sortBy === "popular" ? "პოპულარობით" : 
+                   sortBy === "newest" ? "უახლესით" :
+                   sortBy === "a-z" ? "სათაური (ა-ჰ)" : "სათაური (ჰ-ა)"}
                 </span>
               </div>
             </div>
             
-            {/* Manga grid/list - Adjust grid columns */}
+            {/* USE MangaView component here */}
             <AnimatePresence mode="wait">
               {isLoading ? (
                 <CategorySkeleton count={12} />
               ) : (
-                <m.div
-                  key={`view-${viewMode}-sort-${sortBy}-filter-${selectedGenres.join()}-search-${searchQuery}`}
-                  variants={contentVariants}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  className={cn(
-                    viewMode === "grid" 
-                      ? "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 md:gap-4" // Responsive columns
-                      : "flex flex-col gap-3"
-                  )}
-                >
-                  {filteredMangas.length > 0 ? (
-                    viewMode === "grid" ? (
-                      filteredMangas.map((manga, index) => (
-                        <MangaCard 
-                          key={manga.id} 
-                          manga={manga} 
-                          index={index}
-                        />
-                      ))
-                    ) : (
-                      filteredMangas.map((manga, index) => (
-                        <m.div
-                          key={manga.id}
-                          variants={cardVariants}
-                          initial="initial"
-                          animate="animate"
-                          exit="exit"
-                          transition={{ delay: index * 0.03 }}
-                          className="group cursor-pointer bg-black/20 hover:bg-black/40 border border-white/5 hover:border-purple-500/20 rounded-lg overflow-hidden transition-all p-3 flex gap-4"
-                          onClick={() => router.push(`/manga/${manga.id}`)}
-                        >
-                          <div className="w-16 h-24 rounded-md overflow-hidden flex-shrink-0">
-                            <Image
-                              src={manga.thumbnail || "/placeholder.svg"}
-                              alt={manga.title}
-                              width={64}
-                              height={96}
-                              className="object-cover h-full w-full"
-                            />
-                          </div>
-                          
-                          <div className="flex-1 overflow-hidden">
-                            <h3 className="font-medium text-sm line-clamp-1 group-hover:text-purple-400 transition-colors">
-                              {manga.title}
-                            </h3>
-                            {manga.englishTitle && manga.englishTitle !== manga.title && (
-                              <p className="text-xs text-gray-400 line-clamp-1 mt-0.5">{manga.englishTitle}</p>
-                            )}
-                            
-                            <div className="flex items-center gap-4 mt-1 text-xs text-gray-400">
-                              <div className="flex items-center gap-1">
-                                <Clock className="w-3 h-3" />
-                                <span>{manga.status}</span>
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <BookOpen className="w-3 h-3" />
-                                <span>{manga.chapters || "0 chapters"}</span>
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <Star className="w-3 h-3 text-yellow-400" />
-                                <span>{manga.rating.toFixed(1)}</span>
-                              </div>
-                            </div>
-                            
-                            <p className="text-xs text-gray-500 line-clamp-2 mt-2">
-                              {manga.description}
-                            </p>
-                            
-                            <div className="flex flex-wrap gap-1 mt-2">
-                              {manga.genres?.slice(0, 3).map((genre, idx) => (
-                                <div key={idx} className="text-xs px-1.5 py-0.5 bg-black/40 rounded-sm">
-                                  {genre}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </m.div>
-                      ))
-                    )
-                  ) : (
-                    <div className="col-span-full py-12 text-center">
-                      <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-800/50 mb-4">
-                        <Search className="h-6 w-6 text-gray-400" />
-                      </div>
-                      <h3 className="text-lg font-medium mb-2">მანგა ვერ მოიძებნა</h3>
-                      <p className="text-gray-400 max-w-md mx-auto mb-4">
-                        ვერ ვიპოვეთ მანგა, რომელიც შეესაბამება თქვენს ფილტრებს. სცადეთ ძიების ან ფილტრის პარამეტრების შეცვლა.
-                      </p>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setSearchQuery("");
-                          setSelectedGenres([]);
-                          setSortBy("popular");
-                        }}
-                      >
-                        ყველა ფილტრის გასუფთავება
-                      </Button>
-                    </div>
-                  )}
-                </m.div>
+                <MangaView 
+                  key={`view-${viewMode}-sort-${sortBy}-filter-${selectedGenres.join()}-search-${searchQuery}`} // Key to force re-render on changes
+                  contentData={filteredMangas.map(m => ({ ...m, type: 'manga' }))} // Pass filtered data with type
+                  categories={availableGenres} // Pass available genres
+                  selectedCategory={selectedGenres[0] || 'ყველა'} // Pass first selected or 'ყველა'
+                  setSelectedCategory={(category) => { // Handle category selection
+                    if (category === 'ყველა') {
+                      setSelectedGenres([]);
+                    } else {
+                      setSelectedGenres([category]);
+                    }
+                  }}
+                  contentType='manga' // Specify content type
+                  // Pass other props if MangaView needs them (like hover handlers, though it seems self-contained)
+                  hoveredCard={null} // Assuming MangaView manages hover internally
+                  setHoveredCard={() => {}} // Dummy function
+                />
               )}
             </AnimatePresence>
           </m.div>
@@ -1021,7 +792,7 @@ export default function ReadPage() {
 
                 {/* Continue Reading Section (if user has reading history) */}
                 {recentlyRead.length > 0 && (
-          <section className="pt-8 px-4 md:px-8"> {/* Adjusted padding */}
+          <section className="pt-8 px-4 md:px-8 md:pl-[100px]"> {/* Adjusted padding */}
             <m.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
