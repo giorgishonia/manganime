@@ -2,10 +2,11 @@ import { createClient } from '@supabase/supabase-js'
 
 // These environment variables need to be set in your .env.local file
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-key'
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.error('Supabase URL or Anon Key is missing. Please check your environment variables.')
+if (!supabaseUrl || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+  // Only warn at build time – runtime features requiring Supabase will fail without valid keys.
+  console.warn('Supabase URL or Anon Key is missing – using placeholder key. Functionality that relies on Supabase will not work without proper environment variables.')
 }
 
 // Create a single supabase client for interacting with your database
@@ -17,26 +18,28 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   }
 })
 
-// Check the connection to Supabase
-const checkSupabaseConnection = async () => {
-  try {
-    const { error } = await supabase.from('profiles').select('count', { count: 'exact', head: true })
-    
-    if (error) {
-      console.error('Error connecting to Supabase:', error.message)
+// Only attempt a connection check if real credentials are present
+if (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY && process.env.NEXT_PUBLIC_SUPABASE_URL) {
+  const checkSupabaseConnection = async () => {
+    try {
+      const { error } = await supabase.from('profiles').select('count', { count: 'exact', head: true })
+      if (error) {
+        console.error('Error connecting to Supabase:', error.message)
+        return false
+      }
+      console.log('Successfully connected to Supabase')
+      return true
+    } catch (err) {
+      console.error('Unexpected error checking Supabase connection:', err)
       return false
     }
-    
-    console.log('Successfully connected to Supabase')
-    return true
-  } catch (err) {
-    console.error('Unexpected error checking Supabase connection:', err)
-    return false
+  }
+
+  // Run the connection check when this module is imported (only in dev to reduce noise)
+  if (process.env.NODE_ENV === 'development') {
+    checkSupabaseConnection()
   }
 }
-
-// Run the connection check when this module is imported
-checkSupabaseConnection()
 
 // Database schema types for better type safety
 export type Profile = {
