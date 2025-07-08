@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Loader2, FolderOpen, CheckSquare, Square } from 'lucide-react';
@@ -65,10 +65,15 @@ export function CloudinaryFolderSelector({
       const newSelection = isSelected
         ? prev.filter(sf => sf.path !== folder.path)
         : [...prev, folder];
-      onFoldersSelected(newSelection);
       return newSelection;
     });
   };
+
+  // Notify parent whenever selection changes
+  useEffect(() => {
+    onFoldersSelected(selectedFolders);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedFolders]);
 
   return (
     <div className="space-y-4 rounded-md border p-4 bg-muted/30">

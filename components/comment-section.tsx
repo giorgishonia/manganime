@@ -42,6 +42,7 @@ import { StickerSelector, Sticker } from './sticker-selector'
 import { cn } from '@/lib/utils'
 import { createNotification } from "@/lib/notifications"
 import { VIPBadge } from "@/components/ui/vip-badge"
+import Link from 'next/link'
 
 // UUID namespace for converting non-UUID IDs (same as in comments.ts)
 const NAMESPACE = '1b671a64-40d5-491e-99b0-da01ff1f3341'
@@ -838,27 +839,29 @@ const CommentItem = ({
       
       <div className="relative z-10">
         <div className="flex items-start space-x-3">
-          <Avatar className="w-10 h-10 border-2 border-gray-200 dark:border-gray-700">
-            {comment.user_profile?.avatar_url ? (
-              <AvatarImage 
-                src={comment.user_profile.avatar_url} 
-                alt={comment.user_profile?.username || "მომხმარებელი"} 
-                referrerPolicy="no-referrer"
-              />
-            ) : (
-              <AvatarFallback>
-                {comment.user_profile?.username 
-                  ? comment.user_profile.username.charAt(0).toUpperCase() 
-                  : <UserCircle size={24} />
-                }
-              </AvatarFallback>
-            )}
-          </Avatar>
+          <Link href={`/profile/${comment.user_id}`} className="flex-shrink-0">
+            <Avatar className="w-10 h-10 border-2 border-gray-200 dark:border-gray-700">
+              {comment.user_profile?.avatar_url ? (
+                <AvatarImage 
+                  src={comment.user_profile.avatar_url} 
+                  alt={comment.user_profile?.username || "მომხმარებელი"} 
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <AvatarFallback>
+                  {comment.user_profile?.username 
+                    ? comment.user_profile.username.charAt(0).toUpperCase() 
+                    : <UserCircle size={24} />
+                  }
+                </AvatarFallback>
+              )}
+            </Avatar>
+          </Link>
           <div className="flex-1">
             <div className="flex items-center space-x-2">
-              <span className="font-semibold text-sm text-white dark:text-white">
+              <Link href={`/profile/${comment.user_id}`} className="font-semibold text-sm text-white hover:underline">
                 {comment.user_profile?.username || " მომხმარებელი"}
-              </span>
+              </Link>
               {comment.user_profile?.vip_status && (
                 <VIPBadge />
               )}

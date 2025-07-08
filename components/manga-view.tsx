@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState, useRef } from "react"
+import { useMotionValue, useSpring } from "framer-motion"
 import { Star, ChevronRight, BookOpen, Plus, Clock, Info, Calendar, Heart, CalendarDays, Eye } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { motion as m, AnimatePresence } from "framer-motion"
@@ -9,6 +10,9 @@ import { getAllContent, getTrendingContent } from "@/lib/content"
 import { CardSkeleton, CarouselSkeleton, CategorySkeleton } from "@/components/ui/skeleton"
 import { cn, translateGenre } from "@/lib/utils"
 import { hasMangaBeenRead, getMangaProgress, getLatestChapterRead, calculateMangaProgressByChapter } from "@/lib/reading-history"
+import { useAuth } from '@/components/supabase-auth-provider'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip'
 
 // Helper function for drag scrolling
 function setupDragScroll(element: HTMLDivElement | null) {
@@ -121,6 +125,35 @@ interface MangaViewProps {
   contentType?: 'manga' | 'comics'
 }
 
+interface FriendStatus {
+  user_id: string
+  username: string | null
+  avatar_url: string | null
+  status: string
+}
+
+const statusSentence = (name: string, status: string) => {
+  const base = name || 'მეგობარი'
+  switch (status) {
+    case 'reading':
+      return `${base} კითხულობს`;
+    case 'completed':
+      return `${base}-ს აქვს დასრულებული`;
+    case 'on_hold':
+      return `${base}-ს აქვს შეჩერებული`;
+    case 'dropped':
+      return `${base}-ს აქვს მიტოვებული`;
+    case 'plan_to_read':
+      return `${base}-ს აქვს წასაკითხი`;
+    case 'watching':
+      return `${base} კითხულობს`;
+    case 'plan_to_watch':
+      return `${base}-ს აქვს წასაკითხი`;
+    default:
+      return `${base}`;
+  }
+}
+
 // Helper function to check if content is favorited based on type
 function isContentFavorited(id: string, type: 'manga' | 'comics'): boolean {
   if (typeof window === 'undefined') return false;
@@ -167,15 +200,50 @@ function toggleContentFavorite(content: ContentItem): boolean {
 // Manga Card Component 
 function MangaCard({ content, index }: { content: ContentItem; index: number }) {
   const router = useRouter();
+  const cardRef = useRef<HTMLDivElement>(null);
   const hasBeenRead = hasMangaBeenRead(content.id);
   const latestChapterRead = getLatestChapterRead(content.id);
   const [isFavorite, setIsFavorite] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+  const rotateX = useMotionValue(0);
+  const rotateY = useMotionValue(0);
+  const disableTiltRef = useRef(false);
+  const { user, session } = useAuth();
+  const [friendStatuses, setFriendStatuses] = useState<FriendStatus[]>([]);
   
   // Check favorite status on mount
   useEffect(() => {
     setIsFavorite(isContentFavorited(content.id, content.type));
   }, [content.id, content.type]);
+  
+  // Fetch friend statuses via API route (avoids client-side RLS issues)
+  useEffect(() => {
+    const fetchStatuses = async () => {
+      if (!user?.id) return;
+      try {
+        const headers: Record<string, string> = {};
+        if (session?.access_token) {
+          headers['Authorization'] = `Bearer ${session.access_token}`;
+        }
+        const res = await fetch(`/api/friends/status/${content.id}`, {
+          headers,
+          credentials: 'include',
+        });
+        if (!res.ok) throw new Error(`Request failed with ${res.status}`);
+        const json = await res.json();
+        if (json.success && Array.isArray(json.statuses)) {
+          console.log(`Friend statuses for content ${content.id}:`, json.statuses);
+          setFriendStatuses(json.statuses as FriendStatus[]);
+        } else {
+          console.log(`No friend statuses for content ${content.id}. Response:`, json);
+        }
+      } catch (error) {
+        console.error('friend status fetch error', error);
+      }
+    };
+
+    fetchStatuses();
+  }, [user?.id, session?.access_token, content.id]);
   
   // Extract total chapters from manga data
   // First check if totalChapters is already available as a numeric property
@@ -206,17 +274,35 @@ function MangaCard({ content, index }: { content: ContentItem; index: number }) 
       transition={{ delay: index * 0.05 }}
       onHoverStart={() => setIsHovered(true)}
       onHoverEnd={() => setIsHovered(false)}
+      ref={cardRef}
+      onMouseMove={(e) => {
+        if (disableTiltRef.current) return;
+        if (!cardRef.current) return;
+        const rect = cardRef.current.getBoundingClientRect();
+        const posX = e.clientX - rect.left - rect.width / 2;
+        const posY = e.clientY - rect.top - rect.height / 2;
+        const rotateMax = 15; // degrees
+        rotateY.set((posX / (rect.width / 2)) * rotateMax);
+        rotateX.set((-posY / (rect.height / 2)) * rotateMax);
+      }}
+      onMouseLeave={() => {
+        rotateX.set(0);
+        rotateY.set(0);
+      }}
+      style={{ perspective: 800 }}
     >
       <m.div
-        className="relative overflow-hidden rounded-xl bg-transparent transition-all duration-300 flex flex-col flex-grow"
+        className="relative bg-transparent transition-all duration-150 flex flex-col flex-grow overflow-visible"
         initial="initial"
         whileHover="hover"
+        style={{ rotateX: rotateX, rotateY: rotateY, transformStyle: "preserve-3d" }}
       >
-        <div className="aspect-[2/3] relative overflow-hidden">
+        <div className="aspect-[2/3] relative rounded-xl overflow-visible">
           <ImageSkeleton
             src={content.thumbnail}
             alt={content.title}
-            className="w-full h-full object-cover transition-transform duration-300 ease-in-out"
+            className="w-full h-full object-cover rounded-xl transition-transform duration-300 ease-in-out"
+            style={{borderRadius: '10px'}}
           />
           
           {/* Gradient overlay for text contrast at the bottom of image */}
@@ -261,44 +347,91 @@ function MangaCard({ content, index }: { content: ContentItem; index: number }) 
             </m.div>
           </button>
           
-          {/* Rating Badge - Top Left */}
-          {content.rating && content.rating > 0 ? (
-            <div className="absolute top-2.5 left-2.5 bg-black/70 backdrop-blur-sm px-2.5 py-1 rounded-lg flex items-center gap-1 text-xs text-yellow-400 border border-yellow-500/30 shadow-md">
-              <Star className="w-3.5 h-3.5 fill-current" />
-              <span className="font-semibold">{content.rating.toFixed(1)}</span>
+          {/* Rating badge */}
+          {content.rating !== undefined && content.rating > 0 && (
+            <div className="badge-rating absolute top-2 left-2">
+              <Star className="h-3 w-3 fill-current text-yellow-400" />
+              <span>{content.rating.toFixed(1)}</span>
             </div>
-          ) : null}
+          )}
           
-          {/* Chapter Count Badge - Bottom Left on Image */}
+          {/* Chapter Count Badge */}
           <div className="absolute bottom-2.5 left-2.5 bg-black/70 backdrop-blur-sm px-2.5 py-1 rounded-lg text-xs text-white/90 border border-white/20 shadow-md">
             {chaptersDisplay}
           </div>
           
-          {/* Reading progress indicator if manga has been read */}
-          {hasBeenRead && (
-             <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-gray-700/50">
-              <m.div 
-                className="h-full bg-gradient-to-r from-purple-500 to-indigo-500 shadow-lg" 
-                style={{ width: `${progressPercentage}%` }}
-                initial={{ width: 0 }}
-                animate={{ width: `${progressPercentage}%` }}
-                transition={{ duration: 0.5, ease: "easeOut" }}
-              />
-            </div>
+          {/* Friend Avatars Overlay */}
+          {friendStatuses.length > 0 && (
+            <TooltipProvider delayDuration={150}>
+              <div
+                className="absolute top-[35px] left-[5px] flex items-center -space-x-2 z-30 no-tilt"
+                onMouseEnter={() => {
+                  disableTiltRef.current = true;
+                  rotateX.set(0);
+                  rotateY.set(0);
+                }}
+                onMouseLeave={() => {
+                  disableTiltRef.current = false;
+                }}
+              >
+                {friendStatuses.slice(0, 3).map((fs, idx) => (
+                  idx < 3 ? (
+                    <Tooltip key={fs.user_id}>
+                      <TooltipTrigger asChild>
+                        <Avatar className="h-6 w-6 border-2 border-black shadow no-tilt">
+                          <AvatarImage src={fs.avatar_url || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${fs.user_id}`} alt={fs.username || ''} />
+                          <AvatarFallback>{fs.username?.charAt(0).toUpperCase() || '?'}</AvatarFallback>
+                        </Avatar>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="bg-gray-900 border-gray-700 text-sm">
+                        {statusSentence(fs.username || 'Unknown', fs.status)}
+                      </TooltipContent>
+                    </Tooltip>
+                  ) : null
+                ))}
+                {friendStatuses.length > 3 && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="h-6 w-6 rounded-full bg-gray-700 text-xs flex items-center justify-center border-2 border-black no-tilt">+{friendStatuses.length - 2}</div>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="bg-gray-900 border-gray-700 text-sm max-w-xs">
+                      <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
+                        {friendStatuses.slice(2).map(fs => (
+                          <div key={fs.user_id}>{statusSentence(fs.username || 'Unknown', fs.status)}</div>
+                        ))}
+                      </div>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+              </div>
+            </TooltipProvider>
           )}
           
-          {/* ADD View Count to Image Overlay - Bottom Right */}
-          {content.view_count !== undefined ? (
+          {/* View Count badge */}
+          {content.view_count !== undefined && (
             <div className="absolute bottom-2.5 right-2.5 flex flex-wrap gap-1 max-w-[calc(100%-1rem)]">
               <div className="text-xs px-2.5 py-1 bg-black/70 backdrop-blur-sm rounded-lg truncate max-w-full border border-white/20 shadow-md flex items-center gap-1">
                 <Eye className="w-3 h-3 text-white/70" />
                 <span>{content.view_count.toLocaleString()}</span>
               </div>
             </div>
-          ) : null}
+          )}
         </div>
         
-        <div className="p-3.5 space-y-1.5">
+        {/* Progress bar – below poster */}
+        {hasBeenRead && (
+          <div className="w-full h-1.5 bg-gray-700/60 mt-[10px] rounded-[20px]">
+            <m.div
+              className="h-full bg-gradient-to-r from-purple-500 to-indigo-500 rounded-[20px]"
+              style={{ width: `${progressPercentage}%` }}
+              initial={{ width: 0 }}
+              animate={{ width: `${progressPercentage}%` }}
+              transition={{ duration: 0.5, ease: "easeOut" }}
+            />
+          </div>
+        )}
+        
+        <div className="p-3.5 space-y-1.5 flex-1 rounded-b-xl border-t border-white/5">
           <h3 className="text-base font-semibold text-white line-clamp-1 group-hover:text-purple-400 transition-colors duration-200" title={content.title}>
             {content.title}
           </h3>
@@ -309,21 +442,32 @@ function MangaCard({ content, index }: { content: ContentItem; index: number }) 
             </p>
           )}
           
-          {/* Status info */}
-          <div className="flex items-center gap-3 pt-1 text-xs text-gray-400">
-            {content.status && (
-              <div className="flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5 text-gray-500" />
-                <span>{content.status}</span>
-              </div>
-            )}
-            {content.release_year && (
-              <div className="flex items-center gap-1.5">
-                <CalendarDays className="w-3.5 h-3.5 text-gray-500" />
-                <span>{content.release_year}</span>
-              </div>
-            )}
-          </div>
+          {/* Meta info (status • year) */}
+          {(content.status || content.release_year) && (
+            <div className="flex items-center pt-1 text-xs text-gray-400 space-x-1 truncate">
+              {content.status && (() => {
+                const map: Record<string, string> = {
+                  completed: "დასრულებული",
+                  ongoing: "გამოდის",
+                  publishing: "გამოდის",
+                  hiatus: "შეჩერებული",
+                  on_hold: "შეჩერებული",
+                  dropped: "მიტოვებული",
+                  cancelled: "გაუქმებული",
+                  reading: "ვკითხულობ",
+                  plan_to_read: "წასაკითხი",
+                }
+                const key = String(content.status).toLowerCase().replace(" ", "_")
+                return (
+                  <span className="truncate max-w-full capitalize">{map[key] || content.status}</span>
+                )
+              })()}
+              {content.status && content.release_year && <span className="mx-1">•</span>}
+              {content.release_year && (
+                <span className="whitespace-nowrap">{content.release_year}</span>
+              )}
+            </div>
+          )}
         </div>
       </m.div>
     </m.div>
@@ -388,23 +532,36 @@ export function MangaView({
         const response = await getAllContent(contentType, 50);
         
         if (response.success && response.content) {
-          const transformedData = response.content.map((content: any): ContentItem => ({
-            id: content.id,
-            title: content.georgian_title || content.title,
-            englishTitle: content.georgian_title ? content.title : null,
-            description: content.description || "აღწერა არ არის ხელმისაწვდომი",
-            thumbnail: content.thumbnail,
-            banner_image: content.banner_image,
-            rating: content.rating || 0,
-            status: content.status,
-            chapters: content.chapters_count ? `${content.chapters_count} თავი` : "0 თავი",
-            genres: content.genres,
-            type: contentType,
-            release_year: content.release_year,
-            totalChapters: typeof content.chapters_count === 'number' ? content.chapters_count : 
-               (typeof content.chapters_count === 'string' ? parseInt(content.chapters_count.replace(/[^\d]/g, ''), 10) : 0),
-            view_count: content.view_count ?? 0
-          }));
+          const transformedData = response.content.map((content: any): ContentItem => {
+            // Determine Georgian title: check explicit column or extract from alternative_titles
+            let georgianTitle: string | null = null;
+            if (content.georgian_title && typeof content.georgian_title === 'string' && content.georgian_title.trim() !== '') {
+              georgianTitle = content.georgian_title;
+            } else if (Array.isArray(content.alternative_titles)) {
+              const geoEntry = content.alternative_titles.find((t: string) => typeof t === 'string' && t.startsWith('georgian:'));
+              if (geoEntry) {
+                georgianTitle = geoEntry.substring(9);
+              }
+            }
+
+            return {
+              id: content.id,
+              title: georgianTitle || content.title,
+              englishTitle: georgianTitle ? content.title : null,
+              description: content.description || "აღწერა არ არის ხელმისაწვდომი",
+              thumbnail: content.thumbnail,
+              banner_image: content.banner_image,
+              rating: content.rating || 0,
+              status: content.status,
+              chapters: content.chapters_count ? `${content.chapters_count} თავი` : "0 თავი",
+              genres: content.genres,
+              type: contentType,
+              release_year: content.release_year,
+              totalChapters: typeof content.chapters_count === 'number' ? content.chapters_count : 
+                 (typeof content.chapters_count === 'string' ? parseInt(content.chapters_count.replace(/[^\d]/g, ''), 10) : 0),
+              view_count: content.view_count ?? 0
+            };
+          });
           
           setLocalContentData(transformedData);
         } else {
@@ -424,7 +581,7 @@ export function MangaView({
 
   if (localLoading) {
     return (
-      <div className="space-y-12">
+      <div className="space-y-6 mt-8 md:mt-16">
         <CategorySkeleton count={8} />
         <CarouselSkeleton count={6} />
       </div>
@@ -437,7 +594,7 @@ export function MangaView({
       variants={containerVariants}
       initial="hidden"
       animate="visible"
-      className="space-y-12"
+      className="space-y-2"
     >
       {/* Categories filter */}
       <div className="relative">
@@ -507,7 +664,7 @@ export function MangaView({
             variants={containerVariants}
             initial="hidden"
             animate="visible"
-            className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-6"
+            className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 2xl:grid-cols-9 gap-3 md:gap-4"
           >
             {filteredContent.map((content, index) => (
               <MangaCard 

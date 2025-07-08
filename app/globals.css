@@ -4,6 +4,7 @@
 
 /* Import high-quality modern fonts */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Sora:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Georgian:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;600;700&display=swap');
 
 /* Add custom font-3 */
 @font-face {
@@ -38,14 +39,14 @@
 
 body {
   @apply bg-[#070707] text-white;
-  font-family: 'CustomFont', sans-serif;
+  font-family: 'CustomFont', 'Noto Sans Georgian', 'Noto Sans JP', 'Inter', sans-serif;
   line-height: 1.6;
   letter-spacing: 0;
 }
 
 /* Typography - Update to use the custom font for everything */
 h1, h2, h3, h4, h5, h6, p, span, div, button, input, select, textarea {
-  font-family: 'CustomFont', sans-serif;
+  font-family: 'CustomFont', 'Noto Sans Georgian', 'Noto Sans JP', 'Inter', sans-serif;
   letter-spacing: 0;
 }
 
@@ -346,4 +347,60 @@ body.manga-reader-open .manga-reader-container {
   position: fixed;
   inset: 0;
   z-index: 50;
+}
+
+/* ===================  NEW DESIGN ENHANCEMENTS  =================== */
+/* Subtle moving background texture */
+@keyframes drift {
+  0% { background-position: 0 0; }
+  100% { background-position: 1000px 0; }
+}
+.bg-noise-animated {
+  background-image: url('/noise-texture.png');
+  opacity: 0.04;
+  animation: drift 60s linear infinite;
+}
+
+/* Neon accent (purple → indigo) */
+.neon-accent {
+  background: radial-gradient(circle at 50% 50%, hsla(var(--primary-accent) / 0.35) 0%, transparent 70%);
+  box-shadow: 0 0 12px hsla(var(--primary-accent) / 0.6), 0 0 30px hsla(var(--primary-accent) / 0.15) inset;
+}
+
+/* Sidebar icon glow on hover */
+.sidebar-icon {
+  transition: color var(--transition-normal), transform var(--transition-normal), filter var(--transition-normal);
+}
+.sidebar-icon:hover {
+  transform: translateY(-2px) scale(1.1);
+  filter: drop-shadow(0 0 6px hsl(var(--primary-accent)));
+  color: hsl(var(--primary-accent));
+}
+
+/* Rating badge */
+.badge-rating {
+  @apply text-xs font-semibold py-0.5 px-1.5 rounded-full flex items-center gap-0.5 bg-black/60 backdrop-blur-sm border border-white/10;
+}
+
+/* Card glass effect utility */
+.card-glass {
+  background: rgba(20, 20, 20, 0.55);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+@keyframes float-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+.animate-bounce-slow {
+  animation: float-bounce 4s ease-in-out infinite;
+}
+
+/* Description fade mask only on md+ */
+@media (min-width: 768px) {
+  .desc-mask {
+    mask-image: linear-gradient(to bottom, black 50%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, black 50%, transparent 100%);
+  }
 }

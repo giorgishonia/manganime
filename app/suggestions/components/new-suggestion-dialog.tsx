@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useAuth } from "@/components/supabase-auth-provider";
 import { addSuggestion, SuggestionType } from "@/lib/feedback";
+import { getSupabaseAvatarUrl } from "@/lib/comments";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -59,20 +60,33 @@ export default function NewSuggestionDialog({
     try {
       setIsSubmitting(true);
       
-      const suggestion = await addSuggestion({
+      const result = await addSuggestion({
         title,
         description,
         type: type as SuggestionType,
         userId: user.id,
       });
 
-      // Ensure the suggestion has a valid created_at timestamp before passing it to parent
-      const enhancedSuggestion = {
-        ...suggestion,
-        created_at: suggestion.created_at || new Date().toISOString()
-      };
+      if (result.success && result.id) {
+        const newSuggestionObj = {
+          id: result.id,
+          title,
+          description,
+          type: type as SuggestionType,
+          created_at: new Date().toISOString(),
+          image_url: undefined,
+          vote_count: 0,
+          has_voted: false,
+          user: {
+            id: user.id,
+            name: user.user_metadata?.username || user.email?.split("@")[0] || "User",
+            username: user.user_metadata?.username || user.email?.split("@")[0] || "User",
+            image: getSupabaseAvatarUrl(user.id, user.user_metadata?.avatar_url || null)
+          }
+        };
 
-      onSuggestionAdded(enhancedSuggestion);
+        onSuggestionAdded(newSuggestionObj);
+      }
       resetForm();
       onOpenChange(false);
     } catch (error) {

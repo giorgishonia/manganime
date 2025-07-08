@@ -10,6 +10,7 @@ export interface ContentMetadata {
   status: string
   thumbnail: string
   bannerImage?: string
+  logo?: string
   rating?: number
   genres: string[]
   chapters_count?: number  // For manga/comics
@@ -372,7 +373,8 @@ export async function createContent(contentData: any) {
       type: contentData.type || 'manga',
       status: contentData.status || 'ongoing',
       thumbnail: contentData.thumbnail,
-      bannerImage: contentData.bannerImage || contentData.thumbnail, 
+      banner_image: contentData.bannerImage || contentData.thumbnail, 
+      logo: contentData.logo || null,
       genres: contentData.genres || [],
       release_year: contentData.release_year ? parseInt(contentData.release_year.toString(), 10) : null,
       chapters_count: contentData.type === 'manga' || contentData.type === 'comics' ? 
@@ -595,7 +597,8 @@ export async function updateContent(id: string, contentData: any) {
     if (contentData.type !== undefined) dbContent.type = contentData.type;
     if (contentData.status !== undefined) dbContent.status = contentData.status;
     if (contentData.thumbnail !== undefined) dbContent.thumbnail = contentData.thumbnail;
-    if (contentData.bannerImage !== undefined) dbContent.bannerImage = contentData.bannerImage || null;
+    if (contentData.bannerImage !== undefined) dbContent.banner_image = contentData.bannerImage || null;
+    if (contentData.logo !== undefined) dbContent.logo = contentData.logo || null;
     if (contentData.genres !== undefined) dbContent.genres = contentData.genres;
     if (contentData.rating !== undefined) dbContent.rating = contentData.rating;
     if (contentData.season !== undefined) dbContent.season = contentData.season;

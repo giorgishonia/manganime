@@ -56,6 +56,7 @@ interface ComicsData {
   release_year?: number
   totalChapters?: number
   view_count?: number
+  alternative_titles?: string[]
 }
 
 // Animation variants
@@ -160,8 +161,20 @@ export default function ComicsPage() {
                                  (typeof content.chapters === 'string' ? parseInt(content.chapters.replace(/[^\d]/g, ''), 10) : 0));
             return {
               id: content.id,
-              title: content.georgian_title || content.title,
-              englishTitle: content.georgian_title ? content.title : null,
+              ...(function() {
+                const georgianTitle = (content.georgian_title && typeof content.georgian_title === 'string' && content.georgian_title.trim() !== '')
+                  ? content.georgian_title
+                  : (Array.isArray(content.alternative_titles)
+                      ? (() => {
+                          const geoEntry = content.alternative_titles.find((t: string) => typeof t === 'string' && t.startsWith('georgian:'));
+                          return geoEntry ? geoEntry.substring(9) : null;
+                        })()
+                      : null);
+                return {
+                  title: georgianTitle || content.title,
+                  englishTitle: georgianTitle ? content.title : null,
+                };
+              })(),
               description: content.description || "აღწერა არ არის ხელმისაწვდომი",
               image: (content.bannerImage && content.bannerImage.trim() !== '') ? content.bannerImage : content.thumbnail,
               thumbnail: content.thumbnail,
@@ -311,7 +324,7 @@ export default function ComicsPage() {
 
       <main className="flex-1 overflow-x-hidden">
         {/* Featured Banner */}
-        <section className="relative w-full h-[500px] overflow-hidden">
+        <section className="relative w-full h-[360px] md:h-[420px] lg:h-[460px] overflow-hidden">
           <AnimatePresence mode="wait">
             {isFetching ? (
               <m.div
@@ -396,7 +409,7 @@ export default function ComicsPage() {
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.5 }}
-                        className="w-full md:w-auto flex justify-center md:block"
+                        className="hidden md:block"
                       >
                         <Link href={`/comics/${featured.id}`} className="block relative group/thumbnail">
                           <div 
@@ -445,7 +458,7 @@ export default function ComicsPage() {
                           className="group/title"
                         >
                           <Link href={`/comics/${featured.id}`} className="block">
-                            <h1 className="text-2xl md:text-4xl lg:text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-white/80 leading-tight group-hover/title:text-purple-400 transition-colors">
+                            <h1 className="font-extrabold text-white leading-tight truncate max-w-full group-hover/title:text-purple-400 transition-colors">
                               <TypewriterText text={featured.title} />
                             </h1>
                             
@@ -460,7 +473,7 @@ export default function ComicsPage() {
                         
                         {/* Content meta info with enhanced style */}
                         <m.div 
-                          className="flex flex-wrap items-center gap-3 my-4"
+                          className="flex flex-wrap items-center gap-2 my-4"
                           initial={{ opacity: 0, y: 10 }}
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ duration: 0.3, delay: 0.4 }}
@@ -498,12 +511,7 @@ export default function ComicsPage() {
                           animate={{ opacity: 1 }}
                           transition={{ duration: 0.5, delay: 0.5 }}
                         >
-                          <div className="max-h-[80px] md:max-h-[100px] overflow-y-auto no-scrollbar"
-                            style={{
-                              maskImage: 'linear-gradient(to bottom, black 50%, transparent 100%)',
-                              WebkitMaskImage: 'linear-gradient(to bottom, black 50%, transparent 100%)'
-                            }}
-                          >
+                          <div className="max-h-[120px] md:max-h-[170px] overflow-y-auto no-scrollbar desc-mask">
                             <p className="text-sm md:text-base leading-relaxed text-gray-300">{featured.description}</p>
                           </div>
                         </m.div>
@@ -516,7 +524,7 @@ export default function ComicsPage() {
           </div>
 
           {/* Featured content pagination dots */}
-          <div className="absolute bottom-4 left-0 right-0 flex justify-center z-20">
+          <div className="absolute bottom-8 left-0 right-0 flex justify-center z-20">
             <m.div 
               className="flex gap-3"
               initial={{ opacity: 0 }}
@@ -547,7 +555,7 @@ export default function ComicsPage() {
         </section>
 
         {/* Comics Catalog Section */}
-        <section className="px-8 py-8 pl-[100px]">
+        <section className="px-8 py-8 sm:pl-[20px] lg:pl-[100px] md:-mt-16 lg:-mt-20">
           <m.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -555,7 +563,7 @@ export default function ComicsPage() {
             className="flex flex-col"
           >
             {/* Controls: Search, Sort, Filter - Stack on mobile */}
-            <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-6">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-6 z-10">
               <h2 className="text-2xl font-bold self-start md:self-center">კომიქსების ბიბლიოთეკა</h2>
               
               {/* Wrap controls for better stacking */}

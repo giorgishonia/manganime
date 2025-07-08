@@ -11,11 +11,11 @@ import { Crown, CheckCircle, Star, ShieldCheck, Zap, Loader2, AlertTriangle } fr
 import Link from 'next/link';
 
 const vipBenefits = [
-  { icon: <Star className="h-5 w-5 text-yellow-400" />, text: 'Exclusive VIP Badge on your profile and comments' },
-  { icon: <ShieldCheck className="h-5 w-5 text-green-400" />, text: 'Upload custom profile banners to personalize your page' },
-  { icon: <Zap className="h-5 w-5 text-purple-400" />, text: 'Unique styling for your comments' },
-  { icon: <CheckCircle className="h-5 w-5 text-blue-400" />, text: 'Ability to use GIF avatars' },
-  { icon: <Crown className="h-5 w-5 text-orange-400" />, text: 'Special border for your avatar' },
+  { icon: <Star className="h-5 w-5 text-yellow-400" />, text: 'ექსკლუზიური VIP ნიშანი პროფილსა და კომენტარებში' },
+  { icon: <ShieldCheck className="h-5 w-5 text-green-400" />, text: 'ატვირთე საბაჟო პროფილის ბანერები შენი გვერდის დასახასიათებლად' },
+  { icon: <Zap className="h-5 w-5 text-purple-400" />, text: 'უნიკალური სტილი შენი კომენტარებისთვის' },
+  { icon: <CheckCircle className="h-5 w-5 text-blue-400" />, text: 'GIF ავატარის გამოყენების შესაძლებლობა' },
+  { icon: <Crown className="h-5 w-5 text-orange-400" />, text: 'სპეციალური საზღვარი შენი ავატარისთვის' },
 ];
 
 export default function VipPage() {
@@ -30,7 +30,7 @@ export default function VipPage() {
 
   const handleActivateVip = async () => {
     if (!user) {
-      toast.error('Please log in to activate VIP.');
+      toast.error('VIP სტატუსის გასააქტიურებლად გთხოვთ, შედით სისტემაში.');
       router.push('/login');
       return;
     }
@@ -40,14 +40,14 @@ export default function VipPage() {
     setIsActivating(false);
 
     if (result.success) {
-      toast.success('VIP status activated successfully!');
+      toast.success('VIP სტატუსი წარმატებით გააქტიურდა!');
       setIsVipActive(true);
       if (refreshUserProfile) {
         await refreshUserProfile(); // Refresh profile data in auth context
       }
       router.push('/profile'); // Redirect to profile page
     } else {
-      toast.error(result.error || 'Failed to activate VIP status.');
+      toast.error(result.error || 'VIP სტატუსის გააქტიურება ვერ მოხერხდა.');
     }
   };
 
@@ -72,10 +72,10 @@ export default function VipPage() {
               <Crown className="h-10 w-10 text-white" />
             </div>
             <h1 className="text-3xl md:text-4xl font-bold mb-4 bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-500">
-              Unlock VIP Access
+              გახდი VIP
             </h1>
             <p className="text-gray-300 mb-8 md:text-lg">
-              Elevate your Manganime experience with exclusive perks and features. Get your VIP status now - it's free!
+              გააუმჯობესე შენი Manganime გამოცდილება ექსკლუზიური პრივილეგიებითა და ფუნქციებით. მიიღე VIP სტატუსი ახლავე – სრულიად უფასოდ!
             </p>
 
             <div className="text-left space-y-4 mb-10 px-4 md:px-8">
@@ -90,19 +90,19 @@ export default function VipPage() {
             {isVipActive ? (
               <div className="p-4 bg-green-500/10 border border-green-500/30 rounded-lg text-center">
                 <CheckCircle className="h-8 w-8 text-green-400 mx-auto mb-2" />
-                <p className="text-green-300 font-semibold text-lg">Your VIP status is active!</p>
-                <p className="text-gray-400 text-sm mt-1">Enjoy your exclusive benefits.</p>
+                <p className="text-green-300 font-semibold text-lg">თქვენი VIP სტატუსი აქტიურია!</p>
+                <p className="text-gray-400 text-sm mt-1">ისიამოვნეთ ექსკლუზიური პრივილეგიებით.</p>
                 <Button asChild variant="outline" className="mt-4 bg-transparent hover:bg-white/5 border-gray-600 text-gray-300">
-                  <Link href="/profile">Go to Profile</Link>
+                  <Link href="/profile">პროფილზე გადასვლა</Link>
                 </Button>
               </div>
             ) : !user ? (
                 <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg text-center">
                     <AlertTriangle className="h-8 w-8 text-yellow-400 mx-auto mb-2" />
-                    <p className="text-yellow-300 font-semibold text-lg">Log In to Get VIP</p>
-                    <p className="text-gray-400 text-sm mt-1">You need to be logged in to activate VIP status.</p>
+                    <p className="text-yellow-300 font-semibold text-lg">VIP-ის მისაღებად შედით</p>
+                    <p className="text-gray-400 text-sm mt-1">VIP სტატუსის გასააქტიურებლად საჭიროა ავტორიზაცია.</p>
                     <Button asChild variant="default" className="mt-4 bg-purple-600 hover:bg-purple-500">
-                        <Link href="/login?redirect=/vip">Log In</Link>
+                        <Link href="/login?redirect=/vip">შესვლა</Link>
                     </Button>
                 </div>
             ) : (
@@ -115,12 +115,12 @@ export default function VipPage() {
                 {isActivating ? (
                   <>
                     <Loader2 className="h-5 w-5 animate-spin mr-2" />
-                    Activating...
+                    აქტიურდება...
                   </>
                 ) : (
                   <>
                     <Crown className="h-5 w-5 mr-2" />
-                    Get VIP Access (Free!)
+                    მიიღე VIP (უფასო!)
                   </>
                 )}
               </Button>
@@ -128,7 +128,7 @@ export default function VipPage() {
             
             {!isVipActive && user && (
                 <p className="text-xs text-gray-500 mt-6">
-                    By clicking "Get VIP Access", you agree to be awesome. No payment required.
+                    ღილაკზე "მიიღე VIP" დაჭერით ეთანხმები, რომ ხარ ძალიან მაგარი. გადახდა არ არის საჭირო.
                 </p>
             )}
           </div>

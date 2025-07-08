@@ -14,14 +14,14 @@ import { Content } from "@/types/content";
 export default function EditContentPage() {
   const params = useParams();
   const router = useRouter();
-  const { user, isLoading: authLoading } = useAuth();
+  const { user, isLoading: authLoading, isAdmin } = useAuth();
   const [content, setContent] = useState<Content | null>(null);
   const [loading, setLoading] = useState(true);
   const contentId = params.id as string;
 
   // Check if user is admin
   useEffect(() => {
-    if (!authLoading && (!user || !user.user_metadata?.isAdmin)) {
+    if (!authLoading && (!user || !isAdmin)) {
       router.push("/");
       toast.error("You don't have permission to access this page");
     }

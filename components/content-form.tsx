@@ -74,6 +74,7 @@ const contentFormSchema = z.object({
   }),
   thumbnail: z.string().min(1, "Thumbnail URL is required"),
   bannerImage: z.string().optional(),
+  logo: z.string().optional(),
   genres: z.array(z.string()).min(1, "At least one genre is required"),
   alternativeTitles: z.array(z.string()).optional(),
   releaseYear: z.number().optional(),
@@ -237,6 +238,7 @@ export default function ContentForm({
     status: processedInitialData.status || "ongoing",
     thumbnail: processedInitialData.thumbnail || "",
     bannerImage: processedInitialData.bannerImage || processedInitialData.banner_image || "",
+    logo: processedInitialData.logo || "",
     genres: processedInitialData.genres || [],
     alternativeTitles: processedInitialData.alternativeTitles || [],
     releaseYear: processedInitialData.releaseYear || processedInitialData.release_year || undefined,
@@ -255,6 +257,7 @@ export default function ContentForm({
     status: "ongoing" as const,
     thumbnail: "",
     bannerImage: "",
+    logo: "",
     genres: [],
     alternativeTitles: [],
     releaseYear: undefined,
@@ -402,6 +405,11 @@ export default function ContentForm({
       // Process banner image
       if (data.bannerImage) {
         contentData.banner_image = data.bannerImage;
+      }
+      
+      // Process logo image
+      if (data.logo) {
+        contentData.logo = data.logo;
       }
       
       // Process season
@@ -578,6 +586,7 @@ export default function ContentForm({
           form.setValue("description", stripHtml(details.description || ""));
           form.setValue("thumbnail", details.coverImage.large || details.coverImage.extraLarge || "");
           form.setValue("bannerImage", details.bannerImage || "");
+          form.setValue("logo", details.logo || "");
           form.setValue("genres", details.genres || []);
           form.setValue("status", mapAniListStatus(details.status || ""));
           form.setValue("releaseYear", details.startDate?.year || undefined);
@@ -805,6 +814,23 @@ export default function ContentForm({
                     </FormControl>
                     <FormDescription>
                       URL for the banner image (16:9 recommended)
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="logo"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Logo Image URL</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Enter logo image URL" {...field} value={field.value || ""} />
+                    </FormControl>
+                    <FormDescription>
+                      Transparent PNG / SVG recommended (used for page load animation)
                     </FormDescription>
                     <FormMessage />
                   </FormItem>

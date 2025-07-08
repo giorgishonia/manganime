@@ -48,6 +48,8 @@ interface MangaReaderProps {
   mangaId: string
   mangaTitle: string
   initialPage?: number
+  sharedPage?: number
+  onPageChange?: (page: number) => void
 }
 
 type ReadingMode = "Long Strip" | "Single Page" | "Double Page"
@@ -55,7 +57,7 @@ type ReadingDirection = "Left to Right" | "Right to Left"
 type PageFit = "Contain" | "Overflow" | "Cover" | "True size"
 type PageStretch = "None" | "Stretch"
 
-export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, mangaId, mangaTitle, initialPage = 0 }: MangaReaderProps) {
+export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, mangaId, mangaTitle, initialPage = 0, sharedPage, onPageChange }: MangaReaderProps) {
   const [currentPage, setCurrentPage] = useState(initialPage)
   const [visibleStartPage, setVisibleStartPage] = useState(0)
   const [isFullscreen, setIsFullscreen] = useState(false)
@@ -132,21 +134,27 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
     }
   }, [])
 
+  // Attempt to enter fullscreen on mount if the browser allows it via user activation.
   useEffect(() => {
-    if (readerRef.current) {
-      readerRef.current.requestFullscreen().catch((err) => {
-        console.error(`Error attempting to enable fullscreen: ${err.message}`)
-      })
-    }
-    
+    const elem = readerRef.current;
+    // Skip if already in fullscreen or API not supported
+    if (!elem || document.fullscreenElement || !document.fullscreenEnabled) return;
+
+    // Some browsers expose navigator.userActivation to check for a recent user gesture
+    // If no user activation, silently skip to avoid permission errors
+    const hasUserGesture = (navigator as any).userActivation?.isActive ?? false;
+    if (!hasUserGesture) return;
+
+    elem.requestFullscreen().catch(() => {
+      /* silently ignore permission errors */
+    });
+
     return () => {
       if (document.fullscreenElement) {
-        document.exitFullscreen().catch((err) => {
-          console.error(`Error attempting to exit fullscreen: ${err.message}`)
-        })
+        document.exitFullscreen().catch(() => {});
       }
-    }
-  }, [])
+    };
+  }, []);
 
   useEffect(() => {
     const preloadImages = (startIndex: number, count: number) => {
@@ -649,6 +657,20 @@ export function MangaReader({ chapter, chapterList, onClose, onChapterSelect, ma
       container.removeEventListener('scroll', handleLongStripScroll);
     };
   }, [readingMode, longStripRef.current, showControls, autoHideControls]); // Added dependencies
+
+  // Sync incoming shared page (from remote)
+  useEffect(() => {
+    if (typeof sharedPage === 'number' && sharedPage !== currentPage) {
+      setCurrentPage(sharedPage)
+    }
+  }, [sharedPage])
+
+  // Notify parent when page changes (local)
+  useEffect(() => {
+    if (onPageChange) {
+      onPageChange(currentPage)
+    }
+  }, [currentPage])
 
   return (
     <AnimatePresence>

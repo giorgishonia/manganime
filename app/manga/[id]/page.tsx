@@ -66,9 +66,11 @@ import {
 import { Button } from "@/components/ui/button"
 import { useUnifiedAuth } from '@/components/unified-auth-provider'
 import { useAuth } from '@/components/supabase-auth-provider'
-import { AppSidebar } from '@/components/app-sidebar'
 import { EmojiRating, EMOJI_REACTIONS } from '@/components/emoji-rating' // Import EMOJI_REACTIONS for type
 import { supabase } from '@/lib/supabase' // Import Supabase client for RPC calls
+import { VipPromoBanner } from "@/components/ads/vip-promo-banner";
+import { v4 as uuidv4 } from 'uuid'
+import { LogoLoader } from '@/components/logo-loader'
 
 // Animation variants
 const pageVariants = {
@@ -128,6 +130,8 @@ export default function MangaPage({ params }: { params: { id: string } }) {
   const [mangaData, setMangaData] = useState<any>(null)
   const [isFromDatabase, setIsFromDatabase] = useState(false)
   const [readingProgress, setReadingProgress] = useState<any>(null)
+  // Tracks whether the automatic resume logic has already been executed to avoid reopening the reader after it is closed
+  const [resumeHandled, setResumeHandled] = useState(false)
   const [initialReaderPage, setInitialReaderPage] = useState(0)
   const [libraryStatus, setLibraryStatus] = useState<MediaStatus | null>(null)
   const [isSubscribed, setIsSubscribed] = useState(false)
@@ -141,6 +145,62 @@ export default function MangaPage({ params }: { params: { id: string } }) {
   const [isFavorite, setIsFavorite] = useState(false); // Add state for favorite
   const [viewCount, setViewCount] = useState<number | null>(null); // State for view count
   const viewIncrementedRef = useRef(false); // Ref to track view increment call
+
+  // Logo loader overlay states
+  const [showLogoLoader, setShowLogoLoader] = useState(true);
+  const [logoAnimationDone, setLogoAnimationDone] = useState(false);
+
+  // --- Character favorites ---
+  const [favoriteCharacters, setFavoriteCharacters] = useState<{ [id: string]: boolean }>({});
+
+  // Load favorites from localStorage on mount
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('favorites');
+      if (!raw) return;
+      const obj = JSON.parse(raw);
+      const favMap: { [id: string]: boolean } = {};
+      Object.keys(obj).forEach((k) => {
+        if (k.startsWith('character-')) {
+          favMap[k.slice(10)] = true; // remove "character-" prefix (10 chars)
+        }
+      });
+      setFavoriteCharacters(favMap);
+    } catch (err) {
+      console.error('Failed to parse favorites', err);
+    }
+  }, []);
+
+  const toggleCharacterFavorite = (char: any) => {
+    try {
+      const favorites = JSON.parse(localStorage.getItem('favorites') || '{}');
+      const key = `character-${char.id}`;
+      if (favorites[key]) {
+        delete favorites[key];
+        setFavoriteCharacters((prev) => ({ ...prev, [char.id]: false }));
+      } else {
+        favorites[key] = {
+          id: char.id,
+          type: 'character',
+          title: char.name,
+          image: char.image,
+          from: processedData?.title || '',
+          addedAt: new Date().toISOString(),
+        };
+        setFavoriteCharacters((prev) => ({ ...prev, [char.id]: true }));
+      }
+      localStorage.setItem('favorites', JSON.stringify(favorites));
+    } catch (err) {
+      console.error('Failed to toggle character favorite', err);
+    }
+  };
+
+  // Hide logo loader once both data is loaded and animation finished
+  useEffect(() => {
+    if (!isLoading && logoAnimationDone) {
+      setShowLogoLoader(false);
+    }
+  }, [isLoading, logoAnimationDone]);
 
   // Handle scroll effect for background
   useEffect(() => {
@@ -275,7 +335,7 @@ export default function MangaPage({ params }: { params: { id: string } }) {
   useEffect(() => {
     if (mangaId) {
       const progress = getMangaProgress(mangaId)
-      setReadingProgress(readingProgress) // This seems like a typo, should be setReadingProgress(progress)
+      setReadingProgress(progress) // Fix: assign fetched progress
     }
   }, [mangaId, isReaderOpen])
 
@@ -394,6 +454,7 @@ export default function MangaPage({ params }: { params: { id: string } }) {
         })) || []
       },
       view_count: content.view_count ?? 0, // Add view_count
+      logo: content.logo || null,
     };
   };
 
@@ -405,7 +466,7 @@ export default function MangaPage({ params }: { params: { id: string } }) {
     }
   }
 
-  const handleReadClick = (chapterIndex = 0, resumeFromProgress = false) => {
+  const handleReadClick = (chapterIndex = 0, resumeFromProgress = false, initialPageOverride?: number) => {
     if (!processedData) return;
     
     if (processedData.chapterList.length === 0) {
@@ -419,9 +480,10 @@ export default function MangaPage({ params }: { params: { id: string } }) {
     
     setSelectedChapter(chapterIndex);
     
-    // If resumeFromProgress is true AND readingProgress exists for this chapter/manga combo
-    if (resumeFromProgress && readingProgress) {
-      setInitialReaderPage(readingProgress.pageNumber);
+    // Determine initial reader page
+    if (resumeFromProgress) {
+      const initPage = initialPageOverride !== undefined ? initialPageOverride : (readingProgress?.currentPage ?? 0);
+      setInitialReaderPage(initPage);
     } else {
       setInitialReaderPage(0);
     }
@@ -509,6 +571,7 @@ export default function MangaPage({ params }: { params: { id: string } }) {
     // Fix the characters mapping to ensure proper extraction
     characters: mapCharacters(mangaData),
     view_count: mangaData.view_count ?? 0, // Add view_count to processed data
+    logo: mangaData.logo || null,
   } : null;
 
   // Add a debug log for the processed data
@@ -687,7 +750,7 @@ export default function MangaPage({ params }: { params: { id: string } }) {
   // Once processedData is defined, add the URL check effect here
   // Check for resume parameter in URL after processedData is defined
   useEffect(() => {
-    if (processedData && typeof window !== 'undefined') {
+    if (!resumeHandled && processedData && typeof window !== 'undefined') {
       const urlParams = new URLSearchParams(window.location.search);
       const shouldResume = urlParams.get('resume') === 'true';
       const pageParam = urlParams.get('page');
@@ -701,14 +764,14 @@ export default function MangaPage({ params }: { params: { id: string } }) {
         );
         
         if (chapterIndex !== -1) {
-          // Use the page from URL if available, otherwise use the stored progress
+          // Open reader at the correct chapter & page
           const initialPage = startPage || readingProgress.currentPage;
-          setInitialReaderPage(initialPage);
-          handleReadClick(chapterIndex, true);
+          handleReadClick(chapterIndex, true, initialPage);
+          setResumeHandled(true); // Prevent re-opening after reader is closed
         }
       }
     }
-  }, [readingProgress, processedData]);
+  }, [readingProgress, processedData, resumeHandled]);
 
   // Check library status when manga data is loaded
   useEffect(() => {
@@ -946,11 +1009,26 @@ export default function MangaPage({ params }: { params: { id: string } }) {
     );
   }
 
+  // --- Dynamic character grid columns ---
+  const charactersToShow = processedData?.characters?.slice(0, 6) || [];
+  const getCharacterColumns = (cnt: number) => {
+    if (cnt <= 3) return cnt;         // 1, 2 or 3 characters → single row
+    if (cnt === 4) return 2;          // 4 characters → 2×2 grid
+    return cnt % 3 === 1 ? 4 : 3;     // Smart balance for 5+ characters
+  };
+  const characterColumns = getCharacterColumns(charactersToShow.length);
+
   return (
     <div className="flex min-h-screen bg-[#070707] text-white antialiased">
 
-      <AppSidebar />
-      
+      {/* Animated logo loader overlay */}
+      {showLogoLoader && processedData && (
+        <LogoLoader
+          src={(processedData as any).logo || processedData.coverImage || processedData.bannerImage || '/placeholder.svg'}
+          onComplete={() => setLogoAnimationDone(true)}
+        />
+      )}
+
       <motion.div 
         ref={scrollRef}
         className="flex-1 min-h-screen text-white relative overflow-y-auto overflow-x-hidden md:pl-20"
@@ -1100,7 +1178,21 @@ export default function MangaPage({ params }: { params: { id: string } }) {
                   <div className="flex-1 text-center md:text-left">
                     <div className="flex flex-wrap items-center justify-center md:justify-start gap-3 mb-2 text-sm">
                       <div className="px-3 py-1 bg-purple-600/20 text-purple-400 rounded-full">
-                        {processedData.status}
+                        {(() => {
+                          const map: Record<string, string> = {
+                            completed: "დასრულებული",
+                            ongoing: "გამოდის",
+                            publishing: "გამოდის",
+                            hiatus: "შეჩერებული",
+                            on_hold: "შეჩერებული",
+                            dropped: "მიტოვებული",
+                            cancelled: "გაუქმებული",
+                            reading: "ვკითხულობ",
+                            plan_to_read: "წასაკითხი",
+                          };
+                          const key = String(processedData.status).toLowerCase().replace(" ", "_");
+                          return map[key] || processedData.status;
+                        })()}
                       </div>
                       
                       {viewCount !== null && (
@@ -1183,7 +1275,13 @@ export default function MangaPage({ params }: { params: { id: string } }) {
                     {readingProgress ? (
                       <motion.button
                         className=" px-6 py-3 flex justify-center bg-purple-600 hover:bg-purple-700 rounded-lg flex items-center gap-2 shadow-lg shadow-purple-900/20 font-medium"
-                        onClick={() => handleReadClick(0, true)}
+                        onClick={() => {
+                          const chapterIndex = processedData.chapterList.findIndex(
+                            (ch: any) => ch.id === readingProgress.chapterId ||
+                                         ch.number === readingProgress.chapterNumber
+                          );
+                          handleReadClick(chapterIndex !== -1 ? chapterIndex : 0, true, readingProgress.currentPage);
+                        }}
                         whileHover={{ scale: 1.03 }}
                         whileTap={{ scale: 0.97 }}
                       >
@@ -1204,6 +1302,9 @@ export default function MangaPage({ params }: { params: { id: string } }) {
                         კითხვის დაწყება
                       </motion.button>
                     )}
+                    
+                    {/* Live Sync Reading button */}
+                    {/* Removed as per instructions */}
                     
                     {/* Library Status Dropdown */}
                     <DropdownMenu>
@@ -1340,7 +1441,7 @@ export default function MangaPage({ params }: { params: { id: string } }) {
                 {/* --- RESTORED CONTENT SECTIONS START --- */}
                 {/* Main content container - Make single column on mobile */}
                 <div className="flex flex-col mt-8 mb-12">
-                  <div className="flex flex-col lg:flex-row gap-8">
+                  <div className="flex flex-col-reverse sm:flex-row gap-8 items-stretch">
                     {/* Left side: Chapters list */}
                     <div className="lg:w-3/5 order-2 lg:order-1"> {/* Chapters second on mobile */}
                       <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
@@ -1514,20 +1615,18 @@ export default function MangaPage({ params }: { params: { id: string } }) {
                     </div>
                     
                     {/* Right side: Characters grid */}
-                    <div className="lg:w-2/5 order-1 lg:order-2"> {/* Characters first on mobile */}
+                    <div className="lg:w-2/5 order-1 lg:order-2 flex flex-col h-full"> {/* Characters first on mobile */}
                       <h2 className="text-xl font-bold mb-4">პერსონაჟები</h2>
                       
                       {/* Display characters section in the UI */}
                       {processedData?.characters && processedData.characters.length > 0 && (
-                        <div className="mt-12">
-                          <div className={`grid ${
-                            processedData.characters.length <= 3 ? 'grid-cols-1 sm:grid-cols-3' :
-                            processedData.characters.length <= 4 ? 'grid-cols-2 sm:grid-cols-2' :
-                            processedData.characters.length <= 6 ? 'grid-cols-2 sm:grid-cols-3' :
-                            processedData.characters.length <= 8 ? 'grid-cols-2 sm:grid-cols-4' :
-                            'grid-cols-2 sm:grid-cols-3 lg:grid-cols-4'
-                          } gap-4`}>
-                            {processedData.characters.map((character: any) => (
+                        <div className="overflow-hidden">
+                          {/* Display up to 6 characters in a fixed 3 x 2 grid so everything fits without scrolling */}
+                          <div
+                            className="grid gap-4"
+                            style={{ gridTemplateColumns: `repeat(${characterColumns}, minmax(0, 1fr))` }}
+                          >
+                            {charactersToShow.map((character: any) => (
                               <div 
                                 key={character.id} 
                                 className="bg-card rounded-lg overflow-hidden border border-border hover:border-primary/50 transition-colors h-full flex flex-col"
@@ -1541,8 +1640,23 @@ export default function MangaPage({ params }: { params: { id: string } }) {
                                       e.currentTarget.src = '/placeholder-character.jpg';
                                     }}
                                   />
+                                  <button
+                                      onClick={(e) => {
+                                          e.stopPropagation();
+                                          toggleCharacterFavorite(character);
+                                      }}
+                                      className="absolute top-2 right-2 z-10 p-1.5 bg-black/50 rounded-full text-white hover:bg-black/70 transition-colors"
+                                      title={favoriteCharacters[character.id] ? "Remove from favorites" : "Add to favorites"}
+                                  >
+                                      <Heart
+                                          className={cn(
+                                              "h-4 w-4 transition-all",
+                                              favoriteCharacters[character.id] ? "text-red-500 fill-red-500" : "text-white"
+                                          )}
+                                      />
+                                  </button>
                                   <div className="absolute bottom-0 w-full bg-gradient-to-t from-black via-black/60 to-transparent p-2 pt-10">
-                                    <div className={`text-xs px-2 py-0.5 rounded-full inline-block font-medium ${
+                                    <div className={`text-xs px-2 py-0.5 rounded-full inline-block font-semibold text-sm ${
                                       character.role === 'MAIN' 
                                         ? 'bg-purple-500/90 text-white' 
                                         : character.role === 'SUPPORTING' 
@@ -1645,6 +1759,9 @@ export default function MangaPage({ params }: { params: { id: string } }) {
                       )}
 
                       {/* Comments section */}
+                      {/* VIP promotion banner – only shown to non-VIP users */}
+                      <VipPromoBanner className="mb-12" />
+
                       <CommentSection 
                         contentId={mangaId}
                         contentType="manga"

@@ -16,6 +16,7 @@ interface GeneratedChapter {
   title: string;
   pages: string[]; // Array of image URLs
   contentId: string;
+  releaseDate: string;
 }
 
 interface CloudinaryResource {
@@ -43,7 +44,7 @@ export default function MultipleChapterForm({
   
   const [selectedCloudinaryFolders, setSelectedCloudinaryFolders] = useState<CloudinaryFolder[]>([]);
   const [startChapterNumber, setStartChapterNumber] = useState<number>(1);
-  const [baseChapterTitle, setBaseChapterTitle] = useState<string>("Chapter %N: %F");
+  const [baseChapterTitle, setBaseChapterTitle] = useState<string>("თავი: %N");
 
   const [generatedChapters, setGeneratedChapters] = useState<GeneratedChapter[]>([]);
   const [showPreview, setShowPreview] = useState(false);
@@ -91,7 +92,8 @@ export default function MultipleChapterForm({
           title: title,
           pages: imageUrls,
           contentId: contentId,
-        });
+          releaseDate: new Date().toISOString(),
+        } as any);
         toast.success(`Preview generated for ${folder.name} as Chapter ${currentChapterNumber}.`);
       }
 

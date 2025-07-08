@@ -1,3 +1,5 @@
+// Avoid importing the admin client in browser bundles. We'll lazy-load it on the server only when needed.
+
 import { supabase } from './supabase';
 
 // Define the structure for the notification data payload
@@ -15,7 +17,7 @@ interface NotificationData {
 }
 
 // Define the specific notification types allowed
-export type NotificationType = 'comment_like' | 'comment_reply' | 'new_chapter' | 'content_update' | 'system_message' | 'new_content';
+export type NotificationType = 'comment_like' | 'comment_reply' | 'new_chapter' | 'content_update' | 'system_message' | 'new_content' | 'friend_request' | 'friend_accept';
 
 /**
  * Creates a notification message based on type and data.
@@ -39,6 +41,10 @@ function constructNotificationMessage(type: NotificationType, data: Notification
       return data.system_message_content || 'თქვენ გაქვთ ახალი სისტემური შეტყობინება.';
     case 'new_content':
       return `${data.content_title || 'Content'} განახლდა.`;
+    case 'friend_request':
+      return `${sender}-მ გაგოგზავნათ მეგობრობის თხოვნა.`;
+    case 'friend_accept':
+      return `${sender}-მა მიიღო თქვენი მეგობრობის თხოვნა.`;
     default:
       // This default case should ideally not be reached if type is NotificationType
       console.warn(`Unknown notification type: ${(type as any)}`);
@@ -66,6 +72,25 @@ export async function createNotification(
   }
 
   try {
+    // Prevent duplicate friend_request / friend_accept notifications
+    if (type === 'friend_request' || type === 'friend_accept') {
+      const { data: existing, error: existErr } = await supabase
+        .from('notifications')
+        .select('id')
+        .eq('user_id', recipientUserId)
+        .eq('type', type)
+        .eq('sender_user_id', data.sender_user_id || null)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (!existErr && existing) {
+        // Duplicate found – skip creating another one
+        console.log('Skipping duplicate notification', type, recipientUserId, data.sender_user_id)
+        return { success: true }
+      }
+    }
+
     const message = constructNotificationMessage(type, data);
 
     const notificationPayload = {
@@ -80,20 +105,25 @@ export async function createNotification(
 
     console.log("Inserting notification:", notificationPayload);
 
-    // Use the public client - relies on RLS policy allowing authenticated inserts
-    // CONSIDER using supabaseAdmin or an Edge Function for security.
-    const { error } = await supabase
-      .from('notifications')
-      .insert(notificationPayload);
-
-    if (error) {
-      console.error('Error inserting notification:', error);
-      // Don't throw, just return failure
-      return { success: false, error };
+    // Use admin client on the server to bypass RLS; fall back to normal supabase client in browser (shouldn't happen for inserts).
+    let insertError: any = null
+    if (typeof window === 'undefined') {
+      const { supabaseAdmin } = await import('./supabase/admin')
+      const { error } = await supabaseAdmin.from('notifications').insert(notificationPayload)
+      insertError = error
+    } else {
+      // In client context, we should not be creating notifications, but handle gracefully.
+      const { error } = await supabase.from('notifications').insert(notificationPayload)
+      insertError = error
     }
 
-    console.log(`Notification (${type}) created successfully for user ${recipientUserId}`);
-    return { success: true };
+    if (insertError) {
+      console.error('Error inserting notification:', insertError)
+      return { success: false, error: insertError }
+    }
+
+    console.log(`Notification (${type}) created successfully for user ${recipientUserId}`)
+    return { success: true }
 
   } catch (error) {
     console.error('Error in createNotification function:', error);
@@ -230,10 +260,20 @@ async function fetchNotificationsWithProfiles(
 
     console.log(`Retrieved ${notificationsData.length} notifications`);
 
+    // Filter out friend_request notifications that are already read
+    const filteredNotifications = notificationsData.filter(n => {
+      if (n.type === 'friend_request' && n.is_read) return false;
+      return true;
+    });
+
+    if (filteredNotifications.length === 0) {
+      return { success: true, notifications: [] };
+    }
+
     // Get unique sender IDs from notifications that have one
     const senderIds = [
       ...new Set(
-        notificationsData
+        filteredNotifications
           .map(n => n.sender_user_id)
           .filter(id => id !== null && id !== undefined) as string[]
       )
@@ -266,7 +306,7 @@ async function fetchNotificationsWithProfiles(
     }
 
     // Combine notifications with sender profiles
-    const processedNotifications = notificationsData.map(notif => {
+    const processedNotifications = filteredNotifications.map(notif => {
       let profile = null;
       if (notif.sender_user_id) {
         profile = senderProfilesMap.get(notif.sender_user_id) || null;

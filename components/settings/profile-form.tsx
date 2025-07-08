@@ -23,6 +23,7 @@ const profileSchema = z.object({
   username: z.string().min(3, "მომხმარებლის სახელი უნდა იყოს მინიმუმ 3 სიმბოლო").max(50, "მომხმარებლის სახელი უნდა იყოს მაქსიმუმ 50 სიმბოლო"),
   bio: z.string().max(300, "ბიო უნდა იყოს მაქსიმუმ 300 სიმბოლო").optional().nullable(),
   is_public: z.boolean().default(true),
+  birth_date: z.date().optional().nullable(),
 });
 
 type ProfileFormData = z.infer<typeof profileSchema>;
@@ -36,6 +37,7 @@ interface ProfileFormProps {
     avatar_url: string | null;
     bio: string | null;
     is_public: boolean;
+    birth_date?: Date | string | null;
   };
   userId: string; // Ensure we always have the userId for the update call
   onSuccess?: (updatedData: Partial<ProfileFormData>) => void; // Callback on successful update
@@ -59,6 +61,7 @@ export function ProfileForm({ initialData, userId, onSuccess }: ProfileFormProps
       username: initialData.username || '',
       bio: initialData.bio || '',
       is_public: initialData.is_public ?? true,
+      birth_date: initialData.birth_date ? new Date(initialData.birth_date as any) : undefined,
     },
   });
 
@@ -71,6 +74,7 @@ export function ProfileForm({ initialData, userId, onSuccess }: ProfileFormProps
       username: initialData.username || '',
       bio: initialData.bio || '',
       is_public: initialData.is_public ?? true,
+      birth_date: initialData.birth_date ? new Date(initialData.birth_date as any) : undefined,
     });
   }, [initialData, reset]);
 
@@ -94,6 +98,7 @@ export function ProfileForm({ initialData, userId, onSuccess }: ProfileFormProps
       const dataToSend = { 
         ...data, 
         is_public: !!data.is_public,
+        birth_date: data.birth_date ? data.birth_date.toISOString().split('T')[0] : null,
         // If AvatarUploader only updates its preview and expects this form to save:
         // avatar_url: currentAvatarUrl 
       };
@@ -124,7 +129,7 @@ export function ProfileForm({ initialData, userId, onSuccess }: ProfileFormProps
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-8 max-w-2xl">
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-8 max-w-2xl md:max-h-[80vh] overflow-y-auto pr-2">
       <div className="space-y-2">
         <Label>პროფილის სურათი</Label>
         <AvatarUploader 
@@ -183,6 +188,26 @@ export function ProfileForm({ initialData, userId, onSuccess }: ProfileFormProps
           className="bg-black/30 border-white/10 resize-none" 
         />
         {errors.bio && <p className="text-sm text-red-500">{errors.bio.message}</p>}
+      </div>
+
+      {/* Birth Date */}
+      <div className="space-y-2">
+        <Label htmlFor="birth_date">დაბადების თარიღი</Label>
+        <Controller
+          name="birth_date"
+          control={control}
+          render={({ field }) => (
+            <Input
+              type="date"
+              id="birth_date"
+              value={field.value ? new Date(field.value).toISOString().split('T')[0] : ''}
+              onChange={(e) => field.onChange(e.target.value ? new Date(e.target.value) : null)}
+              className="bg-black/30 border-white/10"
+              max={new Date().toISOString().split('T')[0]}
+            />
+          )}
+        />
+        {errors.birth_date && <p className="text-sm text-red-500">{errors.birth_date.message}</p>}
       </div>
 
       {/* Public Profile Toggle */}

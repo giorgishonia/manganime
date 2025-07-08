@@ -87,7 +87,7 @@ declare module "@/components/admin/chapter-form" {
 
 export default function AdminChapterManagementPage() {
   const router = useRouter();
-  const { user, isLoading: authLoading } = useAuth();
+  const { user, isLoading: authLoading, isAdmin } = useAuth();
   const searchParams = useSearchParams();
   
   const [content, setContent] = useState<any[]>([]);
@@ -117,30 +117,8 @@ export default function AdminChapterManagementPage() {
           return;
         }
 
-        const isDevelopment = process.env.NODE_ENV === 'development';
-        if (isDevelopment) {
-          console.log("DEVELOPMENT MODE: Bypassing admin check");
-          
-          try {
-            const contentData = await getAllContentForAdmin();
-            setContent(contentData);
-            setFilteredContent(contentData);
-            setLoading(false);
-          } catch (error) {
-            console.error("Failed to fetch content:", error);
-            toast.error("Failed to load content data");
-            setLoading(false);
-          }
-          return;
-        }
-
-        const { data: userData } = await supabase
-          .from("profiles")
-          .select("role")
-          .eq("id", user.id)
-          .single();
-          
-        if (userData?.role !== "admin") {
+        // Enforce admin-only access
+        if (!isAdmin) {
           toast.error("Permission Denied", {
             description: "You don't have permission to access this page",
           });
@@ -162,7 +140,7 @@ export default function AdminChapterManagementPage() {
     }
 
     checkAuth();
-  }, [authLoading, user, router]);
+  }, [authLoading, user, router, isAdmin]);
 
   // Filter content based on search and type
   useEffect(() => {

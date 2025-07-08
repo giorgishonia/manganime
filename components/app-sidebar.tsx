@@ -24,11 +24,13 @@ import {
   Heart,
   MessageSquare,
   Film,
-  Plus
+  Plus,
+  UserIcon
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { motion as m, AnimatePresence } from "framer-motion"
 import { cn } from "@/lib/utils"
+import { getSupabaseAvatarUrl } from '@/lib/comments'
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { usePathname } from "next/navigation"
 import Link from "next/link"
@@ -44,6 +46,7 @@ import {
   markNotificationsAsRead
 } from "@/lib/notifications"
 import { ka } from "date-fns/locale"
+import { supabase } from "@/lib/supabase"
 
 // Interface for sidebar items
 interface SidebarItemProps {
@@ -72,7 +75,7 @@ const SidebarItem = ({ icon, label, isActive, href, accentColor = "hsl(var(--pri
       
       <div 
         className={cn(
-          "flex items-center justify-center h-5 w-5 z-10 transition-all",
+          "flex items-center justify-center h-5 w-5 z-10 sidebar-icon",
           isActive ? `text-[${accentColor}]` : `group-hover:text-[${accentColor}]`
         )}
       >
@@ -154,6 +157,7 @@ export function AppSidebar() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [isLoadingNotifs, setIsLoadingNotifs] = useState(false);
   const [notifLoadError, setNotifLoadError] = useState(false);
+  const [notifSubscription, setNotifSubscription] = useState<any>(null)
   
   // Check if we're on mobile - only run on client side
   useEffect(() => {
@@ -218,6 +222,35 @@ export function AppSidebar() {
       clearInterval(intervalId);
     };
   }, [user]);
+  
+  // Realtime notifications subscription – update count instantly
+  useEffect(() => {
+    if (!user) return;
+
+    // Subscribe to INSERT events on notifications for this user
+    const channel = supabase.channel(`notifications-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${user.id}`
+        },
+        (payload) => {
+          // Increase unread count and prepend notification
+          setUnreadCount((c) => c + 1)
+          setNotifications((prev) => [payload.new as unknown as Notification, ...prev])
+        }
+      )
+      .subscribe()
+
+    setNotifSubscription(channel)
+
+    return () => {
+      channel.unsubscribe()
+    }
+  }, [user])
   
   // Function to toggle search modal
   const toggleSearch = () => {
@@ -448,6 +481,12 @@ export function AppSidebar() {
               href="/favorites"
               isActive={pathname === "/favorites"}
             />
+            <SidebarItem
+              icon={<Users className="stroke-[1.5px]" />}
+              label="მეგობრები"
+              href="/friends"
+              isActive={pathname === "/friends"}
+            />
           </div>
           
           <div className="space-y-2 px-2">
@@ -517,7 +556,7 @@ export function AppSidebar() {
                       key={profile?.avatar_url || user?.user_metadata?.avatar_url}
                     >
                       <AvatarImage 
-                        src={`${profile?.avatar_url || user?.user_metadata?.avatar_url || 'https://api.dicebear.com/7.x/pixel-art/svg?seed=' + user.id}${(profile?.avatar_url || user?.user_metadata?.avatar_url) ? `?_t=${Date.now()}` : ''}`} 
+                        src={getSupabaseAvatarUrl(user?.id || '', profile?.avatar_url || null) || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${user?.id}`} 
                         alt={profile?.username || user?.email || "User"} 
                       />
                       <AvatarFallback>
@@ -638,6 +677,9 @@ export function AppSidebar() {
                         case 'new_content':
                           IconComponent = <Plus className="h-5 w-5 text-yellow-400" />;
                           break;
+                        case 'friend_request':
+                          IconComponent = <UserIcon className="h-5 w-5 text-purple-400" />;
+                          break;
                         default:
                           IconComponent = <Bell className="h-5 w-5 text-gray-400" />;
                       }
@@ -656,6 +698,83 @@ export function AppSidebar() {
                       };
 
                       const link = generateNotificationLink(notif);
+
+                      if (notif.type === 'friend_request') {
+                        const profileLink = `/profile/${notif.sender_profile?.username || notif.sender_user_id}`
+                        return (
+                          <div key={notif.id} className={cn(
+                            "p-3 rounded-lg", !notif.is_read ? "bg-purple-500/10" : "bg-white/5")}
+                          >
+                            <div className="flex items-start gap-3">
+                              <Link href={profileLink} onClick={closeNotifications} className="flex-shrink-0">
+                                {notif.sender_profile?.avatar_url ? (
+                                  <Avatar className="h-8 w-8">
+                                    <AvatarImage src={notif.sender_profile.avatar_url} alt={notif.sender_profile.username || ''} />
+                                    <AvatarFallback>{notif.sender_profile.username?.[0]?.toUpperCase() || '?'}</AvatarFallback>
+                                  </Avatar>
+                                ) : (
+                                  <div className="h-8 w-8 flex items-center justify-center bg-gray-700/50 rounded-full">
+                                    {IconComponent}
+                                  </div>
+                                )}
+                              </Link>
+                              <div className="flex-1">
+                                <p className="text-sm text-white/90 mb-1">
+                                  <Link href={profileLink} onClick={closeNotifications} className="font-semibold hover:underline">
+                                    {notif.sender_profile?.username || 'მომხმარებელი'}
+                                  </Link>{' '}
+                                  {"გამოგიგზავნთ მეგობრობის მოთხოვნა."}
+                                </p>
+                                <p className="text-xs text-gray-400 mb-2">
+                                  {formatDistanceToNow(new Date(notif.created_at), { addSuffix: true, locale: ka })}
+                                </p>
+                                <div className="flex gap-2">
+                                  <Button size="sm" onClick={async () => {
+                                    try {
+                                      const { data: sessionData } = await supabase.auth.getSession()
+                                      const token = sessionData.session?.access_token
+                                      const res = await fetch('/api/friends/respond', {
+                                        method: 'POST',
+                                        headers: {
+                                          'Content-Type': 'application/json',
+                                          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                                        },
+                                        body: JSON.stringify({ requesterId: notif.sender_user_id, action: 'accept' }),
+                                      })
+                                      if (res.ok) {
+                                        toast.success('დამეგობრდით')
+                                        setNotifications(prev=>prev.filter(n=>n.id!==notif.id))
+                                        setUnreadCount((c)=>Math.max(0,c-1))
+                                      } else {
+                                        const { error } = await res.json(); toast.error(error || 'შეცდომა')
+                                      }
+                                    } catch(err){ console.error(err); toast.error('შეცდომა') }
+                                  }}>თანხმობა</Button>
+                                  <Button size="sm" variant="destructive" onClick={async () => {
+                                    try {
+                                      const { data: sessionData } = await supabase.auth.getSession()
+                                      const token = sessionData.session?.access_token
+                                      const res = await fetch('/api/friends/respond', {
+                                        method: 'POST',
+                                        headers: {
+                                          'Content-Type': 'application/json',
+                                          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                                        },
+                                        body: JSON.stringify({ requesterId: notif.sender_user_id, action: 'decline' }),
+                                      })
+                                      if (res.ok) {
+                                        toast.success('უარი თქვით')
+                                        setNotifications(prev=>prev.filter(n=>n.id!==notif.id))
+                                        setUnreadCount((c)=>Math.max(0,c-1))
+                                      } else { const { error } = await res.json(); toast.error(error||'შეცდომა') }
+                                    } catch(err){ console.error(err); toast.error('შეცდომა') }
+                                  }}>უარი</Button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      }
 
                       return (
                         <Link 
@@ -806,7 +925,7 @@ function MobileSidebarContent({
             key={authProfile?.avatar_url || user?.user_metadata?.avatar_url}
           >
             <AvatarImage 
-              src={`${authProfile?.avatar_url || user?.user_metadata?.avatar_url || 'https://api.dicebear.com/7.x/pixel-art/svg?seed=' + user.id}${(authProfile?.avatar_url || user?.user_metadata?.avatar_url) ? `?_t=${Date.now()}` : ''}`} 
+              src={getSupabaseAvatarUrl(user?.id || '', authProfile?.avatar_url || null) || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${user?.id}`} 
               alt={authProfile?.username || user?.email || "User"} 
             />
             <AvatarFallback>{authProfile?.username?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase() || 'მ'}</AvatarFallback>
@@ -916,6 +1035,20 @@ function MobileSidebarContent({
               {pathname === "/favorites" && <div className="absolute left-0 top-0 bottom-0 w-1 bg-[hsl(var(--primary))] rounded-r-full" />}
               <Heart className={cn("h-5 w-5 mr-3 stroke-[1.5px]", pathname === "/favorites" && "text-red-500")} />
               <span>რჩეულები</span>
+            </Link>
+            <Link 
+              href="/friends" 
+              className={cn(
+                "flex items-center px-3 py-3 rounded-xl transition-colors",
+                pathname === "/friends" 
+                  ? "bg-white/10 text-white relative" 
+                  : "text-white/70 hover:text-white hover:bg-white/5"
+              )}
+              onClick={onClose}
+            >
+              {pathname === "/friends" && <div className="absolute left-0 top-0 bottom-0 w-1 bg-[hsl(var(--primary))] rounded-r-full" />}
+              <Users className={cn("h-5 w-5 mr-3 stroke-[1.5px]", pathname === "/friends" && "text-[hsl(var(--primary))]")} />
+              <span>მეგობრები</span>
             </Link>
           </div>
         </div>

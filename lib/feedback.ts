@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { createClient as createClientBrowser } from '@/utils/supabase/client';
 import { getCurrentSession } from '@/lib/session';
 import { getProfile } from './user';
+import { getSupabaseAvatarUrl } from '@/lib/comments';
 import { 
   Tables, 
   TablesInsert,
@@ -100,13 +101,18 @@ export async function getAllSuggestions(userId?: string): Promise<Suggestion[]> 
       // First try to get all profiles at once for better performance
       const { data: allProfiles, error: batchError } = await supabase
         .from('profiles')
-        .select('id, name, username, image')
+        .select('id, username, avatar_url')
         .in('id', userIds);
       
       if (!batchError && allProfiles) {
         // Create a lookup map of profiles by ID
         userProfiles = allProfiles.reduce((acc, profile) => {
-          acc[profile.id] = profile;
+          acc[profile.id] = {
+            id: profile.id,
+            name: profile.username, // use username as display name
+            username: profile.username,
+            image: getSupabaseAvatarUrl(profile.id, profile.avatar_url)
+          };
           return acc;
         }, {} as Record<string, UserProfile>);
       } else {
@@ -115,12 +121,17 @@ export async function getAllSuggestions(userId?: string): Promise<Suggestion[]> 
         const profilePromises = userIds.map(async (id) => {
           const { data, error } = await supabase
             .from('profiles')
-            .select('id, name, username, image')
+            .select('id, username, avatar_url')
             .eq('id', id)
             .single();
             
           if (!error && data) {
-            return data;
+            return data ? {
+              id: data.id,
+              name: data.username,
+              username: data.username,
+              image: getSupabaseAvatarUrl(data.id, data.avatar_url)
+            } : null;
           }
           return null;
         });
@@ -165,7 +176,7 @@ export async function getAllSuggestions(userId?: string): Promise<Suggestion[]> 
         id: suggestion.user_id,
         name: 'უცნობი მომხმარებელი',
         username: 'უცნობი მომხმარებელი',
-        image: undefined
+        image: getSupabaseAvatarUrl(suggestion.user_id, null) || undefined
       }
     }));
   } catch (error) {
@@ -199,14 +210,19 @@ export async function getSuggestionById(id: string, userId?: string): Promise<Su
     let userProfile: UserProfile | null = null;
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('id, name, username, image')
+      .select('id, username, avatar_url')
       .eq('id', suggestion.user_id)
       .single();
 
     if (profileError) {
       console.error('Error fetching user profile:', profileError);
     } else {
-      userProfile = profile;
+      userProfile = {
+        id: profile.id,
+        name: profile.username,
+        username: profile.username,
+        image: getSupabaseAvatarUrl(profile.id, profile.avatar_url)
+      };
     }
 
     // Check if the user has voted on this suggestion
@@ -240,7 +256,7 @@ export async function getSuggestionById(id: string, userId?: string): Promise<Su
         id: suggestion.user_id,
         name: 'უცნობი მომხმარებელი',
         username: 'უცნობი მომხმარებელი',
-        image: undefined
+        image: getSupabaseAvatarUrl(suggestion.user_id, null) || undefined
       }
     };
   } catch (error) {
@@ -397,9 +413,8 @@ export async function getCommentsBySuggestionId(suggestionId: string): Promise<S
         *,
         user:user_id (
           id,
-          name,
           username,
-          image
+          avatar_url
         )
       `)
       .eq('suggestion_id', suggestionId)
@@ -414,11 +429,16 @@ export async function getCommentsBySuggestionId(suggestionId: string): Promise<S
       id: comment.id,
       content: comment.content,
       created_at: comment.created_at,
-      user: comment.user || {
+      user: comment.user ? {
+        id: comment.user.id,
+        name: comment.user.username,
+        username: comment.user.username,
+        image: getSupabaseAvatarUrl(comment.user.id, comment.user.avatar_url)
+      } : {
         id: comment.user_id,
         name: 'უცნობი მომხმარებელი',
         username: 'უცნობი მომხმარებელი',
-        image: undefined
+        image: getSupabaseAvatarUrl(comment.user_id, null) || undefined
       }
     }));
   } catch (error) {

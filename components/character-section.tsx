@@ -1,8 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { motion } from "framer-motion"
-import { Users, ChevronRight, ChevronDown, PlusCircle } from "lucide-react"
+import { Users, ChevronRight, ChevronDown, PlusCircle, Heart } from "lucide-react"
 import Image from "next/image"
 import Link from "next/link"
 import { ImageSkeleton } from "@/components/image-skeleton"
@@ -13,6 +13,7 @@ export interface Character {
   name: string
   image: string
   role: string
+  from?: string
   voiceActor?: {
     id: string
     name: string
@@ -26,7 +27,8 @@ interface CharacterSectionProps {
   maxCharacters?: number
   sectionVariants?: any
   itemVariants?: any
-  contentId?: string  // Add contentId to enable admin edit link
+  contentId?: string  // For admin edit link
+  contentTitle?: string // Series title for saving favourites
 }
 
 const defaultSectionVariants = {
@@ -51,7 +53,8 @@ export function CharacterSection({
   maxCharacters = 10,
   sectionVariants = defaultSectionVariants,
   itemVariants = defaultItemVariants,
-  contentId
+  contentId,
+  contentTitle = ''
 }: CharacterSectionProps) {
   const [expanded, setExpanded] = useState(false);
   const { user, profile } = useAuth();
@@ -74,6 +77,58 @@ export function CharacterSection({
     isAdmin,
     contentId
   });
+
+  // -------------------- Favourites --------------------
+  const [favoriteMap, setFavoriteMap] = useState<{ [id: string]: boolean }>({});
+
+  // Load favourite characters from localStorage once
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("favorites");
+      if (!raw) return;
+      const obj = JSON.parse(raw);
+      const map: { [id: string]: boolean } = {};
+      Object.keys(obj).forEach((k) => {
+        if (k.startsWith("character-")) {
+          map[k.slice(10)] = true; // remove "character-" prefix
+        }
+      });
+      setFavoriteMap(map);
+    } catch (err) {
+      console.error("Failed to parse favourites", err);
+    }
+  }, []);
+
+  const toggleFavorite = (ch: Character) => {
+    try {
+      const raw = localStorage.getItem("favorites");
+      const obj = raw ? JSON.parse(raw) : {};
+      const key = `character-${ch.id}`;
+      const currentlyFav = !!obj[key];
+
+      if (currentlyFav) {
+        delete obj[key];
+      } else {
+        obj[key] = {
+          id: ch.id,
+          type: "character",
+          name: ch.name,
+          title: ch.name,
+          image: ch.image,
+          from: ch.from ?? contentTitle,
+          addedAt: new Date().toISOString(),
+        };
+      }
+
+      localStorage.setItem("favorites", JSON.stringify(obj));
+      setFavoriteMap((prev) => ({ ...prev, [ch.id]: !currentlyFav }));
+
+      // Broadcast change so other tabs/components update
+      window.dispatchEvent(new Event("storage"));
+    } catch (err) {
+      console.error("Failed to toggle favourite", err);
+    }
+  };
 
   if (safeCharacters.length === 0 && showEmpty) {
     console.log("No characters to display, showing fallback message");
@@ -161,6 +216,21 @@ export function CharacterSection({
                 className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent opacity-0 hover:opacity-100 transition-opacity duration-300" />
+              {/* Heart overlay */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  toggleFavorite(character);
+                }}
+                className="absolute top-2 right-2 z-20 bg-black/60 hover:bg-black/80 rounded-full p-1"
+              >
+                <Heart
+                  className="h-4 w-4"
+                  fill={favoriteMap[character.id] ? "#e11d48" : "none"}
+                  stroke={favoriteMap[character.id] ? "#e11d48" : "#ffffff"}
+                />
+              </button>
             </div>
             <div className="p-3">
               <h3 className="font-semibold text-sm line-clamp-1">{character.name || "Unknown"}</h3>

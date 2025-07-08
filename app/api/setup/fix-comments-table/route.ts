@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
         id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
         user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
         content_id TEXT NOT NULL,
-        content_type TEXT NOT NULL CHECK (content_type IN ('anime', 'manga')),
+        content_type TEXT NOT NULL CHECK (content_type IN ('anime', 'manga', 'comics')),
         text TEXT NOT NULL,
         media_url TEXT DEFAULT NULL,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),

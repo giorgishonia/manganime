@@ -29,6 +29,7 @@ import {
   Upload as UploadIcon,
   Crown as CrownIcon,
   Book,
+  History,
 } from "lucide-react"
 import { AppSidebar } from "@/components/app-sidebar"
 import { Button } from "@/components/ui/button"
@@ -62,21 +63,28 @@ import { Textarea } from "@/components/ui/textarea"
 import { toast } from "sonner"
 import { format, differenceInYears, parseISO } from "date-fns"
 import { AvatarUploader } from "./components/avatar-uploader"
-import { getLibraryItems } from '@/lib/user-library'
+import { getLibraryItems, MediaStatus, removeFromLibrary } from '@/lib/user-library'
 import { ProfileForm } from '@/components/settings/profile-form'
 import { BannerUploader } from "@/components/profile/banner-uploader"
 import { VIPBadge } from "@/components/ui/vip-badge"
 import { AdBanner } from "@/components/ads/ad-banner"
+import { supabase as supabaseClient } from '@/lib/supabase'
+import { getRecentlyRead, ReadingProgress } from '@/lib/reading-history'
+import TopListSection from '@/components/profile/top-list-section'
+import FavoriteCharactersSection from '@/components/profile/favorite-characters-section'
+import { StatusSelector } from "@/components/ui/status-selector"
 
 // Interface for content item
 interface ContentItem {
   id: string;
+  type: 'manga' | 'comics';
   title: string; // English title
   georgianTitle: string; // Georgian title
   image: string;
   progress: number;
   total: number | null;
   score: number | null;
+  status: MediaStatus;
 }
 
 // Interface for activity item
@@ -101,14 +109,90 @@ function calculateAge(birthDate: string | null | undefined): number | null {
   }
 }
 
+// Compute stats helper (shared)
+function computeStats(items: any[]): {
+  reading: number;
+  completed: number;
+  onHold: number;
+  dropped: number;
+  planToRead: number;
+  totalEntries: number;
+} {
+  let reading = 0,
+      completed = 0,
+      onHold = 0,
+      dropped = 0,
+      plan = 0;
+  items.forEach((it) => {
+    switch (it.status) {
+      case 'reading':
+        reading++;
+        break;
+      case 'completed':
+        completed++;
+        break;
+      case 'on_hold':
+        onHold++;
+        break;
+      case 'dropped':
+        dropped++;
+        break;
+      case 'plan_to_read':
+        plan++;
+        break;
+      default:
+        break;
+    }
+  });
+  return {
+    reading,
+    completed,
+    onHold,
+    dropped,
+    planToRead: plan,
+    totalEntries: items.length,
+  };
+}
+
+// Helper to ensure unique activities (no duplicate keys in render)
+function deduplicateActivities(list: ActivityItem[]): ActivityItem[] {
+  const seen = new Set<string>()
+  const result: ActivityItem[] = []
+  for (const item of list) {
+    const key = `${item.id}-${item.timestamp}`
+    if (!seen.has(key)) {
+      seen.add(key)
+      result.push(item)
+    }
+  }
+  return result
+}
+
 export default function ProfilePage() {
   const [activeMangaTab, setActiveMangaTab] = useState("reading")
   const [isLoading, setIsLoading] = useState(true)
   const [mangaReading, setMangaReading] = useState<ContentItem[]>([])
   const [mangaCompleted, setMangaCompleted] = useState<ContentItem[]>([])
   const [mangaPlanToRead, setMangaPlanToRead] = useState<ContentItem[]>([])
+  const [mangaOnHold, setMangaOnHold] = useState<ContentItem[]>([])
+  const [mangaDropped, setMangaDropped] = useState<ContentItem[]>([])
+  const [comicsReading, setComicsReading] = useState<ContentItem[]>([])
+  const [comicsCompleted, setComicsCompleted] = useState<ContentItem[]>([])
+  const [comicsPlanToRead, setComicsPlanToRead] = useState<ContentItem[]>([])
+  const [comicsOnHold, setComicsOnHold] = useState<ContentItem[]>([])
+  const [comicsDropped, setComicsDropped] = useState<ContentItem[]>([])
   const [stats, setStats] = useState({
     manga: {
+      reading: 0,
+      completed: 0,
+      onHold: 0,
+      dropped: 0,
+      planToRead: 0,
+      totalChapters: 0,
+      daysRead: 0,
+      meanScore: 0,
+    },
+    comics: {
       reading: 0,
       completed: 0,
       onHold: 0,
@@ -128,6 +212,7 @@ export default function ProfilePage() {
   const [showRefreshButton, setShowRefreshButton] = useState(false)
   const [showBannerUpload, setShowBannerUpload] = useState(false)
   const [profileBanner, setProfileBanner] = useState<string | null>(null)
+  const [recentReads, setRecentReads] = useState<ReadingProgress[]>([])
   
   // Define isOwnProfile variable - determines if the user is viewing their own profile
   const isOwnProfile = !!user && !!profile // Currently only showing the logged-in user's profile
@@ -147,28 +232,106 @@ export default function ProfilePage() {
         if (!user || !profile) return;
 
         try {
+            // Sync any local library items first so watchlist is fresh
+            await (await import('@/lib/user-library')).syncAllToServer();
+
             // Get manga watchlist
             const mangaWatchlistResult = await getUserWatchlist(user.id, 'manga')
             if (mangaWatchlistResult.success && mangaWatchlistResult.watchlist) {
                 const readingManga: ContentItem[] = []
                 const completedManga: ContentItem[] = []
                 const planToReadManga: ContentItem[] = []
-                // ... (existing manga processing logic, ensure it's robust) ...
+                const onHoldManga: ContentItem[] = []
+                const droppedManga: ContentItem[] = []
+
+                mangaWatchlistResult.watchlist.forEach(wl => {
+                  const c = wl.content || {};
+
+                  const georgianTitle = (c.georgian_title && typeof c.georgian_title === 'string' && c.georgian_title.trim() !== '')
+                    ? c.georgian_title
+                    : (Array.isArray(c.alternative_titles)
+                        ? (() => {
+                            const geoEntry = c.alternative_titles.find((t: any) => typeof t === 'string' && t.startsWith('georgian:'));
+                            return geoEntry ? geoEntry.substring(9) : null;
+                          })()
+                        : null);
+                  
+                  const contentItem: ContentItem = {
+                    id: c.id ?? wl.content_id,
+                    type: 'manga',
+                    title: c.title ?? 'Unknown',
+                    georgianTitle: georgianTitle || c.title || 'Unknown',
+                    image: c.thumbnail || '/placeholder.svg',
+                    progress: wl.progress || 0,
+                    total: c.chapters_count ?? null,
+                    score: wl.rating ?? null,
+                    status: wl.status as MediaStatus,
+                  };
+
+                  switch (wl.status) {
+                    case 'reading':
+                      readingManga.push(contentItem);
+                      break;
+                    case 'completed':
+                      completedManga.push(contentItem);
+                      break;
+                    case 'plan_to_read':
+                      planToReadManga.push(contentItem);
+                      break;
+                    case 'on_hold':
+                      onHoldManga.push(contentItem);
+                      break;
+                    case 'dropped':
+                      droppedManga.push(contentItem);
+                      break;
+                  }
+                });
+
                 setMangaReading(readingManga)
                 setMangaCompleted(completedManga)
                 setMangaPlanToRead(planToReadManga)
+                setMangaOnHold(onHoldManga)
+                setMangaDropped(droppedManga)
 
-                // Update manga stats
-                setStats(prevStats => ({
-                    ...prevStats,
-                    manga: {
-                        ...prevStats.manga,
-                        reading: readingManga.length,
-                        completed: completedManga.length,
-                        planToRead: planToReadManga.length,
-                        // ... (other manga stat calculations if needed)
-                    }
+                // Compute stats accurately
+                const statData = computeStats(mangaWatchlistResult.watchlist)
+                setStats(prev => ({
+                  ...prev,                                     // keep both slices
+                  manga: {
+                    ...prev.manga,
+                    reading: statData.reading,
+                    completed: statData.completed,
+                    onHold: statData.onHold,
+                    dropped: statData.dropped,
+                    planToRead: statData.planToRead,
+                  },
                 }))
+
+                /* ------------------------------------------------------------------
+                   Build recent activity feed if DB table is empty
+                ------------------------------------------------------------------ */
+                if (activities.length === 0) {
+                  const recentActs: ActivityItem[] = mangaWatchlistResult.watchlist
+                    .sort((a: any,b: any)=> new Date(b.updated_at||b.created_at||'').getTime() - new Date(a.updated_at||a.created_at||'').getTime())
+                    .slice(0,10)
+                    .map((it: any) => {
+                      const c = it.content || {};
+                      let action = 'განახლება';
+                      if (it.status === 'reading') action = 'კითხულობს';
+                      else if (it.status === 'completed') action = 'დაასრულა';
+                      else if (it.status === 'plan_to_read') action = 'დაამატა სიაში';
+
+                      return {
+                        id: it.id,
+                        type: 'manga',
+                        action,
+                        contentTitle: c.georgian_title || c.title || 'Untitled',
+                        details: it.progress ? `${it.progress} თავი` : '',
+                        timestamp: it.updated_at || it.created_at || new Date().toISOString(),
+                      } as ActivityItem;
+                    });
+                  setActivities(deduplicateActivities(recentActs));
+                }
 
             } else if (mangaWatchlistResult.error) {
                console.error("Error fetching manga watchlist:", mangaWatchlistResult.error)
@@ -179,7 +342,7 @@ export default function ProfilePage() {
            toast.error("მანგას მონაცემების ჩატვირთვა ვერ მოხერხდა")
         }
         
-        // Removed anime watchlist fetching and processing
+        // Removed anime watchlist fetching
 
         // Load localStorage items only if user is available
         if (user) {
@@ -203,11 +366,99 @@ export default function ProfilePage() {
                 .order('timestamp', { ascending: false })
                 .limit(10);
 
-              if (activityError) throw activityError;
-              setActivities(activityData as ActivityItem[] || []);
+              if (activityError) {
+                // If table is missing, silently skip; otherwise log
+                if (activityError.code === '42P01' || activityError.message?.includes('does not exist')) {
+                  console.warn('Activity table not found – skipping activity fetch.');
+                } else {
+                  throw activityError;
+                }
+              } else {
+                setActivities(deduplicateActivities(activityData as ActivityItem[]));
+              }
             } catch (activityError) {
                 console.error("Failed to load activity data:", activityError);
             }
+        }
+
+        /* -------------------- Comics Watchlist -------------------- */
+        const comicsWatchlistResult = await getUserWatchlist(user.id, 'comics');
+        if (comicsWatchlistResult.success && comicsWatchlistResult.watchlist) {
+          const readingComics: ContentItem[] = [];
+          const completedComics: ContentItem[] = [];
+          const planToReadComics: ContentItem[] = [];
+          const onHoldComics: ContentItem[] = []
+          const droppedComics: ContentItem[] = []
+
+          comicsWatchlistResult.watchlist.forEach(wl => {
+            const c = wl.content || {};
+
+            const georgianTitle = (c.georgian_title && typeof c.georgian_title === 'string' && c.georgian_title.trim() !== '')
+              ? c.georgian_title
+              : (Array.isArray(c.alternative_titles)
+                  ? (() => {
+                      const geoEntry = c.alternative_titles.find((t: any) => typeof t === 'string' && t.startsWith('georgian:'));
+                      return geoEntry ? geoEntry.substring(9) : null;
+                    })()
+                  : null);
+
+            const contentItem: ContentItem = {
+              id: c.id ?? wl.content_id,
+              type: 'comics',
+              title: c.title ?? 'Unknown',
+              georgianTitle: georgianTitle || c.title || 'Unknown',
+              image: c.thumbnail || '/placeholder.svg',
+              progress: wl.progress || 0,
+              total: c.chapters_count ?? null,
+              score: wl.rating ?? null,
+              status: wl.status as MediaStatus,
+            };
+            
+            switch (wl.status) {
+                case 'reading':
+                    readingComics.push(contentItem);
+                    break;
+                case 'completed':
+                    completedComics.push(contentItem);
+                    break;
+                case 'plan_to_read':
+                    planToReadComics.push(contentItem);
+                    break;
+                case 'on_hold':
+                    onHoldComics.push(contentItem);
+                    break;
+                case 'dropped':
+                    droppedComics.push(contentItem);
+                    break;
+            }
+          });
+          
+          setComicsReading(readingComics);
+          setComicsCompleted(completedComics);
+          setComicsPlanToRead(planToReadComics);
+          setComicsOnHold(onHoldComics);
+          setComicsDropped(droppedComics);
+
+          const comicsStats = computeStats(comicsWatchlistResult.watchlist);
+          setStats(prev => ({
+            ...prev,
+            comics: {
+              ...prev.comics,
+              reading: comicsStats.reading,
+              completed: comicsStats.completed,
+              onHold: comicsStats.onHold,
+              dropped: comicsStats.dropped,
+              planToRead: comicsStats.planToRead,
+              totalChapters: prev.comics.totalChapters,
+            }
+          }));
+
+          // extend fallback activity list
+          if (activities.length === 0) {
+            const recentC = comicsWatchlistResult.watchlist.sort((a:any,b:any)=> new Date(b.updated_at||'').getTime()-new Date(a.updated_at||'').getTime()).slice(0,5).map((it:any)=>{
+              const c=it.content||{};return {id:it.id,type:'comics',action:it.status==='reading'?'კითხულობს':it.status==='completed'?'დაასრულა':'დაამატა',contentTitle:c.georgian_title||c.title||'Untitled',details:it.progress?`${it.progress} თავი`:'' ,timestamp:it.updated_at||new Date().toISOString()} as ActivityItem});
+            setActivities(deduplicateActivities([...activities, ...recentC]).slice(0,10));
+          }
         }
     }
 
@@ -227,11 +478,10 @@ export default function ProfilePage() {
           .from('user_banners')
           .select('banner_url')
           .eq('user_id', user.id)
-          .single();
+          .maybeSingle();
         
-        if (error) {
+        if (error && error.code !== 'PGRST116' && error.code !== '42P01') {
           console.error("Error fetching banner:", error);
-          return;
         }
         
         if (data) {
@@ -290,6 +540,17 @@ export default function ProfilePage() {
     }
   }
 
+  // Load local reading history once on mount (client-side)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const history = getRecentlyRead(30);
+      setRecentReads(history);
+    } catch (err) {
+      console.error('Failed to load reading history:', err);
+    }
+  }, []);
+
   if (isLoading) {
   return (
     <div className="flex min-h-screen bg-black text-white">
@@ -323,7 +584,7 @@ export default function ProfilePage() {
     <div className="flex min-h-screen bg-black text-white">
       <AppSidebar />
 
-      <main className="flex-1 overflow-x-hidden pl-[77px]">
+      <main className="flex-1 overflow-x-hidden md:pl-[77px]">
         {/* Profile header */}
         <div className="relative">
           {/* Custom VIP banner area */}
@@ -446,6 +707,7 @@ export default function ProfilePage() {
                               avatar_url: profile.avatar_url,
                               bio: profile.bio || '',
                               is_public: profile.is_public ?? true,
+                              birth_date: profile.birth_date || null,
                           }}
                           onSuccess={() => {
                              setIsEditProfileOpen(false);
@@ -520,63 +782,13 @@ export default function ProfilePage() {
 
         {/* Stats overview */}
         <div className="container mx-auto px-4 py-6">
-          {/* Make stats grid single column on mobile, 2 on md+ */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Manga stats */}
-            <div className="bg-gray-900/50 backdrop-blur-sm rounded-lg p-4 md:p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg md:text-xl font-bold flex items-center">
-                  <BookOpen className="h-5 w-5 mr-2 text-purple-400" />
-                  მანგის სტატისტიკა
-                </h2>
-                <div className="text-sm text-gray-400">
-                  {stats.manga.totalChapters} თავი • {stats.manga.daysRead} დღე
-                </div>
-              </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-              <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 md:gap-4 mb-6">
-                <StatCard
-                  label="ვკითხულობ"
-                  value={stats.manga.reading}
-                  icon={<BookOpen className="h-4 w-4 text-green-400" />}
-                />
-                <StatCard
-                  label="დასრულებული"
-                  value={stats.manga.completed}
-                  icon={<Check className="h-4 w-4 text-blue-400" />}
-                />
-                <StatCard
-                  label="შეჩერებული"
-                  value={stats.manga.onHold}
-                  icon={<PauseCircle className="h-4 w-4 text-yellow-400" />}
-                />
-                <StatCard
-                  label="მიტოვებული"
-                  value={stats.manga.dropped}
-                  icon={<X className="h-4 w-4 text-red-400" />}
-                />
-                <StatCard
-                  label="წასაკითხი"
-                  value={stats.manga.planToRead}
-                  icon={<Clock className="h-4 w-4 text-purple-400" />}
-                />
-              </div>
+            {/* Top List Right */}
+            <TopListSection isOwner={isOwnProfile} username={profile.username ?? undefined} />
 
-              <div className="flex items-center justify-between mb-2">
-                <div className="text-sm text-gray-400">საშუალო შეფასება</div>
-                <div className="flex items-center">
-                  <Star className="h-4 w-4 text-yellow-400 fill-yellow-400 mr-1" />
-                  <span className="font-medium">{stats.manga.meanScore}</span>
-                </div>
-              </div>
-
-              <div className="w-full bg-gray-800 h-2 rounded-full overflow-hidden">
-                <div
-                  className="bg-gradient-to-r from-yellow-500 to-yellow-300 h-full rounded-full"
-                  style={{ width: `${(stats.manga.meanScore / 10) * 100}%` }}
-                />
-              </div>
-            </div>
+            {/* Favorite characters */}
+            <FavoriteCharactersSection isOwner={isOwnProfile} />
           </div>
         </div>
 
@@ -589,9 +801,17 @@ export default function ProfilePage() {
                 <BookOpen className="h-4 w-4" />
                 მანგა
               </TabsTrigger>
+              <TabsTrigger value={"comics" as any} className="flex items-center gap-2 flex-shrink-0">
+                <Book className="h-4 w-4" />
+                კომიქსი
+              </TabsTrigger>
               <TabsTrigger value="activity" className="flex items-center gap-2 flex-shrink-0">
                 <TrendingUp className="h-4 w-4" />
                 აქტივობა
+              </TabsTrigger>
+              <TabsTrigger value="history" className="flex items-center gap-2 flex-shrink-0">
+                <History className="h-4 w-4" />
+                ისტორია
               </TabsTrigger>
             </TabsList>
 
@@ -634,42 +854,83 @@ export default function ProfilePage() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent className="bg-gray-900 border-gray-800 text-gray-200">
-                        <DropdownMenuItem className="hover:bg-gray-800 cursor-pointer">
+                        <DropdownMenuItem className="hover:bg-gray-800 cursor-pointer" onClick={() => setActiveMangaTab("on_hold")}>
                           შეჩერებული ({stats.manga.onHold})
                         </DropdownMenuItem>
-                        <DropdownMenuItem className="hover:bg-gray-800 cursor-pointer">
+                        <DropdownMenuItem className="hover:bg-gray-800 cursor-pointer" onClick={() => setActiveMangaTab("dropped")}>
                           მიტოვებული ({stats.manga.dropped})
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
-                   {/* Make Add button text smaller */}
-                  <Button variant="outline" size="sm" className="bg-gray-800 border-gray-700 hover:bg-gray-700 flex-shrink-0 ml-2 text-xs md:text-sm">
-                    <Plus className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" />
-                    მანგის დამატება
-                  </Button>
                 </div>
 
                 {/* Responsive grid columns for manga list */}
-                <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-4">
                   {activeMangaTab === "reading" &&
                     (mangaReading.length > 0 ? 
-                      mangaReading.map((manga) => <MangaListItem key={manga.id} item={manga} />) :
+                      mangaReading.map((manga) => <MangaListItem key={manga.id} item={manga} onRemove={() => setMangaReading(prev => prev.filter(i => i.id !== manga.id))} />) :
                       <div className="col-span-full text-center py-10 text-gray-400">თქვენს სიაში არ არის მანგა რომელსაც კითხულობთ</div>
                     )
                   }
                   {activeMangaTab === "completed" &&
                     (mangaCompleted.length > 0 ? 
-                      mangaCompleted.map((manga) => <MangaListItem key={manga.id} item={manga} />) :
+                      mangaCompleted.map((manga) => <MangaListItem key={manga.id} item={manga} onRemove={() => setMangaCompleted(prev => prev.filter(i => i.id !== manga.id))} />) :
                       <div className="col-span-full text-center py-10 text-gray-400">თქვენს სიაში არ არის დასრულებული მანგა</div>
                     )
                   }
                   {activeMangaTab === "planToRead" &&
                     (mangaPlanToRead.length > 0 ? 
-                      mangaPlanToRead.map((manga) => <MangaListItem key={manga.id} item={manga} />) :
+                      mangaPlanToRead.map((manga) => <MangaListItem key={manga.id} item={manga} onRemove={() => setMangaPlanToRead(prev => prev.filter(i => i.id !== manga.id))} />) :
                       <div className="col-span-full text-center py-10 text-gray-400">თქვენს სიაში არ არის წასაკითხი მანგა</div>
                     )
                   }
+                  {activeMangaTab === "on_hold" &&
+                    (mangaOnHold.length > 0 ? 
+                      mangaOnHold.map((manga) => <MangaListItem key={manga.id} item={manga} onRemove={() => setMangaOnHold(prev => prev.filter(i => i.id !== manga.id))} />) :
+                      <div className="col-span-full text-center py-10 text-gray-400">თქვენს სიაში არ არის შეჩერებული მანგა</div>
+                    )
+                  }
+                  {activeMangaTab === "dropped" &&
+                    (mangaDropped.length > 0 ? 
+                      mangaDropped.map((manga) => <MangaListItem key={manga.id} item={manga} onRemove={() => setMangaDropped(prev => prev.filter(i => i.id !== manga.id))} />) :
+                      <div className="col-span-full text-center py-10 text-gray-400">თქვენს სიაში არ არის მიტოვებული მანგა</div>
+                    )
+                  }
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value={"comics" as any}>
+              <div className="mb-6">
+                <div className="flex items-center justify-between mb-4 overflow-x-auto pb-2">
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <Button variant="ghost" size="sm" className={cn("text-xs md:text-sm", activeMangaTab === "reading" ? "bg-gray-800" : "hover:bg-gray-800/50")} onClick={()=>setActiveMangaTab('reading')}>ვკითხულობ ({stats.comics.reading})</Button>
+                    <Button variant="ghost" size="sm" className={cn("text-xs md:text-sm", activeMangaTab === "completed" ? "bg-gray-800" : "hover:bg-gray-800/50")} onClick={()=>setActiveMangaTab('completed')}>დასრულებული ({stats.comics.completed})</Button>
+                    <Button variant="ghost" size="sm" className={cn("text-xs md:text-sm", activeMangaTab === "planToRead" ? "bg-gray-800" : "hover:bg-gray-800/50")} onClick={()=>setActiveMangaTab('planToRead')}>წასაკითხი ({stats.comics.planToRead})</Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="sm" className="text-xs md:text-sm hover:bg-gray-800/50">
+                          მეტი <ChevronDown className="h-4 w-4 ml-1" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent className="bg-gray-900 border-gray-800 text-gray-200">
+                        <DropdownMenuItem className="hover:bg-gray-800 cursor-pointer" onClick={() => setActiveMangaTab("on_hold")}>
+                          შეჩერებული ({stats.comics.onHold})
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="hover:bg-gray-800 cursor-pointer" onClick={() => setActiveMangaTab("dropped")}>
+                          მიტოვებული ({stats.comics.dropped})
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-4">
+                  {activeMangaTab === 'reading' && (comicsReading.length>0? comicsReading.map(c=> <MangaListItem key={c.id} item={c} onRemove={() => setComicsReading(prev => prev.filter(i => i.id !== c.id))}/>):<div className="col-span-full text-center py-10 text-gray-400">ცარიელია</div>)}
+                  {activeMangaTab === 'completed' && (comicsCompleted.length>0? comicsCompleted.map(c=> <MangaListItem key={c.id} item={c} onRemove={() => setComicsCompleted(prev => prev.filter(i => i.id !== c.id))}/>):<div className="col-span-full text-center py-10 text-gray-400">ცარიელია</div>)}
+                  {activeMangaTab === 'planToRead' && (comicsPlanToRead.length>0? comicsPlanToRead.map(c=> <MangaListItem key={c.id} item={c} onRemove={() => setComicsPlanToRead(prev => prev.filter(i => i.id !== c.id))}/>):<div className="col-span-full text-center py-10 text-gray-400">ცარიელია</div>)}
+                  {activeMangaTab === 'on_hold' && (comicsOnHold.length>0? comicsOnHold.map(c=> <MangaListItem key={c.id} item={c} onRemove={() => setComicsOnHold(prev => prev.filter(i => i.id !== c.id))}/>):<div className="col-span-full text-center py-10 text-gray-400">ცარიელია</div>)}
+                  {activeMangaTab === 'dropped' && (comicsDropped.length>0? comicsDropped.map(c=> <MangaListItem key={c.id} item={c} onRemove={() => setComicsDropped(prev => prev.filter(i => i.id !== c.id))}/>):<div className="col-span-full text-center py-10 text-gray-400">ცარიელია</div>)}
                 </div>
               </div>
             </TabsContent>
@@ -680,9 +941,9 @@ export default function ProfilePage() {
 
                 <div className="space-y-4">
                   {activities.length > 0 ? (
-                    activities.map(activity => (
+                    activities.map((activity, idx) => (
                       <ActivityItemDisplay
-                        key={activity.id}
+                        key={`${activity.id}-${activity.timestamp ?? idx}`}
                         type={activity.type}
                         action={activity.action}
                         title={activity.contentTitle}
@@ -696,6 +957,36 @@ export default function ProfilePage() {
                     </div>
                   )}
                 </div>
+              </div>
+            </TabsContent>
+
+            {/* Reading History Tab */}
+            <TabsContent value="history">
+              <div className="bg-gray-900/50 backdrop-blur-sm rounded-lg p-6">
+                <h2 className="text-xl font-bold mb-4">ბოლო წაკითხვები</h2>
+                {recentReads.length > 0 ? (
+                  <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+                    {recentReads.map((item, idx) => (
+                      <div key={`${item.mangaId}-${item.chapterId}-${idx}`} className="flex items-start gap-4 p-3 bg-gray-800/50 rounded-lg">
+                        <div className="w-16 h-24 flex-shrink-0 overflow-hidden rounded">
+                          <ImageSkeleton
+                            src={item.mangaThumbnail || '/placeholder.svg'}
+                            alt={item.mangaTitle}
+                            className="w-full h-full object-cover rounded-[10px]"
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <div className="font-semibold text-sm mb-0.5 line-clamp-2">{item.mangaTitle}</div>
+                          <div className="text-xs text-gray-400 mb-1">თავი {item.chapterNumber}: {item.chapterTitle}</div>
+                          <Progress value={Math.round((item.currentPage / Math.max(1, item.totalPages)) * 100)} className="h-1 mb-1" />
+                          <div className="text-xs text-gray-500">{getTimeAgo(new Date(item.lastRead))}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-10 text-gray-400">ისტორია ცარიელია</div>
+                )}
               </div>
             </TabsContent>
           </Tabs>
@@ -726,24 +1017,46 @@ export default function ProfilePage() {
 // Helper components
 function StatCard({ label, value, icon }: { label: string; value: number; icon: React.ReactNode }) {
   return (
-    <div className="bg-gray-800/50 rounded-lg p-3 text-center">
-      <div className="flex justify-center mb-1">{icon}</div>
-      <div className="font-bold">{value}</div>
-      <div className="text-xs text-gray-400">{label}</div>
+    <div className="bg-gray-800/50 p-4 rounded-lg flex items-center">
+      <div className="mr-4 text-blue-400">{icon}</div>
+      <div>
+        <div className="text-gray-400 text-sm">{label}</div>
+        <div className="text-xl font-bold">{value}</div>
+      </div>
     </div>
   )
 }
 
-function MangaListItem({ item }: { item: any }) {
+function MangaListItem({ item, onRemove }: { item: ContentItem; onRemove: () => void }) {
+  const [currentStatus, setCurrentStatus] = useState(item.status);
+
+  const handleStatusChange = (newStatus: MediaStatus | null) => {
+    setCurrentStatus(newStatus);
+    // You might want to refresh the list or move the item to a different tab here
+    // For now, it just updates locally to reflect the change immediately
+  };
+  
+  const handleRemove = async () => {
+    try {
+      await removeFromLibrary(item.id, item.type);
+      toast.success("წარმატებით წაიშალა");
+      onRemove();
+    } catch (error) {
+      toast.error("წაშლა ვერ მოხერხდა");
+      console.error(error);
+    }
+  };
+
   return (
-    <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg overflow-hidden">
+    <div className="rounded-[10px] overflow-hidden group flex flex-col">
       <div className="relative">
         <ImageSkeleton
           src={item.image || "/placeholder.svg"}
-          alt={item.title}
-          className="w-full aspect-[2/3] object-cover"
+          alt={item.georgianTitle}
+          className="w-full aspect-[2/3] object-cover rounded-[10px]"
+          style={{borderRadius: '10px'}}
         />
-        <div className="absolute top-2 right-2">
+        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="sm" className="h-8 w-8 p-0 bg-black/50 hover:bg-black/70 rounded-full">
@@ -751,12 +1064,10 @@ function MangaListItem({ item }: { item: any }) {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent className="bg-gray-900 border-gray-800 text-gray-200">
-              <DropdownMenuItem className="hover:bg-gray-800 cursor-pointer">
-                <Edit className="h-4 w-4 mr-2" />
-                რედაქტირება
-              </DropdownMenuItem>
-              <DropdownMenuSeparator className="bg-gray-800" />
-              <DropdownMenuItem className="text-red-500 hover:bg-gray-800 hover:text-red-500 cursor-pointer">
+              <DropdownMenuItem 
+                className="text-red-500 hover:!bg-red-900/50 hover:!text-red-400 cursor-pointer"
+                onClick={handleRemove}
+              >
                 <Trash2 className="h-4 w-4 mr-2" />
                 წაშლა
               </DropdownMenuItem>
@@ -764,30 +1075,38 @@ function MangaListItem({ item }: { item: any }) {
           </DropdownMenu>
         </div>
       </div>
-      <div className="p-3">
-        <h3 className="font-medium text-sm line-clamp-1">{item.georgianTitle}</h3>
+      <div className="p-3 flex flex-col flex-grow">
+        <h3 className="font-medium text-sm line-clamp-2 h-10">{item.georgianTitle}</h3>
         {item.georgianTitle !== item.title && item.title && (
-          <p className="text-xs text-gray-400 line-clamp-1">{item.title}</p>
+          <p className="text-xs text-gray-400 line-clamp-1 truncate">{item.title}</p>
         )}
 
-        {item.progress > 0 && (
-          <div className="mt-2">
-            <div className="flex items-center justify-between text-xs mb-1">
-              <span className="text-gray-400">პროგრესი</span>
-              <span>
-                {item.progress}/{item.total || "?"}
-              </span>
+        <div className="mt-auto pt-2">
+          {item.progress > 0 && (
+            <div className="mt-2">
+              <div className="flex items-center justify-between text-xs mb-1">
+                <span className="text-gray-400">პროგრესი</span>
+                <span>
+                  {item.progress}/{item.total || "?"}
+                </span>
+              </div>
+              <Progress value={(item.progress / (item.total || item.progress)) * 100} className="h-1 bg-gray-700" />
             </div>
-            <Progress value={(item.progress / (item.total || item.progress)) * 100} className="h-1" />
-          </div>
-        )}
+          )}
 
-        {item.score && (
-          <div className="mt-2 flex items-center">
-            <Star className="h-3 w-3 text-yellow-400 fill-yellow-400 mr-1" />
-            <span className="text-xs">{item.score}</span>
+          <div className="mt-2">
+            <StatusSelector
+                mediaId={item.id}
+                mediaType={item.type}
+                mediaTitle={item.georgianTitle}
+                mediaThumbnail={item.image}
+                currentStatus={currentStatus}
+                onStatusChange={handleStatusChange}
+                compact={true}
+                className="w-full justify-center"
+            />
           </div>
-        )}
+        </div>
       </div>
     </div>
   )

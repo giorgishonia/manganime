@@ -27,6 +27,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { motion as m, AnimatePresence } from "framer-motion";
 import { DropdownMenu, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { formatDistanceToNow } from "date-fns";
+import { getSupabaseAvatarUrl } from "@/lib/comments";
 
 import "./feedback.css";
 
@@ -364,7 +365,7 @@ export default function FeedbackPage() {
                         userHasVoted: suggestion.has_voted,
                         profile: {
                           displayName: suggestion.user?.name || suggestion.user?.username || "Anonymous",
-                          avatarUrl: suggestion.user?.image || ""
+                          avatarUrl: getSupabaseAvatarUrl(suggestion.user?.id || "", suggestion.user?.image || null) || ""
                         }
                       }}
                       onVote={() =>

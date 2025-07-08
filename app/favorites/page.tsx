@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion as m, AnimatePresence } from 'framer-motion'
-import { Heart, X, Bookmark, BookOpen, Clock, ChevronRight, Filter, TrendingUp, LayoutGrid, Layers, Sparkles, BookMarked } from 'lucide-react'
+import { Heart, X, Bookmark, BookOpen, Clock, ChevronRight, Filter, TrendingUp, LayoutGrid, Layers, Sparkles, BookMarked, Users } from 'lucide-react'
 import { ImageSkeleton } from '@/components/image-skeleton'
 import { cn } from '@/lib/utils'
 import { useUnifiedAuth } from '@/components/unified-auth-provider'
@@ -45,7 +45,7 @@ const filterVariants = {
 
 interface FavoriteItem {
   id: string;
-  type: 'manga' | 'anime' | 'comics';
+  type: 'manga' | 'anime' | 'comics' | 'character';
   title: string;
   image: string;
   addedAt: string;
@@ -65,7 +65,13 @@ export default function FavoritesPage() {
       const storedFavorites = localStorage.getItem('favorites')
       if (storedFavorites) {
         const parsedFavorites = JSON.parse(storedFavorites)
-        const favoritesArray = Object.values(parsedFavorites) as FavoriteItem[]
+        const favoritesArray = (Object.values(parsedFavorites) as any[]).map(item => {
+          if (item.type === 'character' && item.name) {
+            // Ensure character items have a `title` property for consistency
+            return { ...item, title: item.name };
+          }
+          return item;
+        }) as FavoriteItem[];
         
         // Sort by most recently added
         favoritesArray.sort((a, b) => {
@@ -104,7 +110,7 @@ export default function FavoritesPage() {
     };
   }, [isAuthenticated]);
   
-  const handleRemoveFavorite = (itemId: string, type: 'manga' | 'anime' | 'comics') => {
+  const handleRemoveFavorite = (itemId: string, type: 'manga' | 'anime' | 'comics' | 'character') => {
     try {
       // Get current favorites
       const storedFavorites = JSON.parse(localStorage.getItem('favorites') || '{}')
@@ -268,6 +274,15 @@ export default function FavoritesPage() {
                     <span>ანიმე ({favorites.filter(f => f.type === 'anime').length})</span>
                   </m.div>
                 </TabsTrigger>
+                <TabsTrigger 
+                  value="character" 
+                  className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-purple-600 data-[state=active]:to-indigo-600 data-[state=active]:text-white px-2 sm:px-4 py-2 rounded-lg text-xs sm:text-sm flex-1 sm:flex-none"
+                >
+                  <m.div className="flex items-center justify-center gap-1" whileHover={{ x: 2 }}>
+                    <Users className="w-3 h-3 sm:w-4 sm:h-4 hidden sm:block" />
+                    <span>პერსონაჟი ({favorites.filter(f => f.type === 'character').length})</span>
+                  </m.div>
+                </TabsTrigger>
               </TabsList>
               <AnimatePresence mode="wait">
                 <TabsContent value={activeTab} key={activeTab} className="mt-12">
@@ -307,12 +322,13 @@ export default function FavoritesPage() {
                             {item.type === 'manga' && <BookOpen className="w-3 h-3" />}
                             {item.type === 'comics' && <BookMarked className="w-3 h-3" />}
                             {item.type === 'anime' && <TrendingUp className="w-3 h-3" />}
-                            <span>{item.type === 'manga' ? 'მანგა' : item.type === 'comics' ? 'კომიქსი' : 'ანიმე'}</span>
+                            {item.type === 'character' && <Users className="w-3 h-3" />}
+                            <span>{item.type === 'manga' ? 'მანგა' : item.type === 'comics' ? 'კომიქსი' : item.type === 'anime' ? 'ანიმე' : 'პერსონაჟი'}</span>
                           </div>
                           
                           {/* Image */}
                           <Link 
-                            href={`/${item.type}/${item.id}`} 
+                            href={item.type === 'character' ? '#' : `/${item.type}/${item.id}`} 
                             className={cn(
                               "block overflow-hidden w-full",
                               viewMode === 'list' ? "w-24 h-24 rounded-lg m-3 flex-shrink-0" : "aspect-[2/3]"
@@ -336,7 +352,7 @@ export default function FavoritesPage() {
                             "p-3 pt-2 flex flex-col flex-grow",
                             viewMode === 'list' ? "flex-1 py-3 pl-0" : ""
                           )}>
-                            <Link href={`/${item.type}/${item.id}`} className="hover:underline">
+                            <Link href={item.type === 'character' ? '#' : `/${item.type}/${item.id}`} className="hover:underline">
                               <h3 className="text-sm font-medium line-clamp-2">{item.title}</h3>
                             </Link>
                             <div className="flex items-center gap-2 text-white/60 text-xs mt-auto pt-1">
@@ -356,7 +372,7 @@ export default function FavoritesPage() {
                     >
                       <div className="mb-6 opacity-90">
                         <img 
-                          src="/images/mascot/no-favorite.png" 
+                          src="/images/mascot/favorite-mascot.png" 
                           alt="No favorites" 
                           className="w-48 h-48 object-contain"
                           style={{
@@ -370,6 +386,7 @@ export default function FavoritesPage() {
                         {activeTab === 'manga' && "თქვენ არ გაქვთ რჩეული მანგა"}
                         {activeTab === 'comics' && "თქვენ არ გაქვთ რჩეული კომიქსი"}
                         {activeTab === 'anime' && "თქვენ არ გაქვთ რჩეული ანიმე"}
+                        {activeTab === 'character' && "თქვენ არ გაქვთ რჩეული პერსონაჟი"}
                       </h3>
                       
                       <p className="text-white/70 mb-6 max-w-md">
@@ -382,11 +399,12 @@ export default function FavoritesPage() {
                           className="bg-white/5 hover:bg-white/10 border border-white/10"
                           asChild
                         >
-                          <Link href={activeTab === 'all' ? '/home' : `/${activeTab}`} className="flex items-center gap-2">
+                          <Link href={activeTab === 'all' ? '/' : `/${activeTab}`} className="flex items-center gap-2">
                             <span>დაათვალიერეთ {
                               activeTab === 'all' ? 'კონტენტი' : 
                               activeTab === 'manga' ? 'მანგები' :
-                              activeTab === 'comics' ? 'კომიქსები' : 'ანიმეები'
+                              activeTab === 'comics' ? 'კომიქსები' :
+                              activeTab === 'anime' ? 'ანიმეები' : 'პერსონაჟები'
                             }</span>
                             <ChevronRight className="h-4 w-4" />
                           </Link>

@@ -7,6 +7,7 @@ interface ChapterData {
   title: string;
   pages: string[]; // Array of image URLs
   contentId: string;
+  releaseDate?: string;
   // Add any other fields that MultipleChapterForm sends and your DB expects
 }
 
@@ -31,6 +32,8 @@ export async function POST(request: Request) {
       title: chapter.title,
       pages: chapter.pages, // Supabase can handle array of strings directly if column is text[] or jsonb
       // Add other default fields if necessary, e.g., release_date: new Date().toISOString()
+      // Default the release_date to the current timestamp so newly uploaded chapters are not marked as "Unknown"
+      release_date: chapter.releaseDate ?? new Date().toISOString(),
       // Ensure your table columns match these field names (e.g., content_id not contentId)
     }));
 

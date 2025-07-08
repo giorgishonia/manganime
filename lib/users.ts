@@ -18,6 +18,9 @@ export interface UserProfile {
   birth_date?: string | null; // Added from profile page
   location?: string | null;   // Added from profile page
   has_completed_onboarding?: boolean;
+  // Notification preferences
+  email_notifications?: boolean;
+  push_notifications?: boolean;
 }
 
 // --- User Profile Functions --- 

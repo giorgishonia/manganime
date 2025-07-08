@@ -71,6 +71,8 @@ import { useAuth } from '@/components/supabase-auth-provider'
 import { AppSidebar } from '@/components/app-sidebar'
 import { EmojiRating, EMOJI_REACTIONS } from '@/components/emoji-rating'
 import { supabase } from '@/lib/supabase'
+import { VipPromoBanner } from '@/components/ads/vip-promo-banner'
+import { LogoLoader } from '@/components/logo-loader'
 
 // Animation variants
 const pageVariants = {
@@ -142,6 +144,59 @@ export default function ComicPage({ params }: { params: { id: string } }) {
   const [isFavorite, setIsFavorite] = useState(false);
   const [viewCount, setViewCount] = useState<number | null>(null);
   const viewIncrementedRef = useRef(false);
+
+  // Logo loader overlay states
+  const [showLogoLoader, setShowLogoLoader] = useState(true);
+  const [logoAnimationDone, setLogoAnimationDone] = useState(false);
+
+  // --- Character favorites ---
+  const [favoriteCharacters, setFavoriteCharacters] = useState<{ [id: string]: boolean }>({});
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('favorites');
+      if (!raw) return;
+      const obj = JSON.parse(raw);
+      const map: { [id: string]: boolean } = {};
+      Object.keys(obj).forEach((k) => {
+        if (k.startsWith('character-')) map[k.slice(10)] = true; // remove "character-" prefix
+      });
+      setFavoriteCharacters(map);
+    } catch (err) {
+      console.error('Failed to parse favorites', err);
+    }
+  }, []);
+
+  const toggleCharacterFavorite = (char: any) => {
+    try {
+      const favorites = JSON.parse(localStorage.getItem('favorites') || '{}');
+      const key = `character-${char.id}`;
+      if (favorites[key]) {
+        delete favorites[key];
+        setFavoriteCharacters((prev) => ({ ...prev, [char.id]: false }));
+      } else {
+        favorites[key] = {
+          id: char.id,
+          type: 'character',
+          title: char.name,
+          image: char.image,
+          from: processedData?.title || '',
+          addedAt: new Date().toISOString(),
+        };
+        setFavoriteCharacters((prev) => ({ ...prev, [char.id]: true }));
+      }
+      localStorage.setItem('favorites', JSON.stringify(favorites));
+    } catch (err) {
+      console.error('Failed to toggle character favorite', err);
+    }
+  };
+
+  // Hide logo loader when data is ready and animation is done
+  useEffect(() => {
+    if (!isLoading && logoAnimationDone) {
+      setShowLogoLoader(false);
+    }
+  }, [isLoading, logoAnimationDone]);
 
   // Handle scroll effect for background
   useEffect(() => {
@@ -413,6 +468,7 @@ export default function ComicPage({ params }: { params: { id: string } }) {
         })) || []
       },
       view_count: content.view_count ?? 0,
+      logo: content.logo || null,
     };
   };
 
@@ -520,6 +576,7 @@ export default function ComicPage({ params }: { params: { id: string } }) {
     // Directly assign the mapped characters array
     characters: mapCharacters(comicData), 
     view_count: comicData.view_count ?? 0,
+    logo: comicData.logo || null,
   } : null;
 
   // Add a debug log for the processed data
@@ -863,7 +920,7 @@ export default function ComicPage({ params }: { params: { id: string } }) {
       localStorage.setItem('favorites', JSON.stringify(favorites));
       
       toast({
-        title: !isFavorite ? "რჩეულებში დამატებულია" : "რჩეულებიდან ამოშლილია",
+        title: !isFavorite ? "რჩეულებიდან წაშლა" : "რჩეულებში დამატება",
         description: !isFavorite 
           ? `"${processedData?.title}" დაემატა რჩეულებს.` 
           : `"${processedData?.title}\" წაიშალა რჩეულებიდან.`,
@@ -880,6 +937,15 @@ export default function ComicPage({ params }: { params: { id: string } }) {
       });
     }
   };
+
+  // --- Dynamic character grid columns ---
+  const charactersToShow = processedData?.characters?.slice(0, 6) || [];
+  const getCharacterColumns = (cnt: number) => {
+    if (cnt <= 3) return cnt;         // 1-3 characters ⇒ single row
+    if (cnt === 4) return 2;          // 4 characters ⇒ 2×2 grid
+    return cnt % 3 === 1 ? 4 : 3;     // Balance for 5+ characters
+  };
+  const characterColumns = getCharacterColumns(charactersToShow.length);
 
   // Loading state
   if (isLoading) {
@@ -1066,7 +1132,21 @@ export default function ComicPage({ params }: { params: { id: string } }) {
                   <div className="flex-1 text-center md:text-left">
                     <div className="flex flex-wrap items-center justify-center md:justify-start gap-3 mb-2 text-sm">
                       <div className="px-3 py-1 bg-purple-600/20 text-purple-400 rounded-full">
-                        {processedData.status}
+                        {(() => {
+                          const map: Record<string, string> = {
+                            completed: "დასრულებული",
+                            ongoing: "გამოდის",
+                            publishing: "გამოდის",
+                            hiatus: "შეჩერებული",
+                            on_hold: "შეჩერებული",
+                            dropped: "მიტოვებული",
+                            cancelled: "გაუქმებული",
+                            reading: "ვკითხულობ",
+                            plan_to_read: "წასაკითხი",
+                          };
+                          const key = String(processedData.status).toLowerCase().replace(" ", "_");
+                          return map[key] || processedData.status;
+                        })()}
                       </div>
                       
                       {viewCount !== null && (
@@ -1306,8 +1386,8 @@ export default function ComicPage({ params }: { params: { id: string } }) {
                 {/* --- RESTORED CONTENT SECTIONS START --- */}
                 {/* Main content container - Make single column on mobile */}
                 <div className="flex flex-col mt-8 mb-12">
-                  <div className="flex flex-col lg:flex-row gap-8">
-                    {/* Left side: Chapters list */}
+                <div className="flex flex-col-reverse sm:flex-row gap-8 items-stretch">
+                {/* Left side: Chapters list */}
                     <div className="lg:w-3/5 order-2 lg:order-1"> {/* Chapters second on mobile */}
                       <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
                         <h2 className="text-xl font-bold">თავები</h2>
@@ -1466,20 +1546,18 @@ export default function ComicPage({ params }: { params: { id: string } }) {
                     </div>
                     
                     {/* Right side: Characters grid */}
-                    <div className="lg:w-2/5 order-1 lg:order-2"> {/* Characters first on mobile */}
+                    <div className="lg:w-2/5 order-1 lg:order-2 flex flex-col h-full"> {/* Characters first on mobile */}
                       <h2 className="text-xl font-bold mb-4">პერსონაჟები</h2>
                       
                       {/* Display characters section in the UI */}
                       {processedData?.characters && processedData.characters.length > 0 && (
-                        <div className="mt-12">
-                          <div className={`grid ${
-                            processedData.characters.length <= 3 ? 'grid-cols-1 sm:grid-cols-3' :
-                            processedData.characters.length <= 4 ? 'grid-cols-2 sm:grid-cols-2' :
-                            processedData.characters.length <= 6 ? 'grid-cols-2 sm:grid-cols-3' :
-                            processedData.characters.length <= 8 ? 'grid-cols-2 sm:grid-cols-4' :
-                            'grid-cols-2 sm:grid-cols-3 lg:grid-cols-4'
-                          } gap-4`}>
-                            {processedData.characters.map((character: any) => (
+                        <div className="overflow-hidden">
+                          {/* Display up to 6 characters in a fixed 3 x 2 grid so everything fits without scrolling */}
+                          <div
+                            className="grid gap-4"
+                            style={{ gridTemplateColumns: `repeat(${characterColumns}, minmax(0, 1fr))` }}
+                          >
+                            {charactersToShow.map((character: any) => (
                               <div 
                                 key={character.id} 
                                 className="bg-card rounded-lg overflow-hidden border border-border hover:border-primary/50 transition-colors h-full flex flex-col"
@@ -1493,8 +1571,23 @@ export default function ComicPage({ params }: { params: { id: string } }) {
                                       e.currentTarget.src = '/placeholder-character.jpg';
                                     }}
                                   />
+                                  <button
+                                      onClick={(e) => {
+                                          e.stopPropagation();
+                                          toggleCharacterFavorite(character);
+                                      }}
+                                      className="absolute top-2 right-2 z-10 p-1.5 bg-black/50 rounded-full text-white hover:bg-black/70 transition-colors"
+                                      title={favoriteCharacters[character.id] ? "Remove from favorites" : "Add to favorites"}
+                                  >
+                                      <Heart
+                                          className={cn(
+                                              "h-4 w-4 transition-all",
+                                              favoriteCharacters[character.id] ? "text-red-500 fill-red-500" : "text-white"
+                                          )}
+                                      />
+                                  </button>
                                   <div className="absolute bottom-0 w-full bg-gradient-to-t from-black via-black/60 to-transparent p-2 pt-10">
-                                    <div className={`text-xs px-2 py-0.5 rounded-full inline-block font-medium ${
+                                    <div className={`text-xs px-2 py-0.5 rounded-full inline-block font-semibold text-sm ${
                                       character.role === 'MAIN' 
                                         ? 'bg-purple-500/90 text-white' 
                                         : character.role === 'SUPPORTING' 
@@ -1534,7 +1627,7 @@ export default function ComicPage({ params }: { params: { id: string } }) {
                       {/* Related manga */} 
                       {processedData.relations && processedData.relations.length > 0 && (
                         <motion.section 
-                          className="mb-12 mt-8 lg:mt-8" /* Consistent margin top */
+                          className="mb-12 mt-8 sm:mt-8" /* Consistent margin top */
                           variants={sectionVariants}
                           initial="initial" /* Add animation props */
                           animate="animate"
@@ -1572,7 +1665,7 @@ export default function ComicPage({ params }: { params: { id: string } }) {
 
                   </div>
                   {/* Add Chapter Manager & Comments after the main grid layout */}
-                  <div className="lg:col-span-2 order-3 w-full mt-16">
+                  <div className="sm:col-span-2 order-3 w-full mt-16">
                     {/* Add Chapter Manager as a separate section but only if from database AND user is admin */}
                       {isFromDatabase && isAdminCheckComplete && isAdmin && (
                         <motion.section 
@@ -1596,6 +1689,9 @@ export default function ComicPage({ params }: { params: { id: string } }) {
                         </motion.section>
                       )}
 
+                      {/* VIP promotion banner – only for არავიპ */}
+                      <VipPromoBanner className="mb-12" />
+
                       {/* Comments section */}
                       <CommentSection 
                         contentId={comicId}
@@ -1611,6 +1707,14 @@ export default function ComicPage({ params }: { params: { id: string } }) {
           </AnimatePresence>
         </div>
       </motion.div>
+
+      {/* Animated logo loader overlay */}
+      {showLogoLoader && processedData && (
+        <LogoLoader
+          src={(processedData as any).logo || processedData.coverImage || processedData.bannerImage || '/placeholder.svg'}
+          onComplete={() => setLogoAnimationDone(true)}
+        />
+      )}
     </div>
   )
 } 

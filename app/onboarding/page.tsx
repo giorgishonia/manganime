@@ -61,9 +61,7 @@ const steps = [
 
 // Anime/manga welcome images
 const welcomeImages = [
-  '/images/onboarding/welcome-1.jpg',
-  '/images/onboarding/welcome-2.jpg',
-  '/images/onboarding/welcome-3.jpg',
+  '/images/mascot/mascot-welcome.png',
 ];
 
 export default function OnboardingPage() {
@@ -71,7 +69,7 @@ export default function OnboardingPage() {
   const { user, isLoading: authLoading } = useAuth();
   const [currentStep, setCurrentStep] = useState(1);
   const [checkingOnboardingStatus, setCheckingOnboardingStatus] = useState(true);
-  const [welcomeImage, setWelcomeImage] = useState('/images/onboarding/welcome-1.jpg');
+  const [welcomeImage, setWelcomeImage] = useState('/images/onboarding/onboarding-question.png');
 
   const {
     register,
@@ -254,13 +252,6 @@ export default function OnboardingPage() {
         transition={{ duration: 0.4 }}
       >
         <div className="text-center mb-6">
-          <div className="bg-gradient-to-r from-purple-500 to-blue-500 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-            {currentStep === 1 && <Sparkles className="h-8 w-8 text-white" />}
-            {currentStep === 2 && <UserCheck className="h-8 w-8 text-white" />}
-            {currentStep === 3 && <ListChecks className="h-8 w-8 text-white" />}
-            {currentStep === 4 && <MapPin className="h-8 w-8 text-white" />}
-            {currentStep === 5 && <Send className="h-8 w-8 text-white" />}
-          </div>
           <h1 className="text-2xl font-bold text-white">
             {currentStep === 1 ? (
               <span>მოგესალმებით Manganime-ში!</span>
@@ -299,15 +290,14 @@ export default function OnboardingPage() {
               {/* Step 1: Welcome */}
               {currentStep === 1 && (
                 <div className="space-y-6">
-                  <div className="relative w-full h-48 rounded-lg overflow-hidden">
+                  <div className="relative w-full h-48 rounded-lg overflow-hidden flex justify-center">
                     {/* You'd need to create or find these images */}
                     <Image 
                       src={welcomeImage}
-                      alt="Welcome to Manganime" 
-                      fill
-                      className="object-cover"
+                      alt="Welcome to Manganime"
+                      width={200}
+                      height={100}
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black to-transparent" />
                   </div>
                   
                   <div className="space-y-4 text-center">
@@ -354,13 +344,13 @@ export default function OnboardingPage() {
                     </div>
                     
                     <div className="relative mt-4">
-                      <div className="h-32 rounded-lg bg-black/40 border border-purple-500/10 flex items-center justify-center overflow-hidden">
+                      <div className="h-32 flex-row-reverse rounded-lg bg-black/40 border border-purple-500/10 flex items-center justify-center overflow-hidden">
                         <Image 
-                          src="/images/onboarding/username-anime.jpg" 
+                          src="/images/mascot/mascot-username.png" 
                           alt="Create a username"
-                          width={120}
-                          height={120}
-                          className="absolute right-4 bottom-0 opacity-60"
+                          width={80}
+                          height={100}
+                          className="opacity-90 p-2"
                         />
                         <div className="relative z-10 text-center max-w-xs mx-auto px-4">
                           <p className="text-sm text-gray-400">
@@ -378,19 +368,18 @@ export default function OnboardingPage() {
                   <Label className="text-base font-medium text-gray-200">რა გაინტერესებთ?</Label>
                    <p className="text-sm text-gray-400">აირჩიეთ ყველა შესაბამისი. ეს დაგვეხმარება გამოცდილების პერსონალიზებაში.</p>
                   
-                  <div className="relative h-32 mb-6 overflow-hidden rounded-lg">
+                  <div className="relative flex justify-center h-44 mb-6 overflow-hidden rounded-lg">
                     <Image 
-                      src="/images/onboarding/interests-banner.jpg" 
+                      src="/images/onboarding/onboarding-question.png" 
                       alt="Select your interests" 
-                      fill
-                      className="object-cover"
+                      width={160}
+                      height={128}
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black to-transparent" />
                   </div>
                   
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                    {[ { id: 'anime', label: 'ანიმე', image: '/images/onboarding/anime-icon.jpg' }, 
-                       { id: 'manga', label: 'მანგა', image: '/images/onboarding/manga-icon.jpg' } ].map((item) => (
+                  <div className="flex justify-center flex-row-reverse gap-3 pt-2">
+                    {[ { id: 'comics', label: 'კომიქსი', image: '/images/onboarding/onboarding-manga-icon.png' }, 
+                       { id: 'manga', label: 'მანგა', image: '/images/onboarding/onboarding-comic-icon.png' } ].map((item) => (
                       <Controller
                         key={item.id}
                         name="interests"
@@ -405,7 +394,7 @@ export default function OnboardingPage() {
                                 : 'border-purple-500/10 bg-black/60 hover:bg-black/80'
                             )}
                           >
-                            <div className="flex-shrink-0 h-10 w-10 overflow-hidden rounded-full bg-black mr-2">
+                            <div className=" overflow-hidden mr-2">
                               <Image 
                                 src={item.image} 
                                 alt={item.label} 
@@ -444,14 +433,13 @@ export default function OnboardingPage() {
                  <div className="space-y-4">
                    <p className="text-sm text-gray-400">ეს დეტალები არასავალდებულოა და შეგიძლიათ მოგვიანებით დაამატოთ.</p>
                    
-                   <div className="relative h-36 mb-6 overflow-hidden rounded-lg">
+                   <div className="relative h-36 mb-6 overflow-hidden flex justify-center rounded-lg">
                      <Image 
-                       src="/images/onboarding/details-banner.jpg" 
+                       src="/images/onboarding/onboarding-details.png" 
                        alt="Additional details" 
-                       fill
-                       className="object-cover"
+                       width={140}
+                       height={128}
                      />
-                     <div className="absolute inset-0 bg-gradient-to-t from-black to-transparent" />
                    </div>
                    
                    <div className="space-y-1.5">
@@ -467,34 +455,40 @@ export default function OnboardingPage() {
                         <Controller
                            name="birth_date"
                            control={control}
-                           render={({ field }) => (
-                              <Popover>
-                                <PopoverTrigger asChild>
-                                  <Button
-                                    variant={"outline"}
-                                    className={cn(
-                                      "w-full justify-start text-left font-normal bg-black/70 border-purple-500/20",
-                                      !field.value && "text-muted-foreground"
-                                    )}
-                                  >
-                                    <CalendarIcon className="mr-2 h-4 w-4" />
-                                    {field.value ? format(field.value, "PPP") : <span>აირჩიეთ თარიღი</span>}
-                                  </Button>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-auto p-0">
-                                  <Calendar
-                                    mode="single"
-                                    selected={field.value ?? undefined}
-                                    onSelect={field.onChange}
-                                    disabled={(date) => date > new Date() || date < new Date("1900-01-01")}
-                                    initialFocus
-                                    captionLayout="dropdown"
-                                    fromYear={1950}
-                                    toYear={new Date().getFullYear() - 5} // Example: minimum 5 years old
-                                  />
-                                </PopoverContent>
-                              </Popover>
-                           )}
+                           render={({ field }) => {
+                             const [open, setOpen] = useState(false)
+                             return (
+                               <Popover open={open} onOpenChange={setOpen}>
+                                 <PopoverTrigger asChild>
+                                   <Button
+                                     variant={"outline"}
+                                     className={cn(
+                                       "w-full justify-start text-left font-normal bg-black/70 border-purple-500/20",
+                                       !field.value && "text-muted-foreground"
+                                     )}
+                                   >
+                                     <CalendarIcon className="mr-2 h-4 w-4" />
+                                     {field.value ? format(field.value, "PPP") : <span>აირჩიეთ თარიღი</span>}
+                                   </Button>
+                                 </PopoverTrigger>
+                                 <PopoverContent className="w-auto p-0">
+                                   <Calendar
+                                     mode="single"
+                                     selected={field.value ?? undefined}
+                                     onSelect={(date) => {
+                                       field.onChange(date)
+                                       setOpen(false)
+                                     }}
+                                     disabled={(date) => date > new Date() || date < new Date("1900-01-01")}
+                                     initialFocus
+                                     captionLayout="dropdown"
+                                     fromYear={1950}
+                                     toYear={new Date().getFullYear() - 5}
+                                   />
+                                 </PopoverContent>
+                               </Popover>
+                             )
+                           }}
                        />
                       {errors.birth_date && <p className="text-xs text-red-400">{errors.birth_date.message}</p>}
                     </div>
@@ -510,17 +504,17 @@ export default function OnboardingPage() {
                       <Image 
                         src="/images/onboarding/review-banner.jpg" 
                         alt="Review your information" 
-                        fill
-                        className="object-cover"
+                        width={800}
+                        height={144}
+                        className="object-cover w-full h-full"
                       />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black to-transparent" />
                     </div>
                     
                     <div className="space-y-3 text-sm bg-black/40 p-6 rounded-md border border-purple-500/20">
                       <p><strong className="text-purple-400">მომხმარებლის სახელი:</strong> <span className="text-white">{getValues("username")}</span></p>
                       <p><strong className="text-purple-400">სახელი:</strong> <span className="text-white">{getValues("first_name") || '-'}</span></p>
                       <p><strong className="text-purple-400">გვარი:</strong> <span className="text-white">{getValues("last_name") || '-'}</span></p>
-                      <p><strong className="text-purple-400">ინტერესები:</strong> <span className="text-white">{getValues("interests")?.map(i => i === 'anime' ? 'ანიმე' : i === 'manga' ? 'მანგა' : i).join(', ') || 'არჩეული არ არის'}</span></p>
+                      <p><strong className="text-purple-400">ინტერესები:</strong> <span className="text-white">{getValues("interests")?.map(i => i === 'comics' ? 'კომიქსი' : i === 'manga' ? 'მანგა' : i).join(', ') || 'არჩეული არ არის'}</span></p>
                       <p><strong className="text-purple-400">მდებარეობა:</strong> <span className="text-white">{getValues("location") || '-'}</span></p>
                       <p><strong className="text-purple-400">დაბადების თარიღი:</strong> <span className="text-white">{getValues("birth_date") ? format(getValues("birth_date")!, 'PPP') : '-'}</span></p>
                     </div>

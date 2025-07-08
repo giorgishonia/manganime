@@ -25,13 +25,27 @@ export interface LibraryItem {
 // LocalStorage keys (used as fallback when offline or not logged in)
 const USER_LIBRARY_KEY = 'manganime-user-library';
 
-// Get current user ID
+// Helper to get current Supabase user id (supports async)
+async function getCurrentUserIdAsync(): Promise<string | null> {
+  try {
+    const { data } = await supabase.auth.getSession();
+    return data.session?.user?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// Legacy sync helper (falls back to localStorage token decode if needed). May return null quickly.
 function getCurrentUserId(): string | null {
   if (typeof window === 'undefined') return null;
-  
-  // Try to get from Supabase
-  const user = supabase.auth.getUser();
-  return user ? user.data?.user?.id || null : null;
+  const json = localStorage.getItem('sb-access-token');
+  if (!json) return null;
+  try {
+    const { user } = JSON.parse(json);
+    return user?.id ?? null;
+  } catch {
+    return null;
+  }
 }
 
 // Get all items in user's library (combines Supabase and localStorage)
@@ -127,20 +141,20 @@ function mapStatusFromServer(serverStatus: string): MediaStatus {
 
 // Helper function to map status from client format to server format
 function mapStatusToServer(status: MediaStatus, type: MediaType): string {
-  // No longer need anime-specific mapping
-  const statusMap: Record<MediaStatus, string> = {
-    'reading': 'reading',
-    'completed': 'completed',
-    'on_hold': 'on_hold',
-    'dropped': 'dropped',
-    'plan_to_read': 'plan_to_read'
+  if (!status) return 'plan_to_read';
+  const statusMap: Record<Exclude<MediaStatus, null>, string> = {
+    reading: 'reading',
+    completed: 'completed',
+    on_hold: 'on_hold',
+    dropped: 'dropped',
+    plan_to_read: 'plan_to_read',
   };
-  return statusMap[status];
+  return statusMap[status] ?? 'plan_to_read';
 }
 
 // Helper function to sync an item from localStorage to server
 async function syncItemToServer(item: LibraryItem): Promise<boolean> {
-  const userId = getCurrentUserId();
+  const userId = await getCurrentUserIdAsync();
   if (!userId) return false;
   
   try {
@@ -154,13 +168,11 @@ async function syncItemToServer(item: LibraryItem): Promise<boolean> {
         status: mapStatusToServer(item.status, item.type),
         progress: item.progress,
         rating: item.score,
-        started_at: item.startDate ? new Date(item.startDate).toISOString() : null,
-        finished_at: item.finishDate ? new Date(item.finishDate).toISOString() : null,
-        updated_at: new Date().toISOString()
-      });
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_id,content_id,content_type' });
     
     if (error) {
-      console.error('Failed to sync library item to server:', error);
+      console.error('Failed to sync library item to server:', JSON.stringify(error));
       return false;
     }
     
@@ -232,7 +244,7 @@ export async function updateLibraryItem(item: LibraryItem): Promise<void> {
   updateLocalLibraryItem(item);
   
   // Then update server if user is logged in
-  const userId = getCurrentUserId();
+  const userId = await getCurrentUserIdAsync();
   if (!userId) return;
   
   try {
@@ -284,11 +296,9 @@ function updateLocalLibraryItem(item: LibraryItem): void {
 
 // Remove item from library
 export async function removeFromLibrary(id: string, type: MediaType): Promise<void> {
-  // Update localStorage first for immediate feedback
   removeFromLocalLibrary(id, type);
   
-  // Then update server if user is logged in
-  const userId = getCurrentUserId();
+  const userId = await getCurrentUserIdAsync();
   if (!userId) return;
   
   try {
@@ -422,7 +432,7 @@ export async function updateScore(id: string, type: MediaType, score: number): P
 
 // Sync all localStorage items to server
 export async function syncAllToServer(): Promise<number> {
-  const userId = getCurrentUserId();
+  const userId = await getCurrentUserIdAsync();
   if (!userId) return 0;
   
   const localItems = getLocalLibrary();

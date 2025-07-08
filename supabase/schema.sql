@@ -25,6 +25,10 @@ CREATE POLICY "Users can update their own profile."
   ON public.profiles FOR UPDATE
   USING (auth.uid() = id);
 
+CREATE POLICY "Users can insert their own profile."
+  ON public.profiles FOR INSERT
+  WITH CHECK (auth.uid() = id);
+
 -- Automatically create a profile when a new user signs up
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
@@ -55,6 +59,7 @@ CREATE TABLE IF NOT EXISTS public.content (
   rating DECIMAL(3,1) DEFAULT 0.0,
   anilist_id TEXT,
   mal_id TEXT,
+  chapters_count INTEGER DEFAULT 0,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

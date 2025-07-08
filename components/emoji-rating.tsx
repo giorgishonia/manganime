@@ -255,7 +255,7 @@ export function EmojiRating({
             className={cn(
               'flex flex-col items-center rounded-lg transition-all duration-200 ease-out',
               selectedReaction === emoji
-                ? 'bg-purple-600/50 ring-2 ring-purple-400 scale-110'
+                ? 'bg-purple-600/50 !w-[60px] transition-all duration-200 ease-out ring-2 ring-purple-400 scale-110'
                 : 'hover:bg-white/10 hover:scale-110'
             )}
             whileHover={{ y: -3 }}

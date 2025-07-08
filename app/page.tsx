@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { motion as m, AnimatePresence } from "framer-motion"
+import { motion as m, AnimatePresence, useMotionValue, useSpring } from "framer-motion"
 import { ChevronRight, Search, Play, Plus, Star, CalendarDays, Clock, Info, ArrowRight, TrendingUp, BookOpen, Calendar, Heart, Book, Eye } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { AppSidebar } from "@/components/app-sidebar"
@@ -11,6 +11,7 @@ import { MangaView } from "@/components/manga-view"
 import { getAllContent } from "@/lib/content"
 import { BannerSkeleton, CategorySkeleton, CarouselSkeleton } from "@/components/ui/skeleton"
 import { ImageSkeleton } from "@/components/image-skeleton"
+import AssistantChat from "@/components/assistant-chat"
 
 // Define interface for content data from our database
 interface ContentData {
@@ -29,6 +30,7 @@ interface ContentData {
   chapters_count?: number // Added for manga
   publisher?: string      // Added for comics
   view_count?: number     // Added for view count
+  alternative_titles?: string[]
 }
 
 // Define interface for featured content data
@@ -131,6 +133,13 @@ export default function Home() {
   const [availableComics, setAvailableComics] = useState<any[]>([])
   const [isFeaturedFavorite, setIsFeaturedFavorite] = useState(false)
   const [hoverId, setHoverId] = useState<string | null>(null)
+  const [chatOpen, setChatOpen] = useState(false)
+  // Tilt motion values for featured thumbnail
+  const thumbRotateX = useMotionValue(0);
+  const thumbRotateY = useMotionValue(0);
+  // Use raw motion values for instantaneous response
+  const thumbSpringX = thumbRotateX;
+  const thumbSpringY = thumbRotateY;
 
   // Ensure "ყველა" is set as the default category on initial render
   useEffect(() => {
@@ -189,8 +198,21 @@ export default function Home() {
             
             return {
               id: content.id,
-              title: content.georgian_title || content.title,
-              englishTitle: content.georgian_title ? content.title : null,
+              // Determine Georgian title from explicit column or alternative_titles
+              ...(function() {
+                const georgianTitle = (content.georgian_title && typeof content.georgian_title === 'string' && content.georgian_title.trim() !== '')
+                  ? content.georgian_title
+                  : (Array.isArray(content.alternative_titles)
+                      ? (() => {
+                          const geoEntry = content.alternative_titles.find((t: string) => typeof t === 'string' && t.startsWith('georgian:'));
+                          return geoEntry ? geoEntry.substring(9) : null;
+                        })()
+                      : null);
+                return {
+                  title: georgianTitle || content.title,
+                  englishTitle: georgianTitle ? content.title : null,
+                };
+              })(),
               description: content.description || "აღწერა არ არის ხელმისაწვდომი",
               image: (content.bannerImage && content.bannerImage.trim() !== '') ? content.bannerImage : content.thumbnail,
               thumbnail: content.thumbnail,
@@ -239,8 +261,21 @@ export default function Home() {
             
             return {
               id: content.id,
-              title: content.georgian_title || content.title,
-              englishTitle: content.georgian_title ? content.title : null,
+              // Determine Georgian title from explicit column or alternative_titles
+              ...(function() {
+                const georgianTitle = (content.georgian_title && typeof content.georgian_title === 'string' && content.georgian_title.trim() !== '')
+                  ? content.georgian_title
+                  : (Array.isArray(content.alternative_titles)
+                      ? (() => {
+                          const geoEntry = content.alternative_titles.find((t: string) => typeof t === 'string' && t.startsWith('georgian:'));
+                          return geoEntry ? geoEntry.substring(9) : null;
+                        })()
+                      : null);
+                return {
+                  title: georgianTitle || content.title,
+                  englishTitle: georgianTitle ? content.title : null,
+                };
+              })(),
               description: content.description || "აღწერა არ არის ხელმისაწვდომი",
               image: (content.bannerImage && content.bannerImage.trim() !== '') ? content.bannerImage : content.thumbnail,
               thumbnail: content.thumbnail,
@@ -305,27 +340,35 @@ export default function Home() {
     fetchData();
   }, []); // Removed activeTab from dependency array to prevent re-fetch on tab change
 
+  // Keep featured list in sync with active tab
+  const activeFeatured = featuredContent.filter((c) => c.type === activeTab);
+
+  // Reset slider index when tab or list changes
+  useEffect(() => {
+    setCurrentFeatured(0);
+  }, [activeTab, activeFeatured.length]);
+
   // Change featured content every 7 seconds
   useEffect(() => {
-    if (featuredContent.length <= 1) return; // Don't cycle if only one item
+    if (activeFeatured.length <= 1) return; // Don't cycle if only one item
     
     const interval = setInterval(() => {
       setIsChanging(true)
       // Preload the next image briefly before transition
-      if (featuredContent.length > 0) {
-        const nextIndex = (currentFeatured + 1) % featuredContent.length;
+      if (activeFeatured.length > 0) {
+        const nextIndex = (currentFeatured + 1) % activeFeatured.length;
         const img = new Image();
-        img.src = featuredContent[nextIndex].bannerImage;
+        img.src = activeFeatured[nextIndex].bannerImage;
       }
       
       setTimeout(() => {
-        setCurrentFeatured((prev) => (prev + 1) % featuredContent.length)
+        setCurrentFeatured((prev) => (prev + 1) % activeFeatured.length)
         setIsChanging(false)
       }, 400) // Slightly faster transition
     }, 7000)
 
     return () => clearInterval(interval)
-  }, [featuredContent, currentFeatured])
+  }, [activeFeatured, currentFeatured])
 
   // Update content type based on active tab
   useEffect(() => {
@@ -352,7 +395,7 @@ export default function Home() {
     }, 300); 
   };
 
-  const featured = featuredContent[currentFeatured];
+  const featured = activeFeatured[currentFeatured];
 
   // Prepare categories dynamically based on available content
   const mangaCategories = availableManga.reduce((acc, manga) => {
@@ -404,7 +447,7 @@ export default function Home() {
 
       <main className="flex-1 overflow-x-hidden">
         {/* Featured Content */} 
-        <section className="relative w-full h-[300px] md:h-[330px] px-4 pt-16 md:px-0 md:pt-0">
+        <section className="relative w-full h-[300px] md:h-[330px]  px-4 pt-16 md:px-0 md:pt-0">
           {/* --- DEBUG LOG --- */}
           {(() => { console.log("[app/page.tsx] Rendering Banner. featured.image:", featured?.bannerImage); return null; })()}
           <AnimatePresence mode="wait">
@@ -446,7 +489,7 @@ export default function Home() {
           </AnimatePresence>
 
           {/* Content positioned correctly with padding */} 
-          <div className="absolute top-16 left-0 right-0 pb-18 md:pb-0 px-4 md:px-8 lg:px-12 z-10 mt-0">
+          <div className="absolute top-16 left-0 right-0 pb-18 md:pb-0 px-4 md:px-8 lg:px-24 z-10 mt-0">
             <AnimatePresence mode="wait">
               {isLoading || !featured ? (
                 <div className="space-y-4 mt-[-100px]"> {/* Adjust spacing for skeleton */} 
@@ -458,21 +501,35 @@ export default function Home() {
                   initial="initial"
                   animate="animate"
                   exit="exit"
-                  className="flex items-end md:flex-row-reverse gap-6 relative max-w-screen-xl mx-auto" /* Center content */
+                  className="flex flex-col md:flex-row items-start gap-6 relative max-w-screen-xl mx-auto"
                 >
                   {/* Featured Thumbnail - Hide on small screens */}
                   <m.div 
-                    className="w-28 h-40 md:w-36 md:h-56 md:block hidden rounded-lg overflow-hidden border-2 border-white/10 shadow-xl flex-shrink-0 block relative group/thumbnail"
+                    className="hidden md:block w-32 h-48 lg:w-40 lg:h-60 rounded-xl overflow-hidden border-2 border-white/10 shadow-white/20 shadow-[0_0_25px_rgba(139,92,246,0.3)] flex-shrink-0 relative group/thumbnail"
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: 0.3, duration: 0.5 }}
+                    style={{ perspective: 800, rotateX: thumbSpringX, rotateY: thumbSpringY, transformStyle: "preserve-3d" }}
+                    onMouseMove={(e) => {
+                      const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+                      const posX = e.clientX - rect.left - rect.width / 2;
+                      const posY = e.clientY - rect.top - rect.height / 2;
+                      const maxDeg = 10;
+                      // Invert direction so card tilts toward cursor position
+                      thumbRotateY.set((-posX / (rect.width / 2)) * maxDeg);
+                      thumbRotateX.set((posY / (rect.height / 2)) * maxDeg);
+                    }}
+                    onMouseLeave={() => {
+                      thumbRotateX.set(0);
+                      thumbRotateY.set(0);
+                    }}
                   >
                     
                     <div className="w-full h-full overflow-hidden rounded-lg">
                       <img
                         src={featured.thumbnail}
                         alt={featured.title}
-                        className="w-full h-full object-cover transition-transform duration-300 group-hover/thumbnail:scale-110 transform-origin-center"
+                        className="w-full h-full object-cover transition-transform duration-300 transform-origin-center"
                       />
                     </div>
 
@@ -504,9 +561,9 @@ export default function Home() {
                     )}
                   </m.div>
                   
-                  <div className="w-fit">
+                  <div className="flex-1 min-w-0">
                     <m.h1
-                      className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-1"
+                      className="font-extrabold text-white mb-1 truncate max-w-full"
                       variants={heroVariants}
                     >
                       <TypewriterText text={featured.title} />
@@ -580,7 +637,7 @@ export default function Home() {
 
           {/* Tab Navigation - Simplified */} 
           <m.div 
-            className="absolute bottom-[-40px] left-0 right-0 flex justify-center z-20 px-4"
+            className="absolute bottom-[-63px] left-0 right-0 flex justify-center z-20 px-4"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.6, delay: 1.5 }}
@@ -611,15 +668,15 @@ export default function Home() {
           </m.div>
           
           {/* Featured content pagination dots */} 
-          {featuredContent.length > 1 && (
-            <div className="absolute bottom-[20px] md:bottom-[30px] left-0 right-0 flex justify-center z-20">
+          {activeFeatured.length > 1 && (
+            <div className="absolute bottom-[-7px] md:bottom-[-7px] left-0 right-0 flex justify-center z-20">
               <m.div 
                 className="flex gap-2"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ duration: 0.5 }}
               >
-                {featuredContent.map((_, index) => (
+                {activeFeatured.map((_, index) => (
                   <m.button
                     key={`dot-${index}`}
                     className={`rounded-full ${
@@ -703,6 +760,17 @@ export default function Home() {
           contentType={hoveredContentType} 
         />
       )}
+
+      {/* Floating mascot assistant */}
+      <img
+        src="/images/mascot/mascot-assistant.png"
+        alt="Mascot helper"
+        onClick={() => setChatOpen((p) => !p)}
+        className="hidden md:block fixed bottom-6 right-6 w-20 cursor-pointer hover:scale-105 transition-transform animate-bounce-slow opacity-90"
+      />
+
+      {/* Assistant chat popup */}
+      <AssistantChat open={chatOpen} onClose={() => setChatOpen(false)} />
     </div>
   )
 }

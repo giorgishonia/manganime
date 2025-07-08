@@ -27,28 +27,27 @@ import { getLibraryItems, getLibraryStats, MediaStatus, MediaType, LibraryItem, 
 import { cn } from "@/lib/utils";
 
 const statusFilters = [
-  { value: "all", label: "All", icon: null },
-  { value: "reading", label: "Reading", icon: <BookOpen className="h-4 w-4 mr-2" /> },
-  { value: "plan_to_read", label: "Plan to Read", icon: <BookmarkPlus className="h-4 w-4 mr-2" /> },
-  { value: "completed", label: "Completed", icon: <CheckCheck className="h-4 w-4 mr-2" /> },
-  { value: "on_hold", label: "On Hold", icon: <PauseCircle className="h-4 w-4 mr-2" /> },
-  { value: "dropped", label: "Dropped", icon: <X className="h-4 w-4 mr-2" /> }
+  { value: "all", label: "ყველა", icon: null },
+  { value: "reading", label: "ვკითხულობ", icon: <BookOpen className="h-4 w-4 mr-2" /> },
+  { value: "plan_to_read", label: "წასაკითხი", icon: <BookmarkPlus className="h-4 w-4 mr-2" /> },
+  { value: "completed", label: "დასრულებული", icon: <CheckCheck className="h-4 w-4 mr-2" /> },
+  { value: "on_hold", label: "შეჩერებული", icon: <PauseCircle className="h-4 w-4 mr-2" /> },
+  { value: "dropped", label: "მიტოვებული", icon: <X className="h-4 w-4 mr-2" /> }
 ];
 
 // Helper function to get readable status label
 function getStatusLabel(status: MediaStatus | null): string {
   if (status === null) {
-    return "Unknown"; // Handle null status
+    return "უცნობი"; // Handle null status
   }
-  // At this point, status is guaranteed to be MediaStatus
-  const labels: Record<MediaStatus, string> = {
-    reading: "Reading",
-    plan_to_read: "Plan to Read",
-    completed: "Completed",
-    on_hold: "On Hold",
-    dropped: "Dropped",
+  const labels: Record<Exclude<MediaStatus, null>, string> = {
+    reading: "ვკითხულობ",
+    plan_to_read: "წასაკითხი",
+    completed: "დასრულებული",
+    on_hold: "შეჩერებული",
+    dropped: "მიტოვებული",
   };
-  return labels[status] || status.replace('_', ' ');
+  return labels[status];
 }
 
 // Helper function to get status color
@@ -56,8 +55,7 @@ function getStatusColor(status: MediaStatus | null): string {
   if (status === null) {
     return 'text-gray-400'; // Handle null status
   }
-  // At this point, status is guaranteed to be MediaStatus
-  const colorMap: Record<MediaStatus, string> = {
+  const colorMap: Record<Exclude<MediaStatus, null>, string> = {
     'reading': 'text-green-400',
     'plan_to_read': 'text-purple-400',
     'completed': 'text-blue-400',
@@ -72,8 +70,7 @@ function getStatusIcon(status: MediaStatus | null): JSX.Element {
   if (status === null) {
     return <BookmarkPlus className="h-4 w-4" />; // Handle null status with a default icon
   }
-  // At this point, status is guaranteed to be MediaStatus
-  const iconMap: Record<MediaStatus, JSX.Element> = {
+  const iconMap: Record<Exclude<MediaStatus, null>, JSX.Element> = {
     'reading': <BookOpen className="h-4 w-4" />,
     'plan_to_read': <BookmarkPlus className="h-4 w-4" />,
     'completed': <CheckCheck className="h-4 w-4" />,

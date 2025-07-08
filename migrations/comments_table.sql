@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS comments (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL, -- Reference to auth.users but without a foreign key constraint
   content_id TEXT NOT NULL,
-  content_type TEXT NOT NULL CHECK (content_type IN ('anime', 'manga')),
+  content_type TEXT NOT NULL CHECK (content_type IN ('anime', 'manga', 'comics')),
   text TEXT NOT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()

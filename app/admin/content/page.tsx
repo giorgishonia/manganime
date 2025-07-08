@@ -87,7 +87,7 @@ async function getAllContentForAdmin() {
 
 export default function AdminContentPage() {
   const router = useRouter();
-  const { user, isLoading: authLoading } = useAuth();
+  const { user, isLoading: authLoading, isAdmin } = useAuth();
   const searchParams = useSearchParams();
   const contentId = searchParams ? searchParams.get("id") : null;
   const isNew = searchParams ? searchParams.get("new") === "true" : false;
@@ -111,58 +111,8 @@ export default function AdminContentPage() {
           return;
         }
 
-        // TEMPORARY: Skip admin check during development
-        // Comment this out before production!
-        const isDevelopment = process.env.NODE_ENV === 'development';
-        if (isDevelopment) {
-          console.log("DEVELOPMENT MODE: Bypassing admin check");
-          
-          if (contentId) {
-            try {
-              const contentData = await getContentById(contentId);
-              if (contentData?.success && contentData.content) {
-                setSingleContent(contentData.content);
-                setEditContent(contentData.content);
-                setFormOpen(true);
-              } else {
-                toast.error("Content not found", {
-                  description: "The requested content could not be found",
-                });
-                router.push("/admin/content");
-              }
-            } catch (error) {
-              console.error("Failed to fetch content:", error);
-              toast.error("Failed to fetch content details", {
-                description: "Failed to fetch content details",
-              });
-            }
-          } else {
-            // Load all content if no specific ID is provided
-            try {
-              const allContent = await getAllContentForAdmin();
-              setContentList(allContent);
-            } catch (error) {
-              console.error("Failed to fetch content list:", error);
-              toast.error("Failed to load content list");
-            }
-          }
-          
-          setLoading(false);
-          return;
-        }
-        
-        // Check if user is admin
-        console.log("Checking admin role for user:", user.id);
-        const { data: userData, error: userError } = await supabase
-          .from("profiles")
-          .select("role")
-          .eq("id", user.id)
-          .single();
-        
-        console.log("User data:", userData, "Error:", userError);
-          
-        if (userData?.role !== "admin") {
-          console.log("User is not admin. Role:", userData?.role);
+        // Enforce admin-only access
+        if (!isAdmin) {
           toast.error("Permission Denied", {
             description: "You don't have permission to access this page",
           });

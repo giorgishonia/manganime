@@ -44,7 +44,7 @@ export function BannerUploader({
         .from('user_banners')
         .select()
         .eq('user_id', userId)
-        .single();
+        .maybeSingle();
       
       let result;
       

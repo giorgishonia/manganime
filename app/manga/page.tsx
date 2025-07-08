@@ -59,6 +59,7 @@ interface MangaData {
   release_year?: number
   totalChapters?: number
   view_count?: number
+  alternative_titles?: string[]
 }
 
 // Animation variants
@@ -177,8 +178,20 @@ export default function ReadPage() {
             
             return {
               id: content.id,
-              title: content.georgian_title || content.title,
-              englishTitle: content.georgian_title ? content.title : null,
+              ...(function() {
+                const georgianTitle = (content.georgian_title && typeof content.georgian_title === 'string' && content.georgian_title.trim() !== '')
+                  ? content.georgian_title
+                  : (Array.isArray(content.alternative_titles)
+                      ? (() => {
+                          const geoEntry = content.alternative_titles.find((t: string) => typeof t === 'string' && t.startsWith('georgian:'));
+                          return geoEntry ? geoEntry.substring(9) : null;
+                        })()
+                      : null);
+                return {
+                  title: georgianTitle || content.title,
+                  englishTitle: georgianTitle ? content.title : null,
+                };
+              })(),
               description: content.description || "No description available",
               image: (content.bannerImage && content.bannerImage.trim() !== '') ? content.bannerImage : content.thumbnail,
               thumbnail: content.thumbnail,
@@ -273,13 +286,13 @@ export default function ReadPage() {
   // Get featured manga
   const featured = featuredMangas[currentFeatured] || {
     id: "",
-    title: "Loading...",
-    description: "Loading content...",
+    title: "იტვირთება...",
+    description: "შიგთავსი იტვირთება...",
     image: "/placeholder.svg",
     thumbnail: "/placeholder.svg",
     rating: 0,
-    status: "Loading",
-    chapters: "0 chapters",
+    status: "იტვირთება",
+    chapters: "0 თავი",
     genres: []
   };
 
@@ -293,8 +306,8 @@ export default function ReadPage() {
         id: item.mangaId,
         title: item.mangaTitle,
         thumbnail: item.mangaThumbnail,
-        chapters: `Chapter ${item.chapterNumber}`,
-        status: item.currentPage === item.totalPages ? "Completed" : "In Progress",
+        chapters: `თავი ${item.chapterNumber}`,
+        status: item.currentPage === item.totalPages ? "დასრულებულია" : "მიმდინარე",
         readDate: new Date(item.lastRead).toLocaleDateString(),
         readProgress: Math.round((item.currentPage / item.totalPages) * 100),
         currentPage: item.currentPage,
@@ -328,7 +341,7 @@ export default function ReadPage() {
 
       <main className="flex-1 overflow-x-hidden ">
         {/* Featured Banner */}
-        <section className="relative w-full h-[500px] overflow-hidden">
+        <section className="relative w-full h-[360px] md:h-[420px] lg:h-[460px] overflow-hidden">
           {/* --- DEBUG LOG --- */}
           {/* {(() => { console.log("[app/manga/page.tsx] Rendering Banner. featured.image:", featured?.image); return null; })()} */}
           <AnimatePresence mode="wait">
@@ -377,7 +390,7 @@ export default function ReadPage() {
             )}
           </AnimatePresence>
 
-          <div className="absolute bottom-0 left-0 right-0 md:bottom-12 z-10 p-6 md:pl-[100px] md:p-8">
+          <div className="absolute bottom-0 left-0 right-0 z-10 p-6 md:pl-[150px] md:p-12 md:pt-20">
             <AnimatePresence mode="wait">
               {isFetching ? (
                 <div className="space-y-4 w-full">
@@ -392,22 +405,7 @@ export default function ReadPage() {
                   exit="exit"
                   className="w-full"
                 >
-                  <div className="relative w-full md:max-w-5xl rounded-t-xl md:rounded-xl overflow-hidden">
-                    {/* Top pill badge for trending */}
-                    <div className="absolute top-0 right-0 left-0 flex justify-center">
-                      <m.div 
-                        className="text-white px-6 py-1.5 rounded-b-xl transform -translate-y-px"
-                        initial={{ y: -20 }}
-                        animate={{ y: 0 }}
-                        transition={{ delay: 0.1, type: "spring", stiffness: 300, damping: 20 }}
-                      >
-                        <div className="flex items-center gap-2">
-                          <TrendingUp className="h-4 w-4 text-purple-300" />
-                          <span className="font-medium text-sm tracking-wide">ტრენდულია</span>
-                        </div>
-                      </m.div>
-                    </div>
-                    
+                  <div className="relative w-full md:max-w-5xl rounded-t-xl md:rounded-xl overflow-hidden">                    
                     {/* Main content with glass effect */}
                     <div className="flex flex-col md:flex-row items-start gap-8 p-6 md:p-8 pt-10 relative z-10">
                       {/* Left side - Image */}
@@ -415,7 +413,7 @@ export default function ReadPage() {
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.5 }}
-                        className="w-full md:w-auto flex justify-center md:block"
+                        className="hidden md:block"
                       >
                         <Link href={`/manga/${featured.id}`} className="block relative group/thumbnail">
                           <div 
@@ -464,7 +462,7 @@ export default function ReadPage() {
                           className="group/title"
                         >
                           <Link href={`/manga/${featured.id}`} className="block">
-                            <h1 className="text-2xl md:text-4xl lg:text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-white/80 leading-tight group-hover/title:text-purple-400 transition-colors">
+                            <h1 className="font-extrabold text-white leading-tight truncate max-w-full group-hover/title:text-purple-400 transition-colors">
                               <TypewriterText text={featured.title} />
                             </h1>
                             
@@ -479,7 +477,7 @@ export default function ReadPage() {
                         
                         {/* Content meta info with enhanced style */}
                         <m.div 
-                          className="flex flex-wrap items-center gap-3 my-4"
+                          className="flex flex-wrap items-center gap-2 my-4"
                           initial={{ opacity: 0, y: 10 }}
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ duration: 0.3, delay: 0.4 }}
@@ -517,12 +515,7 @@ export default function ReadPage() {
                           animate={{ opacity: 1 }}
                           transition={{ duration: 0.5, delay: 0.5 }}
                         >
-                          <div className="max-h-[80px] md:max-h-[100px] overflow-y-auto no-scrollbar"
-                            style={{
-                              maskImage: 'linear-gradient(to bottom, black 50%, transparent 100%)',
-                              WebkitMaskImage: 'linear-gradient(to bottom, black 50%, transparent 100%)'
-                            }}
-                          >
+                          <div className="max-h-[120px] md:max-h-[170px] overflow-y-auto no-scrollbar desc-mask">
                             <p className="text-sm md:text-base leading-relaxed text-gray-300">{featured.description}</p>
                           </div>
                         </m.div>
@@ -548,7 +541,7 @@ export default function ReadPage() {
           </div>
 
           {/* Featured content pagination dots */}
-          <div className="absolute bottom-4 left-0 right-0 flex justify-center z-20">
+          <div className="absolute bottom-8 sm:bottom-16 left-0 right-0 flex justify-center z-20">
             <m.div 
               className="flex gap-3"
               initial={{ opacity: 0 }}
@@ -579,7 +572,7 @@ export default function ReadPage() {
         </section>
 
         {/* Manga Catalog Section */}
-        <section className="px-4 md:px-8 py-8 md:pl-[100px]">
+        <section className="px-4 py-8 sm:pl-[20px] lg:pl-[100px] md:-mt-16 lg:-mt-20">
           <m.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -587,7 +580,7 @@ export default function ReadPage() {
             className="flex flex-col"
           >
             {/* Controls: Search, Sort, Filter - Stack on mobile */}
-            <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-6">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-6 z-20">
               <h2 className="text-2xl font-bold self-start md:self-center">მანგის ბიბლიოთეკა</h2>
               
               {/* Wrap controls for better stacking */}
@@ -619,7 +612,7 @@ export default function ReadPage() {
                       className={sortBy === "popular" ? "bg-purple-500/10 text-purple-400" : ""}
                       onClick={() => setSortBy("popular")}
                     >
-                      Popularity
+                      პოპულარობით
                     </DropdownMenuItem>
                     <DropdownMenuItem 
                       className={sortBy === "newest" ? "bg-purple-500/10 text-purple-400" : ""}
@@ -745,12 +738,12 @@ export default function ReadPage() {
             {/* Content stats and info */}
             <div className="mb-4 flex items-center justify-between">
               <div className="text-sm text-gray-400">
-                Showing <span className="text-white font-medium">{filteredMangas.length}</span> manga titles
+                ნაპოვნია <span className="text-white font-medium">{filteredMangas.length}</span> მანგა
                 {selectedGenres.length > 0 && (
-                  <> filtered by <span className="text-purple-400">{selectedGenres.length} genre{selectedGenres.length !== 1 && 's'}</span></>
+                  <> | გაფილტრული <span className="text-purple-400">{selectedGenres.length}</span> {selectedGenres.length !== 1 ? 'ჟანრებით' : 'ჟანრით'}</>
                 )}
                 {searchQuery && (
-                  <> matching "<span className="text-purple-400">{searchQuery}</span>"</>
+                  <> | ძიებით "<span className="text-purple-400">{searchQuery}</span>"</>
                 )}
               </div>
               
@@ -814,7 +807,7 @@ export default function ReadPage() {
               </div>
               
               {/* Responsive grid for continue reading */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8 gap-4">
                 {recentlyRead.map((item, index) => (
                   <m.div
                     key={`recent-${item.id}-${index}`}
@@ -853,10 +846,10 @@ export default function ReadPage() {
                         </h3>
                         <div className="flex justify-between items-center">
                           <p className="text-xs text-purple-400 mt-1">
-                            Chapter {item.chapterNumber}: {item.chapterTitle}
+                            {item.chapterTitle}
                           </p>
                           <p className="text-xs text-indigo-400 mt-1">
-                            {item.readProgress}% Complete
+                            {item.readProgress}% დასრულებულია
                           </p>
                         </div>
                       </div>
@@ -878,7 +871,7 @@ export default function ReadPage() {
                       <div className="flex items-center gap-1 text-xs text-gray-400">
                         <Clock className="w-3 h-3" />
                         <span>
-                          Page {item.currentPage}/{item.totalPages} • Ch. {item.chapterNumber}
+                          გვ. {item.currentPage}/{item.totalPages} • თ. {item.chapterNumber}
                         </span>
                       </div>
                       <div className="text-xs text-gray-400">{item.readDate}</div>

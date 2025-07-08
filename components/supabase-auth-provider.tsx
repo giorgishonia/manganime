@@ -38,50 +38,37 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
       setIsProfileLoading(true)
       let effectiveUserProfile: UserProfile | null = null
       try {
-        const result = await getProfileForUser(currentUser.id)
+        const fetchedProfile = await getProfileForUser(currentUser.id)
 
-        if (result && typeof result === 'object' && 'success' in result) {
-          if (result.success) {
-            if ((result as unknown as { profile?: UserProfile | null }).profile) {
-              effectiveUserProfile = (result as unknown as { profile: UserProfile }).profile;
-            } else { // Profile fetch was successful, but no profile exists
-              console.warn(`No profile found for user ${currentUser.id} during sync. Attempting to create one.`)
-              try {
-                const profileDataToCreate = {
-                  id: currentUser.id,
-                  email: currentUser.email || '',
-                  username: currentUser.email?.split('@')[0] || `user_${currentUser.id.substring(0, 8)}`,
-                  avatar_url: currentUser.user_metadata?.avatar_url || '',
-                  has_completed_onboarding: false
-                }
-                
-                const { data: newProfileData, error: insertError } = await supabase
-                  .from('profiles')
-                  .insert(profileDataToCreate)
-                  .select()
-                  .single()
-
-                if (insertError) {
-                  console.error('Error creating fallback profile during sync:', insertError)
-                } else {
-                  console.log('Fallback profile created successfully:', newProfileData)
-                  effectiveUserProfile = newProfileData as UserProfile
-                }
-              } catch (creationError) {
-                console.error('Unexpected error during fallback profile creation:', creationError)
-              }
-            }
-          } else { // result.success is false
-            console.error("Error fetching user profile in AuthProvider:", (result as unknown as { error?: any }).error)
-          }
-        } else if (result) {
-            // This case implies result might be UserProfile directly, or an unexpected shape.
-            // Log this situation, as it might indicate an issue with getProfileForUser's return type consistency.
-            console.warn("getProfileForUser returned an unexpected shape or UserProfile directly in syncUserProfile:", result);
-            // Assuming if result is not the expected {success, profile} object, we treat it as no profile found or an error.
-            effectiveUserProfile = null; 
+        if (fetchedProfile) {
+          effectiveUserProfile = fetchedProfile
         } else {
-          console.error("getProfileForUser returned null or undefined in syncUserProfile");
+          // No profile found, attempt to create a fallback so pages relying on profile do not break
+          console.warn(`No profile found for user ${currentUser.id} during sync. Attempting to create one.`)
+          try {
+            const profileDataToCreate = {
+              id: currentUser.id,
+              email: currentUser.email || '',
+              username: currentUser.email?.split('@')[0] || `user_${currentUser.id.substring(0, 8)}`,
+              avatar_url: currentUser.user_metadata?.avatar_url || '',
+              has_completed_onboarding: false,
+            }
+
+            const { data: newProfileData, error: insertError } = await supabase
+              .from('profiles')
+              .insert(profileDataToCreate)
+              .select()
+              .single()
+
+            if (insertError) {
+              console.error('Error creating fallback profile during sync:', insertError)
+            } else {
+              console.log('Fallback profile created successfully:', newProfileData)
+              effectiveUserProfile = newProfileData as UserProfile
+            }
+          } catch (creationError) {
+            console.error('Unexpected error during fallback profile creation:', creationError)
+          }
         }
         
         setProfile(effectiveUserProfile)
@@ -148,17 +135,7 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
            await syncUserProfile(currentUser)
            
            if (_event !== 'SIGNED_OUT') {
-             const result = await getProfileForUser(currentUser.id)
-             let userProfileForRedirect: UserProfile | null = null;
-             if (result && typeof result === 'object' && 'success' in result) {
-                userProfileForRedirect = result.success ? (result as unknown as { profile?: UserProfile | null }).profile || null : null;
-             } else if (result) {
-                // Handle cases where result might be UserProfile directly or unexpected shape
-                console.warn("getProfileForUser returned an unexpected shape or UserProfile directly in onAuthStateChange:", result);
-             } else {
-                console.error("getProfileForUser returned null or undefined in onAuthStateChange");
-             }
-
+             const userProfileForRedirect = await getProfileForUser(currentUser.id)
              console.log(`Auth state change (${_event}): onboarding status:`, userProfileForRedirect?.has_completed_onboarding)
              console.log(`Current path: ${pathname}`)
              
@@ -232,15 +209,7 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
       if (data.user && typeof data.user.id === 'string') {
         await syncUserProfile(data.user)
         
-        const result = await getProfileForUser(data.user.id)
-        let userProfileForSignIn: UserProfile | null = null;
-        if (result && typeof result === 'object' && 'success' in result) {
-            userProfileForSignIn = result.success ? (result as unknown as { profile?: UserProfile | null }).profile || null : null;
-        } else if (result) {
-            console.warn("getProfileForUser returned an unexpected shape or UserProfile directly in signIn:", result);
-        } else {
-            console.error("getProfileForUser returned null or undefined in signIn");
-        }
+        const userProfileForSignIn = await getProfileForUser(data.user.id)
         
         if (userProfileForSignIn && userProfileForSignIn.has_completed_onboarding !== true) {
           router.push('/onboarding')

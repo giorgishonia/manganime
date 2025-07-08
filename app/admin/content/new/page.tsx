@@ -9,11 +9,11 @@ import { toast } from "sonner";
 
 export default function NewContentPage() {
   const router = useRouter();
-  const { user, isLoading: authLoading } = useAuth();
+  const { user, isLoading: authLoading, isAdmin } = useAuth();
 
   // Check if user is admin
   useEffect(() => {
-    if (!authLoading && (!user || !user.user_metadata?.isAdmin)) {
+    if (!authLoading && (!user || !isAdmin)) {
       router.push("/");
       toast.error("You don't have permission to access this page");
     }

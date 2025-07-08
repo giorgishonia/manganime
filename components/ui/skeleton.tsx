@@ -27,7 +27,7 @@ function CardSkeleton() {
 function BannerSkeleton() {
   return (
     <div className="w-full">
-      <Skeleton className="w-full h-[400px] rounded-none" />
+      <Skeleton className="w-full h-[360px] md:h-[420px] lg:h-[460px] rounded-none bg-gradient-to-br from-gray-800 via-gray-700 to-gray-800" />
       <div className="absolute bottom-24 right-12 max-w-lg space-y-4 p-6">
         <Skeleton className="h-8 w-3/4" />
         <Skeleton className="h-4 w-1/3" />

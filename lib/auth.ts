@@ -447,7 +447,7 @@ export async function updateWatchlistStatus(
 }
 
 // Get user's watchlist
-export async function getUserWatchlist(userId: string, contentType?: 'anime' | 'manga', status?: string) {
+export async function getUserWatchlist(userId: string, contentType?: 'anime' | 'manga' | 'comics', status?: string) {
   try {
     if (!userId) {
       console.error('Get watchlist error: No user ID provided');

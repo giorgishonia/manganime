@@ -2,13 +2,14 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, User, ShieldCheck, Palette, Bell } from 'lucide-react';
+import { Loader2, User, Palette, Bell } from 'lucide-react';
 import { AppSidebar } from '@/components/app-sidebar';
 import { useAuth } from '@/components/supabase-auth-provider';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ProfileForm } from '@/components/settings/profile-form';
-import { AppearanceSettings } from '../../components/settings/appearance-settings';
+import { AppearanceSettings } from '@/components/settings/appearance-settings';
 import { toast } from 'sonner';
+import { NotificationSettings } from '@/components/settings/notification-settings';
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -68,17 +69,14 @@ export default function SettingsPage() {
         <h1 className="text-3xl font-bold mb-8">Settings</h1>
 
         <Tabs defaultValue="profile" className="w-full">
-          <TabsList className="grid w-full grid-cols-4 mb-6">
+          <TabsList className="flex flex-wrap gap-2 mb-6">
             <TabsTrigger value="profile">
               <User className="h-4 w-4 mr-2" /> Profile
-            </TabsTrigger>
-            <TabsTrigger value="account" disabled>
-              <ShieldCheck className="h-4 w-4 mr-2" /> Account
             </TabsTrigger>
             <TabsTrigger value="appearance">
               <Palette className="h-4 w-4 mr-2" /> Appearance
             </TabsTrigger>
-            <TabsTrigger value="notifications" disabled>
+            <TabsTrigger value="notifications">
               <Bell className="h-4 w-4 mr-2" /> Notifications
             </TabsTrigger>
           </TabsList>
@@ -93,22 +91,28 @@ export default function SettingsPage() {
                 avatar_url: profile.avatar_url || null,
                 bio: profile.bio || null,
                 is_public: profile.is_public ?? true, // Fallback for undefined is_public
+                birth_date: profile.birth_date || null,
               }} 
               userId={user.id} 
               onSuccess={handleProfileUpdate}
             />
           </TabsContent>
           
-          <TabsContent value="account">
-            <p>Account settings coming soon.</p>
-          </TabsContent>
           <TabsContent value="appearance">
             {profile && user && (
               <AppearanceSettings currentProfile={profile} userId={user.id} />
             )}
           </TabsContent>
-           <TabsContent value="notifications">
-            <p>Notification settings coming soon.</p>
+          <TabsContent value="notifications">
+            {profile && (
+              <NotificationSettings 
+                initialSettings={{
+                  email_notifications: profile.email_notifications ?? true,
+                  push_notifications: profile.push_notifications ?? true,
+                }}
+                userId={user.id}
+              />
+            )}
           </TabsContent>
           
         </Tabs>
