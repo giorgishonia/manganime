@@ -111,18 +111,30 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
   useEffect(() => {
     console.log("=== Initializing AuthProvider and setting up auth state listeners ===")
     
-    supabase.auth.getSession().then(async ({ data: { session: activeSession } }) => {
-      setSession(activeSession)
-      const currentUser = activeSession?.user || null
-      setUser(currentUser)
-      console.log("Initial session check:", currentUser ? `User ${currentUser.id} is logged in` : "No active session")
-      
-      if (currentUser && typeof currentUser.id === 'string') {
-        await syncUserProfile(currentUser)
+    ;(async () => {
+      try {
+        const { data: { session: activeSession } } = await supabase.auth.getSession()
+
+        setSession(activeSession)
+        const currentUser = activeSession?.user || null
+        setUser(currentUser)
+
+        console.log(
+          "Initial session check:",
+          currentUser ? `User ${currentUser.id} is logged in` : "No active session",
+        )
+
+        if (currentUser && typeof currentUser.id === 'string') {
+          await syncUserProfile(currentUser)
+        }
+      } catch (err) {
+        console.error('Error fetching initial session from Supabase:', err)
+        // In case of error (e.g., missing env vars or network failure) we still want the UI to render
+      } finally {
+        setIsLoading(false)
+        console.log('Initial auth state loading completed (with or without session)')
       }
-      setIsLoading(false)
-      console.log("Initial auth state loading completed")
-    })
+    })()
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, newSession) => {
