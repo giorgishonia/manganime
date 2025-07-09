@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useAuth } from "@/components/supabase-auth-provider";
 import { Loader2 } from "lucide-react";
 
 /**
@@ -8,13 +9,16 @@ import { Loader2 } from "lucide-react";
  * It doesn't render anything visible to the user.
  */
 export function MaintenanceRunner() {
+  // Run maintenance only for admins to avoid unnecessary load & potential errors
+  const { isAdmin } = useAuth();
+
   const [isRunning, setIsRunning] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Only run once
-    if (isRunning || result) return;
+    // Skip if not admin or already executed
+    if (!isAdmin || isRunning || result) return;
     
     const runMaintenance = async () => {
       setIsRunning(true);
@@ -52,7 +56,7 @@ export function MaintenanceRunner() {
     }, 2000);
     
     return () => clearTimeout(timer);
-  }, [isRunning, result]);
+  }, [isAdmin, isRunning, result]);
 
   // This component doesn't render anything visible
   return null;
