@@ -300,4 +300,3 @@ export function getLatestChapterRead(mangaId: string): number {
     return 0;
   }
 } 
-} 
