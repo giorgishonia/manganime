@@ -1,6 +1,24 @@
 import { supabase } from './supabase'
 import { Chapter } from './supabase' // Removed Episode and Content import
 
+// ---------------------------------------------------------------------------
+// Create a second Supabase client that is *always* unauthenticated.  This lets
+// us perform read-only queries that shouldn’t depend on (or be blocked by)
+// the logged-in user’s RLS policies.  We use it for public content/chapters
+// fetches so that signed-in visitors see the same catalogue data as guests.
+// ---------------------------------------------------------------------------
+import { createClient } from '@supabase/supabase-js'
+
+const supabasePublic = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-key',
+  {
+    auth: {
+      persistSession: false,    // do NOT store or send user tokens
+    },
+  },
+)
+
 // Content metadata interface with consistent chapter tracking (episodes removed)
 export interface ContentMetadata {
   id: string
@@ -25,9 +43,14 @@ export interface ContentMetadata {
 }
 
 // Get all content (manga or comics)
-export async function getAllContent(type: 'manga' | 'comics', limit = 20, page = 0) {
+export async function getAllContent(
+  type: 'manga' | 'comics',
+  limit = 20,
+  page = 0,
+) {
   try {
-    const { data, error, count } = await supabase
+    // Use the *public* client to avoid RLS differences between anon vs auth.
+    const { data, error, count } = await supabasePublic
       .from('content')
       .select('*, view_count', { count: 'exact' })
       .eq('type', type)
@@ -44,7 +67,7 @@ export async function getAllContent(type: 'manga' | 'comics', limit = 20, page =
       if (type === 'manga' || type === 'comics') {
         await Promise.all(data.map(async (item) => {
           try {
-            const { data: chapters, error: chaptersError } = await supabase
+            const { data: chapters, error: chaptersError } = await supabasePublic
               .from('chapters')
               .select('id, number', { count: 'exact' })
               .eq('content_id', item.id)
@@ -193,7 +216,7 @@ export async function getContentById(id: string): Promise<{ success: boolean; co
     // Fetch chapters based on content type (episodes removed)
     if (data && (data.type === 'manga' || data.type === 'comics')) {
       // Get chapters count from chapters table
-      const { data: chapters, error: chaptersError } = await supabase
+      const { data: chapters, error: chaptersError } = await supabasePublic
         .from('chapters')
         .select('id, number', { count: 'exact' })
         .eq('content_id', id)
@@ -240,7 +263,7 @@ export async function getContentById(id: string): Promise<{ success: boolean; co
 // Get content by genre (manga or comics)
 export async function getContentByGenre(genre: string, type?: 'manga' | 'comics', limit = 20) {
   try {
-    let query = supabase
+    let query = supabasePublic
       .from('content')
       .select('*')
       .contains('genres', [genre])
@@ -267,7 +290,7 @@ export async function getContentByGenre(genre: string, type?: 'manga' | 'comics'
 // Get trending content (manga or comics)
 export async function getTrendingContent(type?: 'manga' | 'comics', limit = 10) {
   try {
-    let query = supabase
+    let query = supabasePublic
       .from('content')
       .select('*, view_count')
       .order('view_count', { ascending: false })
@@ -678,15 +701,15 @@ export async function deleteContent(id: string) {
 export async function getChapters(contentId: string) {
   try {
     // First try with contentId
-    let { data, error } = await supabase
+    let { data, error } = await supabasePublic
       .from('chapters')
       .select('*')
-      .eq('contentId', contentId)
+      .eq('content_id', contentId)
       .order('number', { ascending: true })
 
     // If no results or error, try with content_id
     if ((error || !data || data.length === 0)) {
-      const fallbackResult = await supabase
+      const fallbackResult = await supabasePublic
         .from('chapters')
         .select('*')
         .eq('content_id', contentId)
@@ -770,7 +793,7 @@ export async function addChapter(chapterData: Omit<Chapter, 'id' | 'created_at'>
 // Search content (manga or comics)
 export async function searchContent(query: string, type?: 'manga' | 'comics', limit = 20) {
   try {
-    let contentQuery = supabase
+    let contentQuery = supabasePublic
       .from('content')
       .select('*, view_count')
       .or(`title.ilike.%${query}%, description.ilike.%${query}%`)
@@ -803,7 +826,7 @@ export async function updateContentCounts(id: string, type: 'manga' | 'comics'):
     // Check what we're updating based on content type
     if (type === 'manga' || type === 'comics') {
       // Get latest chapter info
-      const { data: chapters, error: chaptersError } = await supabase
+      const { data: chapters, error: chaptersError } = await supabasePublic
         .from('chapters')
         .select('id, number', { count: 'exact' })
         .eq('content_id', id)
