@@ -40,7 +40,14 @@ export function getSupabaseAvatarUrl(
 
   // 1. If profile already stores a full URL, just return it.
   if (providedAvatarUrl && providedAvatarUrl.trim() !== '') {
-    return providedAvatarUrl;
+    // Already full URL → return directly
+    if (/^https?:\/\//.test(providedAvatarUrl)) {
+      return providedAvatarUrl;
+    }
+
+    // Looks like a storage object path such as "private/<folder>/file.png".
+    // Prepend the Supabase storage endpoint.
+    return `${supabaseUrl}/storage/v1/object/${providedAvatarUrl.replace(/^\//, '')}`;
   }
 
   // 2. If we don’t have a stored avatar file for this user, don’t generate a

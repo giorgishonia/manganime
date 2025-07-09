@@ -256,7 +256,7 @@ export function AppSidebar() {
 
     // Additional manual timeout in case callback never fires
     const timer = setTimeout(() => {
-      if (!channel.subscribed && !didTimeout) {
+      if (channel.state !== 'joined' && !didTimeout) {
         didTimeout = true;
         console.warn('[notifications] realtime subscription timed out – unsubscribing');
         channel.unsubscribe();
