@@ -1,3 +1,5 @@
+import { supabase } from '@/lib/supabase'
+
 // Define types for reading history
 export interface ReadingProgress {
   mangaId: string
@@ -17,8 +19,71 @@ export interface MangaTotalPages {
   totalPages: number;
 }
 
+// Supabase table name for reading history (make sure this table exists with proper RLS)
+const READING_HISTORY_TABLE = 'reading_history'
+
 // Key for localStorage
 const READING_HISTORY_KEY = "manganime-reading-history";
+
+
+// Helper – get currently authenticated user (fast local token check first)
+function getCurrentUserIdSync(): string | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const json = localStorage.getItem('sb-access-token')
+    if (!json) return null
+    const { user } = JSON.parse(json)
+    return user?.id ?? null
+  } catch {
+    return null
+  }
+}
+
+async function getCurrentUserIdAsync(): Promise<string | null> {
+  try {
+    const { data } = await supabase.auth.getSession()
+    return data.session?.user?.id ?? null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Upsert a reading-progress row to Supabase. Runs in the background – UI never awaits it.
+ */
+async function syncProgressToSupabase(progress: ReadingProgress) {
+  const userId = await getCurrentUserIdAsync()
+  if (!userId) return // Not logged-in; nothing to sync
+
+  try {
+    const { error } = await supabase
+      .from(READING_HISTORY_TABLE)
+      .upsert(
+        {
+          user_id: userId,
+          manga_id: progress.mangaId,
+          chapter_id: progress.chapterId,
+          chapter_number: progress.chapterNumber,
+          chapter_title: progress.chapterTitle,
+          current_page: progress.currentPage,
+          total_pages: progress.totalPages,
+          last_read: new Date(progress.lastRead).toISOString(),
+          manga_title: progress.mangaTitle,
+          manga_thumbnail: progress.mangaThumbnail,
+          updated_at: new Date().toISOString(),
+        },
+        {
+          onConflict: 'user_id,manga_id,chapter_id',
+        }
+      )
+
+    if (error) {
+      console.error('Failed to sync reading progress to Supabase:', error)
+    }
+  } catch (err) {
+    console.error('Unexpected error syncing reading progress:', err)
+  }
+}
 
 // Get all reading history
 export function getReadingHistory(): ReadingProgress[] {
@@ -63,6 +128,9 @@ export function updateReadingProgress(progress: ReadingProgress): void {
     
     // Save to localStorage
     localStorage.setItem(READING_HISTORY_KEY, JSON.stringify(limitedHistory));
+
+    // Fire-and-forget Supabase sync
+    syncProgressToSupabase(progress);
   } catch (error) {
     console.error("Failed to update reading history:", error);
   }
@@ -90,6 +158,19 @@ export function getRecentlyRead(limit: number = 10): ReadingProgress[] {
 export function clearReadingHistory(): void {
   if (typeof window === "undefined") return;
   localStorage.removeItem(READING_HISTORY_KEY);
+
+  // Also clear from Supabase in the background (best-effort)
+  (async () => {
+    const userId = await getCurrentUserIdAsync();
+    if (!userId) return;
+    const { error } = await supabase
+      .from(READING_HISTORY_TABLE)
+      .delete()
+      .eq('user_id', userId);
+    if (error) {
+      console.error('Failed to clear reading history in Supabase:', error);
+    }
+  })();
 }
 
 // Mark a manga chapter as read
@@ -218,4 +299,5 @@ export function getLatestChapterRead(mangaId: string): number {
     console.error("Failed to get latest chapter read:", error);
     return 0;
   }
+} 
 } 

@@ -227,30 +227,49 @@ export function AppSidebar() {
   useEffect(() => {
     if (!user) return;
 
-    // Subscribe to INSERT events on notifications for this user
-    const channel = supabase.channel(`notifications-${user.id}`)
+    let didTimeout = false;
+
+    const channel = supabase
+      .channel(`notifications-${user.id}`)
       .on(
         'postgres_changes',
         {
           event: 'INSERT',
           schema: 'public',
           table: 'notifications',
-          filter: `user_id=eq.${user.id}`
+          filter: `user_id=eq.${user.id}`,
         },
         (payload) => {
-          // Increase unread count and prepend notification
-          setUnreadCount((c) => c + 1)
-          setNotifications((prev) => [payload.new as unknown as Notification, ...prev])
-        }
+          setUnreadCount((c) => c + 1);
+          setNotifications((prev) => [payload.new as unknown as Notification, ...prev]);
+        },
       )
-      .subscribe()
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('[notifications] realtime subscribed');
+        }
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn('[notifications] realtime subscription failed:', status);
+          channel.unsubscribe();
+        }
+      });
 
-    setNotifSubscription(channel)
+    // Additional manual timeout in case callback never fires
+    const timer = setTimeout(() => {
+      if (!channel.subscribed && !didTimeout) {
+        didTimeout = true;
+        console.warn('[notifications] realtime subscription timed out – unsubscribing');
+        channel.unsubscribe();
+      }
+    }, 5000);
+
+    setNotifSubscription(channel);
 
     return () => {
-      channel.unsubscribe()
-    }
-  }, [user])
+      clearTimeout(timer);
+      channel.unsubscribe();
+    };
+  }, [user]);
   
   // Function to toggle search modal
   const toggleSearch = () => {
