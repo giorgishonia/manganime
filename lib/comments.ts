@@ -32,22 +32,30 @@ function ensureUUID(id: string): string {
 }
 
 // Helper function to get the correct avatar URL from Supabase
-export function getSupabaseAvatarUrl(userId: string, providedAvatarUrl: string | null): string | null {
-  // If we have a provided avatar URL that is from Supabase storage, use it
-  if (providedAvatarUrl && (
-      providedAvatarUrl.includes(process.env.NEXT_PUBLIC_SUPABASE_URL as string) || 
-      !providedAvatarUrl.includes('googleusercontent.com')
-    )) {
+export function getSupabaseAvatarUrl(
+  userId: string,
+  providedAvatarUrl: string | null,
+): string | null {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL as string;
+
+  // 1. If profile already stores a full URL, just return it.
+  if (providedAvatarUrl && providedAvatarUrl.trim() !== '') {
     return providedAvatarUrl;
   }
-  
-  // If the provided URL is from Google, try to construct a Supabase avatar URL
-  if (userId) {
-    return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/avatars/${userId}`;
+
+  // 2. If we don’t have a stored avatar file for this user, don’t generate a
+  //    blind Supabase path that returns 400 – fall back to DiceBear/null and let
+  //    the component render its own placeholder.
+  if (!userId) {
+    return null;
   }
-  
-  // Fallback to null if we can't determine a valid avatar URL
-  return null;
+
+  // 3. We *could* attempt to fetch head/meta to see if the object exists, but
+  //    that would slow every render. Instead, rely on a naming convention: if
+  //    the file was uploaded we store the URL back in `avatar_url`.
+  //    Therefore, if avatar_url is empty we assume no custom avatar yet.
+
+  return null; // signal caller to use its own placeholder (dicebear)
 }
 
 export interface Comment {
