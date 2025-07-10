@@ -1,23 +1,5 @@
-import { supabase } from './supabase'
+import { supabase, supabasePublic } from './supabase'
 import { Chapter } from './supabase' // Removed Episode and Content import
-
-// ---------------------------------------------------------------------------
-// Create a second Supabase client that is *always* unauthenticated.  This lets
-// us perform read-only queries that shouldn’t depend on (or be blocked by)
-// the logged-in user’s RLS policies.  We use it for public content/chapters
-// fetches so that signed-in visitors see the same catalogue data as guests.
-// ---------------------------------------------------------------------------
-import { createClient } from '@supabase/supabase-js'
-
-const supabasePublic = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-key',
-  {
-    auth: {
-      persistSession: false,    // do NOT store or send user tokens
-    },
-  },
-)
 
 // Content metadata interface with consistent chapter tracking (episodes removed)
 export interface ContentMetadata {
@@ -111,7 +93,7 @@ export async function getAllContent(
 // Get content by ID (manga or comics)
 export async function getContentById(id: string): Promise<{ success: boolean; content: ContentMetadata | null; error?: any }> {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await supabasePublic
       .from('content')
       .select('*, view_count')
       .eq('id', id)

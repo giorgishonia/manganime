@@ -15,8 +15,107 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: true
+  },
+  realtime: {
+    // Limit max number of channels per client to reduce server load
+    maxChannels: 5,
+    // Disable automatic reconnection attempts to reduce server load
+    params: {
+      eventsPerSecond: 2
+    }
   }
 })
+
+// Create a public client that doesn't attempt authentication
+// This can be used for content reads that should work for anonymous users
+export const supabasePublic = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false,
+    detectSessionInUrl: false
+  },
+  realtime: {
+    // Disable realtime for public client - use only for static content
+    enabled: false
+  }
+})
+
+// Track active subscriptions to prevent duplicates
+const activeSubscriptions = new Map();
+
+/**
+ * Creates a managed realtime subscription that prevents duplicates
+ * and ensures proper cleanup
+ * @param channelName Unique name for the subscription
+ * @param table Table to subscribe to
+ * @param filter Optional filter criteria
+ * @param callback Function to call when data changes
+ * @returns Cleanup function to unsubscribe
+ */
+export function createManagedSubscription(
+  channelName: string,
+  table: string,
+  filter: Record<string, any>,
+  callback: (payload: any) => void
+): () => void {
+  // Check if subscription with this name already exists
+  if (activeSubscriptions.has(channelName)) {
+    console.warn(`Subscription ${channelName} already exists, reusing existing subscription`);
+    return () => {
+      // Return no-op cleanup function
+      console.log(`Ignoring cleanup for duplicate subscription: ${channelName}`);
+    };
+  }
+
+  // Create new subscription
+  console.log(`Creating new subscription: ${channelName}`);
+  
+  try {
+    const channel = supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: table,
+          ...filter
+        },
+        callback
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log(`[${channelName}] realtime subscribed`);
+        }
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn(`[${channelName}] realtime subscription failed:`, status);
+          try {
+            channel.unsubscribe();
+            activeSubscriptions.delete(channelName);
+          } catch (err) {
+            console.error(`[${channelName}] error unsubscribing from channel:`, err);
+          }
+        }
+      });
+
+    // Store subscription in map
+    activeSubscriptions.set(channelName, channel);
+
+    // Return cleanup function
+    return () => {
+      console.log(`Cleaning up subscription: ${channelName}`);
+      try {
+        channel.unsubscribe();
+        activeSubscriptions.delete(channelName);
+      } catch (err) {
+        console.error(`Error cleaning up subscription ${channelName}:`, err);
+      }
+    };
+  } catch (err) {
+    console.error(`Error creating subscription ${channelName}:`, err);
+    return () => {}; // Return no-op cleanup function
+  }
+}
 
 // Only attempt a connection check if real credentials are present
 if (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY && process.env.NEXT_PUBLIC_SUPABASE_URL) {

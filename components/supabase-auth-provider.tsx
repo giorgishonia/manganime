@@ -110,72 +110,84 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
   // Initialize the auth state and listen for changes
   useEffect(() => {
     console.log("=== Initializing AuthProvider and setting up auth state listeners ===")
+    let isMounted = true;
     
     ;(async () => {
       try {
         const { data: { session: activeSession } } = await supabase.auth.getSession()
 
-        setSession(activeSession)
-        const currentUser = activeSession?.user || null
-        setUser(currentUser)
+        if (isMounted) {
+          setSession(activeSession)
+          const currentUser = activeSession?.user || null
+          setUser(currentUser)
 
-        console.log(
-          "Initial session check:",
-          currentUser ? `User ${currentUser.id} is logged in` : "No active session",
-        )
+          console.log(
+            "Initial session check:",
+            currentUser ? `User ${currentUser.id} is logged in` : "No active session",
+          )
 
-        if (currentUser && typeof currentUser.id === 'string') {
-          await syncUserProfile(currentUser)
+          if (currentUser && typeof currentUser.id === 'string') {
+            await syncUserProfile(currentUser)
+          }
         }
       } catch (err) {
         console.error('Error fetching initial session from Supabase:', err)
         // In case of error (e.g., missing env vars or network failure) we still want the UI to render
       } finally {
-        setIsLoading(false)
-        console.log('Initial auth state loading completed (with or without session)')
+        if (isMounted) {
+          setIsLoading(false)
+          console.log('Initial auth state loading completed (with or without session)')
+        }
       }
     })()
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, newSession) => {
          console.log(`Auth state changed: ${_event}`, newSession ? `User: ${newSession.user.id}` : "No session")
+         if (!isMounted) return;
+         
          setSession(newSession)
          const currentUser = newSession?.user || null
          setUser(currentUser)
          
-         if (currentUser && typeof currentUser.id === 'string') {
-           await syncUserProfile(currentUser)
-           
-           if (_event !== 'SIGNED_OUT') {
-             const userProfileForRedirect = await getProfileForUser(currentUser.id)
-             console.log(`Auth state change (${_event}): onboarding status:`, userProfileForRedirect?.has_completed_onboarding)
-             console.log(`Current path: ${pathname}`)
+         try {
+           if (currentUser && typeof currentUser.id === 'string') {
+             await syncUserProfile(currentUser)
              
-             if (userProfileForRedirect && userProfileForRedirect.has_completed_onboarding === false && 
-                 pathname && !['/login', '/signup', '/onboarding', '/api/auth/callback', '/auth/callback'].includes(pathname)) {
-               console.log(`Redirecting user on auth change to /onboarding: ${currentUser.id}`)
+             if (_event !== 'SIGNED_OUT') {
+               const userProfileForRedirect = await getProfileForUser(currentUser.id)
+               console.log(`Auth state change (${_event}): onboarding status:`, userProfileForRedirect?.has_completed_onboarding)
+               console.log(`Current path: ${pathname}`)
                
-               const lastRedirectTime = sessionStorage.getItem('lastRedirectTime')
-               const currentTime = Date.now()
-               const isRecentRedirect = lastRedirectTime && (currentTime - parseInt(lastRedirectTime)) < 3000
-               
-               if (!isRecentRedirect) {
-                 console.log("No recent redirection, redirecting to onboarding now")
-                 sessionStorage.setItem('lastRedirectTime', currentTime.toString())
-                 router.push('/onboarding')
-               } else {
-                 console.log("Skipping redirection due to recent redirect")
+               if (userProfileForRedirect && userProfileForRedirect.has_completed_onboarding === false && 
+                   pathname && !['/login', '/signup', '/onboarding', '/api/auth/callback', '/auth/callback'].includes(pathname)) {
+                 console.log(`Redirecting user on auth change to /onboarding: ${currentUser.id}`)
+                 
+                 const lastRedirectTime = sessionStorage.getItem('lastRedirectTime')
+                 const currentTime = Date.now()
+                 const isRecentRedirect = lastRedirectTime && (currentTime - parseInt(lastRedirectTime)) < 3000
+                 
+                 if (!isRecentRedirect) {
+                   console.log("No recent redirection, redirecting to onboarding now")
+                   sessionStorage.setItem('lastRedirectTime', currentTime.toString())
+                   router.push('/onboarding')
+                 } else {
+                   console.log("Skipping redirection due to recent redirect")
+                 }
                }
              }
            }
+         } catch (err) {
+           console.error('Error during auth state change handling:', err);
+         } finally {
+           if (isMounted && isLoading) setIsLoading(false)
          }
-         
-         if (isLoading) setIsLoading(false)
       }
     )
 
     return () => {
       console.log("=== Cleaning up AuthProvider auth state listeners ===")
+      isMounted = false;
       subscription.unsubscribe()
     }
   }, [pathname, router, isLoading])

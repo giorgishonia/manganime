@@ -119,16 +119,20 @@ export function getCurrentAvatarUrl(nextAuthSession: any, supabaseUser: any): st
   }
   
   // For users authenticated via Supabase but without avatar in metadata,
-  // attempt to construct the Supabase storage URL if possible
-  if (supabaseUser?.id) {
-    // Try to use the public Supabase storage URL for avatars
-    const supabaseAvatarUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/avatars/${supabaseUser.id}`;
-    return supabaseAvatarUrl;
-  }
+  // don't attempt to construct a storage URL that might cause 400 errors
   
   // Only use NextAuth image as a last resort
   if (nextAuthSession?.user?.image) {
     return nextAuthSession.user.image;
+  }
+  
+  // Use DiceBear as a fallback avatar service if we have a user ID
+  if (supabaseUser?.id) {
+    return `https://api.dicebear.com/7.x/avataaars/svg?seed=${supabaseUser.id}`;
+  }
+  
+  if (nextAuthSession?.user?.id) {
+    return `https://api.dicebear.com/7.x/avataaars/svg?seed=${nextAuthSession.user.id}`;
   }
   
   return null;

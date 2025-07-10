@@ -46,7 +46,7 @@ import {
   markNotificationsAsRead
 } from "@/lib/notifications"
 import { ka } from "date-fns/locale"
-import { supabase } from "@/lib/supabase"
+import { supabase, createManagedSubscription } from "@/lib/supabase"
 
 // Interface for sidebar items
 interface SidebarItemProps {
@@ -227,48 +227,19 @@ export function AppSidebar() {
   useEffect(() => {
     if (!user) return;
 
-    let didTimeout = false;
-
-    const channel = supabase
-      .channel(`notifications-${user.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'notifications',
-          filter: `user_id=eq.${user.id}`,
-        },
-        (payload) => {
-          setUnreadCount((c) => c + 1);
-          setNotifications((prev) => [payload.new as unknown as Notification, ...prev]);
-        },
-      )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          console.log('[notifications] realtime subscribed');
-        }
-        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          console.warn('[notifications] realtime subscription failed:', status);
-          channel.unsubscribe();
-        }
-      });
-
-    // Additional manual timeout in case callback never fires
-    const timer = setTimeout(() => {
-      if (channel.state !== 'joined' && !didTimeout) {
-        didTimeout = true;
-        console.warn('[notifications] realtime subscription timed out – unsubscribing');
-        channel.unsubscribe();
+    // Use the managed subscription system to prevent duplicate subscriptions
+    const cleanup = createManagedSubscription(
+      `notifications-${user.id}`,
+      'notifications',
+      { filter: `user_id=eq.${user.id}`, event: 'INSERT' },
+      (payload) => {
+        setUnreadCount((c) => c + 1);
+        setNotifications((prev) => [payload.new as unknown as Notification, ...prev]);
       }
-    }, 5000);
+    );
 
-    setNotifSubscription(channel);
-
-    return () => {
-      clearTimeout(timer);
-      channel.unsubscribe();
-    };
+    // Return cleanup function
+    return cleanup;
   }, [user]);
   
   // Function to toggle search modal

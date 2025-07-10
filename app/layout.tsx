@@ -38,6 +38,29 @@ if (typeof window !== 'undefined') {
   }, 2000) // Delay by 2 seconds to let the app start first
 }
 
+// Optimize Supabase Realtime usage
+// This helps reduce the load on the database by limiting Realtime subscriptions
+if (typeof window !== 'undefined') {
+  // Check if this is a static page that doesn't need real-time updates
+  const staticPages = [
+    '/login', 
+    '/signup', 
+    '/onboarding',
+    '/settings',
+    '/profile'
+  ];
+  
+  const currentPath = window.location.pathname;
+  const isStaticPage = staticPages.some(page => currentPath.startsWith(page));
+  
+  // Import is inside the condition to prevent server-side execution
+  if (isStaticPage) {
+    import('@/lib/disable-realtime').then(module => {
+      module.disableRealtimeForCurrentPage();
+    });
+  }
+}
+
 export const metadata: Metadata = {
   title: 'manganime',
   description: 'Explore anime and manga content',

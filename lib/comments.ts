@@ -45,24 +45,23 @@ export function getSupabaseAvatarUrl(
       return providedAvatarUrl;
     }
 
-    // Looks like a storage object path such as "private/<folder>/file.png".
-    // Prepend the Supabase storage endpoint.
-    return `${supabaseUrl}/storage/v1/object/${providedAvatarUrl.replace(/^\//, '')}`;
-  }
-
-  // 2. If we don’t have a stored avatar file for this user, don’t generate a
-  //    blind Supabase path that returns 400 – fall back to DiceBear/null and let
-  //    the component render its own placeholder.
-  if (!userId) {
+    // If it's a path that includes "public/" or "avatars/public", use storage URL
+    if (providedAvatarUrl.includes('/public/') || providedAvatarUrl.includes('avatars/public')) {
+      return `${supabaseUrl}/storage/v1/object/${providedAvatarUrl.replace(/^\//, '')}`;
+    }
+    
+    // For private paths, don't attempt to construct URLs that might cause 400 errors
     return null;
   }
 
-  // 3. We *could* attempt to fetch head/meta to see if the object exists, but
-  //    that would slow every render. Instead, rely on a naming convention: if
-  //    the file was uploaded we store the URL back in `avatar_url`.
-  //    Therefore, if avatar_url is empty we assume no custom avatar yet.
+  // 2. If we don't have a stored avatar file for this user, use a fallback avatar service
+  if (userId) {
+    // Use DiceBear as a fallback avatar service - this will always work
+    return `https://api.dicebear.com/7.x/avataaars/svg?seed=${userId}`;
+  }
 
-  return null; // signal caller to use its own placeholder (dicebear)
+  // 3. If no userId either, return null to let the component use its own fallback
+  return null;
 }
 
 export interface Comment {
