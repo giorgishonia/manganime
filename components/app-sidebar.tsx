@@ -46,7 +46,7 @@ import {
   markNotificationsAsRead
 } from "@/lib/notifications"
 import { ka } from "date-fns/locale"
-import { supabase, createManagedSubscription } from "@/lib/supabase"
+import { supabase } from "@/lib/supabase"
 
 // Interface for sidebar items
 interface SidebarItemProps {
@@ -227,20 +227,97 @@ export function AppSidebar() {
   useEffect(() => {
     if (!user) return;
 
-    // Use the managed subscription system to prevent duplicate subscriptions
-    const cleanup = createManagedSubscription(
-      `notifications-${user.id}`,
-      'notifications',
-      { filter: `user_id=eq.${user.id}`, event: 'INSERT' },
-      (payload) => {
-        setUnreadCount((c) => c + 1);
-        setNotifications((prev) => [payload.new as unknown as Notification, ...prev]);
-      }
-    );
+    let didTimeout = false;
+    let pollInterval: NodeJS.Timeout | null = null;
 
-    // Return cleanup function
-    return cleanup;
-  }, [user]);
+    try {
+      // Try to create a channel - if realtime is disabled this will fail gracefully
+      const channel = supabase
+        .channel(`notifications-${user.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'notifications',
+            filter: `user_id=eq.${user.id}`,
+          },
+          (payload) => {
+            setUnreadCount((c) => c + 1);
+            setNotifications((prev) => [payload.new as unknown as Notification, ...prev]);
+          },
+        )
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            console.log('[notifications] realtime subscribed');
+          }
+          if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            console.warn('[notifications] realtime subscription failed:', status);
+            channel.unsubscribe();
+            // Fall back to polling on subscription failure
+            startPolling();
+          }
+        });
+
+      // Additional manual timeout in case callback never fires
+      const timer = setTimeout(() => {
+        if (!channel.state || channel.state !== 'joined' && !didTimeout) {
+          didTimeout = true;
+          console.warn('[notifications] realtime subscription timed out – unsubscribing');
+          channel.unsubscribe();
+          // Fall back to polling on timeout
+          startPolling();
+        }
+      }, 5000);
+
+      setNotifSubscription(channel);
+
+      return () => {
+        clearTimeout(timer);
+        channel.unsubscribe();
+        if (pollInterval) clearInterval(pollInterval);
+      };
+    } catch (error) {
+      // Realtime is disabled or errored, use polling instead
+      console.log('[notifications] realtime not available, using polling instead:', error);
+      startPolling();
+      
+      return () => {
+        if (pollInterval) clearInterval(pollInterval);
+      };
+    }
+    
+    // Function to start polling for notifications
+    function startPolling() {
+      // Initial fetch
+      fetchLatestNotifications();
+      
+      // Set up polling interval (every 30 seconds)
+      pollInterval = setInterval(fetchLatestNotifications, 30000);
+    }
+    
+    // Function to fetch latest notifications
+    async function fetchLatestNotifications() {
+      if (!user) return;
+      
+      try {
+        const { success, count } = await getUnreadNotificationCount(user.id);
+        if (success) {
+          setUnreadCount(count || 0);
+        }
+        
+        // If notifications panel is open, also refresh the notifications list
+        if (isNotificationsOpen) {
+          const { success, notifications } = await getUserNotifications(user.id);
+          if (success && notifications) {
+            setNotifications(notifications);
+          }
+        }
+      } catch (error) {
+        console.error('[notifications] Error fetching notifications:', error);
+      }
+    }
+  }, [user, isNotificationsOpen]);
   
   // Function to toggle search modal
   const toggleSearch = () => {
